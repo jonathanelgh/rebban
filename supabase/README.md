@@ -94,9 +94,10 @@ Freelancers can connect Gmail in **Settings → Integrations**. Proposal invites
 Google Cloud setup:
 
 1. Create an OAuth client (Web application)
-2. Authorized redirect URIs (add both):
+2. **Google Cloud → Credentials → OAuth client → Authorized redirect URIs** must include exactly:
    - `https://rebban.com/api/gmail/callback`
-   - `http://localhost:3001/api/gmail/callback`
+   - `http://localhost:3001/api/gmail/callback` (local only)
+   Changing a value in Vercel does **not** register it with Google. `redirect_uri_mismatch` means this list is wrong/missing.
 3. Enable Gmail API
-4. Set `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` in Vercel / `.env.local`
-5. Do **not** set `GOOGLE_GMAIL_REDIRECT_URI` to localhost in Vercel — the app uses the live request origin (`rebban.com` in prod)
+4. Vercel env: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXT_PUBLIC_APP_URL=https://rebban.com`
+5. Leave `GOOGLE_GMAIL_REDIRECT_URI` unset in Vercel (prod uses `NEXT_PUBLIC_APP_URL`)

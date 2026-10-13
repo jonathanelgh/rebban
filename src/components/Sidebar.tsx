@@ -84,10 +84,8 @@ function alertIconForType(type: string): LucideIcon {
 }
 
 function SidebarInner({
-  mobileOpen = false,
   onMobileClose,
 }: {
-  mobileOpen?: boolean;
   onMobileClose?: () => void;
 }) {
   const pathname = usePathname();
@@ -104,11 +102,7 @@ function SidebarInner({
   }
 
   return (
-    <aside
-      className={`z-50 w-[72px] shrink-0 flex flex-col justify-between overflow-visible py-3 bg-[#F0F1F3] md:bg-transparent md:relative md:translate-x-0 max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:shadow-[4px_0_24px_rgba(16,24,40,0.12)] max-md:transition-transform max-md:duration-200 max-md:ease-out ${
-        mobileOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full"
-      }`}
-    >
+    <aside className="relative z-10 w-[72px] shrink-0 flex flex-col justify-between overflow-visible py-3 bg-transparent">
       <div className="flex flex-col items-center gap-4">
         <div className="w-10 h-10 rounded-xl bg-gray-950 text-white flex items-center justify-center shrink-0">
           <span className="text-[15px] font-semibold tracking-tight leading-none">R.</span>
@@ -237,19 +231,15 @@ function SidebarInner({
 }
 
 export function Sidebar({
-  mobileOpen = false,
   onMobileClose,
 }: {
-  mobileOpen?: boolean;
   onMobileClose?: () => void;
 } = {}) {
   return (
     <Suspense
-      fallback={
-        <aside className="hidden md:block bg-transparent w-[72px] shrink-0" />
-      }
+      fallback={<aside className="bg-transparent w-[72px] shrink-0" />}
     >
-      <SidebarInner mobileOpen={mobileOpen} onMobileClose={onMobileClose} />
+      <SidebarInner onMobileClose={onMobileClose} />
     </Suspense>
   );
 }

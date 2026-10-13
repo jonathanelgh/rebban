@@ -48,9 +48,23 @@ export function requestOrigin(request: Request) {
 }
 
 export function getGmailRedirectUri(origin?: string | null) {
-  // Always prefer the browser/request origin so production never picks up a
-  // leftover localhost GOOGLE_GMAIL_REDIRECT_URI from env.
-  const normalizedOrigin = origin?.replace(/\/$/, "") || "";
+  const normalizedOrigin = (origin || "").replace(/\/$/, "");
+  const configured = appUrl();
+
+  // Local dev: match the browser port (3000 vs 3001).
+  if (
+    normalizedOrigin.startsWith("http://localhost:") ||
+    normalizedOrigin.startsWith("http://127.0.0.1:")
+  ) {
+    return `${normalizedOrigin}/api/gmail/callback`;
+  }
+
+  // Production: always use NEXT_PUBLIC_APP_URL so the redirect_uri matches
+  // Google Cloud (and is not a vercel.app preview host).
+  if (configured && !configured.includes("localhost")) {
+    return `${configured}/api/gmail/callback`;
+  }
+
   if (normalizedOrigin) {
     return `${normalizedOrigin}/api/gmail/callback`;
   }
@@ -58,7 +72,7 @@ export function getGmailRedirectUri(origin?: string | null) {
   const fromEnv = process.env.GOOGLE_GMAIL_REDIRECT_URI?.trim();
   if (fromEnv) return fromEnv.replace(/\/$/, "");
 
-  return `${appUrl()}/api/gmail/callback`;
+  return `${configured}/api/gmail/callback`;
 }
 
 export function buildGmailAuthUrl(state: string, redirectUri: string) {

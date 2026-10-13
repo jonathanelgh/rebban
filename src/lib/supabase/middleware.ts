@@ -40,17 +40,23 @@ export async function updateSession(request: NextRequest) {
     path.startsWith("/auth/");
   const isPublicProposalRoute =
     path.startsWith("/p/") || path.startsWith("/api/p/");
+  // Gmail OAuth also returns ?code= — do not treat it as Supabase login.
+  const isGmailOAuthRoute = path.startsWith("/api/gmail/");
 
   // Supabase sometimes returns ?code= on Site URL (/) instead of /auth/callback.
-  // Never strip it — forward to the exchange route.
-  if (authCode && !path.startsWith("/auth/callback")) {
+  // Never strip it — forward to the exchange route (login only, not Gmail).
+  if (
+    authCode &&
+    !path.startsWith("/auth/callback") &&
+    !isGmailOAuthRoute
+  ) {
     const url = request.nextUrl.clone();
     url.pathname = "/auth/callback";
     return NextResponse.redirect(url);
   }
 
   // Let the auth callback exchange the code without an existing session.
-  if (path.startsWith("/auth/callback")) {
+  if (path.startsWith("/auth/callback") || path.startsWith("/api/gmail/callback")) {
     return supabaseResponse;
   }
 
