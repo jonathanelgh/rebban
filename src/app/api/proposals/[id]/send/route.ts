@@ -140,14 +140,10 @@ export async function POST(
 
     const now = new Date().toISOString();
     const nextStatus =
-      proposal.status === "accepted"
-        ? proposal.status
-        : proposal.status === "viewed"
-          ? "viewed"
-          : "sent";
+      proposal.status === "viewed" ? ("viewed" as const) : ("sent" as const);
 
     const proposalUpdate: {
-      status: "sent" | "viewed" | "accepted" | "declined" | "draft";
+      status: "sent" | "viewed" | "declined" | "draft";
       sent_at: string;
       updated_at: string;
       declined_at?: string | null;

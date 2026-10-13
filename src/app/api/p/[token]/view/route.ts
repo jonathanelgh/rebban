@@ -22,8 +22,8 @@ export async function POST(
 
     const { data, error } = await supabase.rpc("record_public_proposal_view", {
       p_token: token,
-      p_ip: ip,
-      p_user_agent: userAgent,
+      p_ip: ip || undefined,
+      p_user_agent: userAgent || undefined,
     });
 
     if (error) {

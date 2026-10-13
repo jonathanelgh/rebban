@@ -40,15 +40,15 @@ export async function POST(
       p_token: token,
       p_signer_name: body.signerName || "",
       p_signer_email: body.signerEmail || "",
-      p_signer_title: body.signerTitle || null,
-      p_signer_company: body.signerCompany || null,
+      p_signer_title: body.signerTitle || undefined,
+      p_signer_company: body.signerCompany || undefined,
       p_signature_type: body.signatureType || "typed",
-      p_signature_text: body.signatureText || null,
-      p_signature_image: body.signatureImage || null,
+      p_signature_text: body.signatureText || undefined,
+      p_signature_image: body.signatureImage || undefined,
       p_consent_text: body.consentText || "",
       p_document_hash: body.documentHash || "",
-      p_ip: ip,
-      p_user_agent: userAgent,
+      p_ip: ip || undefined,
+      p_user_agent: userAgent || undefined,
     });
 
     if (error) {

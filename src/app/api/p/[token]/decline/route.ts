@@ -31,11 +31,11 @@ export async function POST(
 
     const { data, error } = await supabase.rpc("decline_public_proposal", {
       p_token: token,
-      p_reason: body.reason?.trim() || null,
-      p_name: body.name?.trim() || null,
-      p_email: body.email?.trim() || null,
-      p_ip: ip,
-      p_user_agent: userAgent,
+      p_reason: body.reason?.trim() || undefined,
+      p_name: body.name?.trim() || undefined,
+      p_email: body.email?.trim() || undefined,
+      p_ip: ip || undefined,
+      p_user_agent: userAgent || undefined,
     });
 
     if (error) {
