@@ -2,20 +2,15 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { getAppUrl } from "@/lib/email/resend";
-import { saveGmailConnection } from "@/lib/email/gmail";
+import { requestOrigin, saveGmailConnection } from "@/lib/email/gmail";
 
 function callbackAppUrl(request: Request) {
-  // Prefer the host that handled the OAuth callback so a wrong APP_URL port
-  // doesn't bounce the user to a different local server after connect.
+  // Always return to the host that handled the callback (rebban.com or local).
   try {
-    const origin = new URL(request.url).origin;
-    if (origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:")) {
-      return origin.replace(/\/$/, "");
-    }
+    return requestOrigin(request);
   } catch {
-    /* fall through */
+    return getAppUrl();
   }
-  return getAppUrl();
 }
 
 export async function GET(request: Request) {

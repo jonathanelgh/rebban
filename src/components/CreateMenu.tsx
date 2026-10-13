@@ -70,7 +70,7 @@ export function CreateMenu() {
   }, [open]);
 
   return (
-    <div ref={rootRef} className="absolute top-4 right-4 z-40">
+    <div ref={rootRef} className="relative">
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
@@ -89,7 +89,7 @@ export function CreateMenu() {
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-full mt-2 w-[280px] rounded-2xl border border-line bg-white py-2 shadow-[0_12px_40px_rgba(16,24,40,0.12)]"
+          className="absolute right-0 top-full mt-2 w-[min(280px,calc(100vw-2rem))] rounded-2xl border border-line bg-white py-2 shadow-[0_12px_40px_rgba(16,24,40,0.12)]"
         >
           {CREATE_ITEMS.map(({ href, label, description, icon: Icon }) => (
             <Link

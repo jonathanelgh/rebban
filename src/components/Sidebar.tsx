@@ -83,7 +83,13 @@ function alertIconForType(type: string): LucideIcon {
   }
 }
 
-function SidebarInner() {
+function SidebarInner({
+  mobileOpen = false,
+  onMobileClose,
+}: {
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
+}) {
   const pathname = usePathname();
   const { isTracking, elapsedSeconds } = useTimeTracking();
   const { avatarUrl, fullName } = useProfile();
@@ -98,7 +104,11 @@ function SidebarInner() {
   }
 
   return (
-    <aside className="relative z-50 bg-transparent w-[72px] shrink-0 flex flex-col justify-between overflow-visible py-3">
+    <aside
+      className={`z-50 w-[72px] shrink-0 flex flex-col justify-between overflow-visible py-3 bg-[#F0F1F3] md:bg-transparent md:relative md:translate-x-0 max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:shadow-[4px_0_24px_rgba(16,24,40,0.12)] max-md:transition-transform max-md:duration-200 max-md:ease-out ${
+        mobileOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full"
+      }`}
+    >
       <div className="flex flex-col items-center gap-4">
         <div className="w-10 h-10 rounded-xl bg-gray-950 text-white flex items-center justify-center shrink-0">
           <span className="text-[15px] font-semibold tracking-tight leading-none">R.</span>
@@ -176,31 +186,35 @@ function SidebarInner() {
         </div>
 
         <nav className="w-full space-y-0.5">
-          <NavItem href="/" icon={Home} label="Home" active={pathname === "/"} />
-          <NavItem href="/clients" icon={Users} label="Clients" active={pathname === "/clients"} />
+          <NavItem href="/" icon={Home} label="Home" active={pathname === "/"} onNavigate={onMobileClose} />
+          <NavItem href="/clients" icon={Users} label="Clients" active={pathname === "/clients"} onNavigate={onMobileClose} />
           <NavItem
             href="/tasks"
             icon={Kanban}
             label="Tasks"
             active={pathname.startsWith("/tasks")}
+            onNavigate={onMobileClose}
           />
           <NavItem
             href="/proposals"
             icon={FileText}
             label="Proposals"
             active={pathname.startsWith("/proposals")}
+            onNavigate={onMobileClose}
           />
           <NavItem
             href="/invoices"
             icon={FileSpreadsheet}
             label="Invoices"
             active={pathname === "/invoices"}
+            onNavigate={onMobileClose}
           />
           <NavItem
             href="/payments"
             icon={CreditCard}
             label="Payments"
             active={pathname === "/payments"}
+            onNavigate={onMobileClose}
           />
           <NavItem
             href="/time-tracking"
@@ -209,22 +223,33 @@ function SidebarInner() {
             active={pathname === "/time-tracking"}
             badge={isTracking ? formatElapsed(elapsedSeconds) : undefined}
             badgeLive={isTracking}
+            onNavigate={onMobileClose}
           />
         </nav>
       </div>
 
       <div className="w-full space-y-0.5">
-        <AlertsMenu active={pathname === "/notifications"} />
-        <NavItem href="/settings" icon={Settings} label="Settings" active={pathname === "/settings"} />
+        <AlertsMenu active={pathname === "/notifications"} onNavigate={onMobileClose} />
+        <NavItem href="/settings" icon={Settings} label="Settings" active={pathname === "/settings"} onNavigate={onMobileClose} />
       </div>
     </aside>
   );
 }
 
-export function Sidebar() {
+export function Sidebar({
+  mobileOpen = false,
+  onMobileClose,
+}: {
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
+} = {}) {
   return (
-    <Suspense fallback={<aside className="bg-transparent w-[72px] shrink-0" />}>
-      <SidebarInner />
+    <Suspense
+      fallback={
+        <aside className="hidden md:block bg-transparent w-[72px] shrink-0" />
+      }
+    >
+      <SidebarInner mobileOpen={mobileOpen} onMobileClose={onMobileClose} />
     </Suspense>
   );
 }
@@ -236,6 +261,7 @@ function NavItem({
   active = false,
   badge,
   badgeLive = false,
+  onNavigate,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
@@ -243,10 +269,12 @@ function NavItem({
   active?: boolean;
   badge?: string;
   badgeLive?: boolean;
+  onNavigate?: () => void;
 }) {
   return (
     <Link
       href={href}
+      onClick={() => onNavigate?.()}
       className={`group relative flex flex-col items-center justify-center gap-1 py-2.5 px-1 transition-colors ${
         badgeLive && !active
           ? "text-emerald-700"
@@ -277,7 +305,13 @@ function NavItem({
   );
 }
 
-function AlertsMenu({ active = false }: { active?: boolean }) {
+function AlertsMenu({
+  active = false,
+  onNavigate,
+}: {
+  active?: boolean;
+  onNavigate?: () => void;
+}) {
   const router = useRouter();
   const [alerts, setAlerts] = useState<NotificationRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -343,7 +377,10 @@ function AlertsMenu({ active = false }: { active?: boolean }) {
         .update({ read_at: now })
         .eq("id", alert.id);
     }
-    if (alert.link) router.push(alert.link);
+    if (alert.link) {
+      onNavigate?.();
+      router.push(alert.link);
+    }
   }
 
   return (

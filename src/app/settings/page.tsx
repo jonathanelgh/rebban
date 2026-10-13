@@ -127,7 +127,6 @@ function SettingsPageInner() {
   const [gmailConnected, setGmailConnected] = useState(false);
   const [gmailCanSend, setGmailCanSend] = useState(false);
   const [gmailEmail, setGmailEmail] = useState<string | null>(null);
-  const [gmailRedirectUri, setGmailRedirectUri] = useState<string | null>(null);
   const [gmailBusy, setGmailBusy] = useState(false);
   const [gmailNotice, setGmailNotice] = useState<string | null>(null);
 
@@ -204,14 +203,12 @@ function SettingsPageInner() {
         email?: string | null;
         canSend?: boolean;
         needsReconnect?: boolean;
-        redirectUri?: string | null;
       };
       if (cancelled) return;
       setGmailConfigured(Boolean(json.configured));
       setGmailConnected(Boolean(json.connected));
       setGmailCanSend(Boolean(json.canSend));
       setGmailEmail(json.email || null);
-      setGmailRedirectUri(json.redirectUri || null);
       if (json.needsReconnect) {
         setGmailNotice(
           "Gmail is connected, but send permission is missing. Disconnect, add the gmail.send scope in Google Cloud, then reconnect."
@@ -762,13 +759,6 @@ function SettingsPageInner() {
                     {gmailNotice}
                   </p>
                 )}
-                {gmailConfigured && !gmailConnected && gmailRedirectUri && (
-                  <p className="mb-4 text-[12px] text-gray-500 bg-[#FAFBFC] border border-line rounded-xl px-3.5 py-2.5 break-all">
-                    Google Cloud → Credentials → your OAuth client → Authorized
-                    redirect URIs must include exactly:{" "}
-                    <span className="font-medium text-ink">{gmailRedirectUri}</span>
-                  </p>
-                )}
                 <div className="space-y-3">
                   <IntegrationRow
                     name="Gmail"
@@ -823,8 +813,11 @@ function SettingsPageInner() {
                 <div className="mt-6 flex items-start gap-2.5 rounded-xl bg-[#FAFBFC] border border-line px-3.5 py-3">
                   <Shield className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
                   <p className="text-[13px] text-gray-500 leading-relaxed">
-                    Gmail uses Google OAuth with send-only access. Rebban never stores your password.
-                    If Gmail isn’t connected, emails still send via Rebban.
+                    Gmail uses Google OAuth with send-only access. Rebban never
+                    stores your password, and we only send emails you choose to
+                    send (proposals and follow-ups you approve). We never send
+                    anything else from your account. If Gmail isn’t connected,
+                    emails still send via Rebban.
                   </p>
                 </div>
               </Section>

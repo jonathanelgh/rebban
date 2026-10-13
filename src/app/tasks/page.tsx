@@ -571,7 +571,7 @@ export default function TasksPage() {
     <main className="h-full min-h-0 w-full flex">
       {/* Board / list */}
       <div className="flex-1 min-w-0 min-h-0 flex flex-col">
-        <div className="px-6 pt-8 pb-4 pr-36 shrink-0 flex flex-wrap items-end justify-between gap-4">
+        <div className="px-6 pt-8 pb-4 shrink-0 flex flex-wrap items-end justify-between gap-4">
           <div className="min-w-0">
             <button
               type="button"

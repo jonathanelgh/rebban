@@ -24,17 +24,21 @@ UI: **Continue with Google** on `/login` and **Sign up with Google** on `/signup
      (keep your Gmail-send redirect `…/api/gmail/callback` on the same client if you use it)
 2. Supabase Dashboard → **Authentication → Providers → Google** → enable  
    - paste the same `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`
-3. Supabase → **Authentication → URL configuration**  
-   - **Site URL** must match the app you’re actually using (wrong port = broken Google login):  
-     - local: `http://localhost:3001` (Next often skips 3000 if it’s taken)  
-     - prod: `https://rebban.com`  
-   - **Redirect URLs** allow list (add all you use):  
-     `http://localhost:3001/auth/callback`  
-     `http://localhost:3001/**`  
+3. Supabase → **Authentication → URL configuration** (this is what controls the post-Google redirect):  
+   - **Site URL:** `https://rebban.com`  
+     (If this is still `http://localhost:…`, Google auth will send users to localhost.)  
+   - **Redirect URLs** allow list — add all of these:  
      `https://rebban.com/auth/callback`  
      `https://rebban.com/**`  
+     `http://localhost:3001/auth/callback`  
+     `http://localhost:3001/**`  
 
-If Google returns you to `http://localhost:3000/?code=…`, Site URL is still on port 3000 — change it to 3001 (or run the app on 3000).
+4. Vercel / `.env`: `NEXT_PUBLIC_APP_URL=https://rebban.com`  
+   The Google button uses this for `redirectTo`.
+
+5. Google Cloud OAuth client → Authorized JavaScript origins / redirect URIs:  
+   - Origin: `https://rebban.com`  
+   - Redirect (Supabase): `https://cvqcanrdvtzovbmfhiwz.supabase.co/auth/v1/callback`
 
 Signup with Google respects freelancer/agency + workspace name chosen on the signup screen (applied right after the first OAuth session).
 
@@ -90,6 +94,9 @@ Freelancers can connect Gmail in **Settings → Integrations**. Proposal invites
 Google Cloud setup:
 
 1. Create an OAuth client (Web application)
-2. Authorized redirect URI: `{APP_URL}/api/gmail/callback` (for local: same host/port as `NEXT_PUBLIC_APP_URL`, e.g. `http://localhost:3001/api/gmail/callback`)
+2. Authorized redirect URIs (add both):
+   - `https://rebban.com/api/gmail/callback`
+   - `http://localhost:3001/api/gmail/callback`
 3. Enable Gmail API
-4. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and matching `GOOGLE_GMAIL_REDIRECT_URI` / `NEXT_PUBLIC_APP_URL`
+4. Set `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` in Vercel / `.env.local`
+5. Do **not** set `GOOGLE_GMAIL_REDIRECT_URI` to localhost in Vercel — the app uses the live request origin (`rebban.com` in prod)

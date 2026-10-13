@@ -336,7 +336,7 @@ export default function ClientsPage() {
   }
 
   return (
-    <main className="w-full px-8 pt-10 pb-8 pr-36 max-w-7xl mx-auto relative">
+    <main className="w-full px-8 pt-10 pb-8 max-w-7xl mx-auto relative">
       <div className="flex justify-between items-start mb-8 gap-4">
         <div>
           <h1 className="text-3xl font-semibold text-gray-900 tracking-tight">

@@ -4,6 +4,7 @@ import {
   getGmailConnectionStatus,
   getGmailRedirectUri,
   isGmailOAuthConfigured,
+  requestOrigin,
 } from "@/lib/email/gmail";
 
 export async function GET(request: Request) {
@@ -16,7 +17,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const origin = new URL(request.url).origin;
+  const origin = requestOrigin(request);
   const connection = await getGmailConnectionStatus(user.id);
   return NextResponse.json({
     configured: isGmailOAuthConfigured(),

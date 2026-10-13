@@ -5,6 +5,7 @@ import {
   buildGmailAuthUrl,
   getGmailRedirectUri,
   isGmailOAuthConfigured,
+  requestOrigin,
 } from "@/lib/email/gmail";
 
 export async function GET(request: Request) {
@@ -27,7 +28,7 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  const origin = new URL(request.url).origin;
+  const origin = requestOrigin(request);
   const redirectUri = getGmailRedirectUri(origin);
   const state = nanoid(32);
   const url = buildGmailAuthUrl(state, redirectUri);

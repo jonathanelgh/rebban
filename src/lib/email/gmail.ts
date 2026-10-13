@@ -33,22 +33,32 @@ export function isGmailOAuthConfigured() {
   );
 }
 
+/** Public origin for the current request (honours Vercel forwarded host). */
+export function requestOrigin(request: Request) {
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const forwardedProto = request.headers.get("x-forwarded-proto");
+  if (forwardedHost) {
+    const host = forwardedHost.split(",")[0]?.trim();
+    const proto =
+      forwardedProto?.split(",")[0]?.trim() ||
+      (host?.includes("localhost") ? "http" : "https");
+    if (host) return `${proto}://${host}`;
+  }
+  return new URL(request.url).origin.replace(/\/$/, "");
+}
+
 export function getGmailRedirectUri(origin?: string | null) {
+  // Always prefer the browser/request origin so production never picks up a
+  // leftover localhost GOOGLE_GMAIL_REDIRECT_URI from env.
   const normalizedOrigin = origin?.replace(/\/$/, "") || "";
-  // Locally, always match the browser port (3000 vs 3001). Env overrides are
-  // easy to get out of sync with Google Cloud + whichever port Next picked.
-  if (
-    normalizedOrigin.startsWith("http://localhost:") ||
-    normalizedOrigin.startsWith("http://127.0.0.1:")
-  ) {
+  if (normalizedOrigin) {
     return `${normalizedOrigin}/api/gmail/callback`;
   }
 
   const fromEnv = process.env.GOOGLE_GMAIL_REDIRECT_URI?.trim();
   if (fromEnv) return fromEnv.replace(/\/$/, "");
 
-  const base = (normalizedOrigin || appUrl()).replace(/\/$/, "");
-  return `${base}/api/gmail/callback`;
+  return `${appUrl()}/api/gmail/callback`;
 }
 
 export function buildGmailAuthUrl(state: string, redirectUri: string) {
