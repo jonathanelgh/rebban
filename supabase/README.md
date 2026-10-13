@@ -25,10 +25,16 @@ UI: **Continue with Google** on `/login` and **Sign up with Google** on `/signup
 2. Supabase Dashboard → **Authentication → Providers → Google** → enable  
    - paste the same `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`
 3. Supabase → **Authentication → URL configuration**  
-   - Site URL: `https://rebban.com` (or local while testing)  
-   - Redirect URLs allow list:  
+   - **Site URL** must match the app you’re actually using (wrong port = broken Google login):  
+     - local: `http://localhost:3001` (Next often skips 3000 if it’s taken)  
+     - prod: `https://rebban.com`  
+   - **Redirect URLs** allow list (add all you use):  
      `http://localhost:3001/auth/callback`  
-     `https://rebban.com/auth/callback`
+     `http://localhost:3001/**`  
+     `https://rebban.com/auth/callback`  
+     `https://rebban.com/**`  
+
+If Google returns you to `http://localhost:3000/?code=…`, Site URL is still on port 3000 — change it to 3001 (or run the app on 3000).
 
 Signup with Google respects freelancer/agency + workspace name chosen on the signup screen (applied right after the first OAuth session).
 

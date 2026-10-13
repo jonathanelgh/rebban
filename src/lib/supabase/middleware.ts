@@ -31,6 +31,7 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const path = request.nextUrl.pathname;
+  const authCode = request.nextUrl.searchParams.get("code");
   const isAuthRoute =
     path === "/login" ||
     path === "/signup" ||
@@ -39,6 +40,14 @@ export async function updateSession(request: NextRequest) {
     path.startsWith("/auth/");
   const isPublicProposalRoute =
     path.startsWith("/p/") || path.startsWith("/api/p/");
+
+  // Supabase sometimes returns ?code= on Site URL (/) instead of /auth/callback.
+  // Never strip it — forward to the exchange route.
+  if (authCode && !path.startsWith("/auth/callback")) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/auth/callback";
+    return NextResponse.redirect(url);
+  }
 
   // Let the auth callback exchange the code without an existing session.
   if (path.startsWith("/auth/callback")) {
