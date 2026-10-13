@@ -1,145 +1,411 @@
-import React from "react";
+"use client";
+
+import React, { useEffect, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
   Plus,
-  Mail,
-  Zap,
   Eye,
   Send,
-  ArrowUpRight,
+  Timer,
+  Clock,
+  ArrowRight,
+  Receipt,
+  FileText,
 } from "lucide-react";
+import { TimerStartForm } from "@/components/TimerStartForm";
+import { useTimeTracking } from "@/components/TimeTrackingContext";
+import { useProfile } from "@/components/ProfileContext";
+import { createClient } from "@/lib/supabase/client";
+
+function greetingForHour(hour: number) {
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+function firstNameFrom(fullName: string | null | undefined) {
+  const trimmed = fullName?.trim();
+  if (!trimmed) return null;
+  return trimmed.split(/\s+/)[0] ?? null;
+}
+
+function formatMoney(amount: number, currency: string) {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 0,
+    }).format(amount);
+  } catch {
+    return `$${Math.round(amount).toLocaleString()}`;
+  }
+}
+
+function formatHours(minutes: number) {
+  const hours = minutes / 60;
+  if (hours === 0) return "0 hours";
+  if (hours < 10) {
+    const rounded = Math.round(hours * 10) / 10;
+    return `${rounded} ${rounded === 1 ? "hour" : "hours"}`;
+  }
+  return `${Math.round(hours)} hours`;
+}
+
+type DashboardStats = {
+  outstanding: number;
+  outstandingCount: number;
+  unbilled: number;
+  unbilledMinutes: number;
+  openProposals: number;
+  openProposalCount: number;
+  collected: number;
+};
+
+const EMPTY_STATS: DashboardStats = {
+  outstanding: 0,
+  outstandingCount: 0,
+  unbilled: 0,
+  unbilledMinutes: 0,
+  openProposals: 0,
+  openProposalCount: 0,
+  collected: 0,
+};
 
 export default function Dashboard() {
+  const { isTracking, selectedClient, workDescription } = useTimeTracking();
+  const {
+    fullName,
+    email,
+    organizationId,
+    organizationCurrency,
+    loading: profileLoading,
+  } = useProfile();
+  const [greeting, setGreeting] = useState("Good morning");
+  const [stats, setStats] = useState<DashboardStats>(EMPTY_STATS);
+  const [statsLoading, setStatsLoading] = useState(true);
+
+  const firstName =
+    firstNameFrom(fullName) || firstNameFrom(email?.split("@")[0] ?? null);
+  const currency = organizationCurrency || "USD";
+
+  useEffect(() => {
+    setGreeting(greetingForHour(new Date().getHours()));
+  }, []);
+
+  useEffect(() => {
+    if (profileLoading) return;
+
+    if (!organizationId) {
+      setStats(EMPTY_STATS);
+      setStatsLoading(false);
+      return;
+    }
+
+    const supabase = createClient();
+    let cancelled = false;
+
+    async function loadStats() {
+      setStatsLoading(true);
+
+      const monthStart = new Date();
+      monthStart.setDate(1);
+      monthStart.setHours(0, 0, 0, 0);
+
+      const [
+        invoicesRes,
+        proposalsRes,
+        timeEntriesRes,
+        billedLinesRes,
+      ] = await Promise.all([
+        supabase
+          .from("invoices")
+          .select("total, status, paid_at")
+          .eq("organization_id", organizationId!)
+          .is("deleted_at", null),
+        supabase
+          .from("proposals")
+          .select("amount, status")
+          .eq("organization_id", organizationId!)
+          .is("deleted_at", null)
+          .in("status", ["sent", "viewed"]),
+        supabase
+          .from("time_entries")
+          .select("id, duration_minutes, hourly_rate, billable, ended_at")
+          .eq("organization_id", organizationId!)
+          .is("deleted_at", null)
+          .eq("billable", true)
+          .not("ended_at", "is", null),
+        supabase
+          .from("invoice_line_items")
+          .select("time_entry_id")
+          .eq("organization_id", organizationId!)
+          .not("time_entry_id", "is", null),
+      ]);
+
+      if (cancelled) return;
+
+      const invoices = invoicesRes.data ?? [];
+      const outstandingInvoices = invoices.filter((inv) =>
+        ["sent", "viewed", "overdue"].includes(inv.status)
+      );
+      const outstanding = outstandingInvoices.reduce(
+        (sum, inv) => sum + Number(inv.total || 0),
+        0
+      );
+
+      const collected = invoices
+        .filter(
+          (inv) =>
+            inv.status === "paid" &&
+            inv.paid_at &&
+            new Date(inv.paid_at) >= monthStart
+        )
+        .reduce((sum, inv) => sum + Number(inv.total || 0), 0);
+
+      const proposals = proposalsRes.data ?? [];
+      const openProposals = proposals.reduce(
+        (sum, p) => sum + Number(p.amount || 0),
+        0
+      );
+
+      const billedEntryIds = new Set(
+        (billedLinesRes.data ?? [])
+          .map((row) => row.time_entry_id)
+          .filter((id): id is string => Boolean(id))
+      );
+
+      let unbilledMinutes = 0;
+      let unbilled = 0;
+      for (const entry of timeEntriesRes.data ?? []) {
+        if (billedEntryIds.has(entry.id)) continue;
+        const minutes = Number(entry.duration_minutes || 0);
+        unbilledMinutes += minutes;
+        const rate = Number(entry.hourly_rate || 0);
+        unbilled += (minutes / 60) * rate;
+      }
+
+      setStats({
+        outstanding,
+        outstandingCount: outstandingInvoices.length,
+        unbilled,
+        unbilledMinutes,
+        openProposals,
+        openProposalCount: proposals.length,
+        collected,
+      });
+      setStatsLoading(false);
+    }
+
+    void loadStats();
+    return () => {
+      cancelled = true;
+    };
+  }, [organizationId, profileLoading]);
+
+  const outstandingValue = statsLoading
+    ? "—"
+    : formatMoney(stats.outstanding, currency);
+  const unbilledValue = statsLoading
+    ? "—"
+    : formatMoney(stats.unbilled, currency);
+  const unbilledHint = statsLoading
+    ? undefined
+    : formatHours(stats.unbilledMinutes);
+  const proposalsValue = statsLoading
+    ? "—"
+    : formatMoney(stats.openProposals, currency);
+  const proposalsHint = statsLoading
+    ? undefined
+    : `${stats.openProposalCount} waiting`;
+  const collectedValue = statsLoading
+    ? "—"
+    : formatMoney(stats.collected, currency);
+
   return (
-    <main className="w-full p-8 pb-32 pt-10 max-w-5xl mx-auto">
-      {/* Soft greeting — original dashboard personality */}
-      <div className="flex justify-between items-start mb-10">
-        <div>
-          <div className="inline-flex items-center bg-[#D3E8FB] text-[#2B608F] px-5 py-2 rounded-full text-sm font-semibold mb-4">
-            Welcome back, Sam
-          </div>
-          <h1 className="text-3xl font-semibold text-gray-900 tracking-tight">
-            Here&apos;s your money today
-          </h1>
-          <p className="text-gray-500 mt-1.5 text-[15px]">
-            Outstanding invoices, reminders, and what to do next.
-          </p>
-        </div>
-        <button className="bg-[#3B82F6] hover:bg-blue-600 text-white px-5 py-2.5 rounded-full text-sm font-medium transition-colors flex items-center gap-2">
-          <Plus className="w-4 h-4" />
-          New Invoice
-        </button>
-      </div>
-
-      {/* Stats — softer, less identical white boxes */}
-      <div className="grid grid-cols-4 gap-3 mb-8">
-        <StatCard
-          label="Outstanding"
-          value="$12,450"
-          accent="bg-white"
-        />
-        <StatCard
-          label="Overdue"
-          value="$4,200"
-          valueColor="text-red-600"
-          hint="3 invoices"
-          hintColor="text-red-500"
-          accent="bg-[#FFF5F5]"
-        />
-        <StatCard
-          label="Collected"
-          value="$8,900"
-          hint="This month"
-          accent="bg-[#F3FAF6]"
-        />
-        <StatCard
-          label="Unpaid"
-          value="7"
-          hint="Awaiting payment"
-          accent="bg-[#F5F8FF]"
-        />
-      </div>
-
-      {/* Recommended action — warm wash like original yellow widget */}
-      <div className="surface-warm p-5 mb-8 flex items-center justify-between gap-6">
-        <div className="flex items-start gap-4">
-          <div className="w-10 h-10 rounded-2xl bg-white/80 flex items-center justify-center text-amber-600 shrink-0">
-            <Zap className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-xs font-semibold text-[#8B7500] uppercase tracking-wide mb-1">
-              Recommended next step
-            </div>
-            <h4 className="font-semibold text-gray-900">INV-1042 is 11 days overdue</h4>
-            <p className="text-sm text-gray-600 mt-0.5">
-              Acme Corp viewed it yesterday. Send a firmer reminder today.
+    <main className="h-full min-h-0 w-full flex justify-center gap-8 px-8">
+      <div className="w-full max-w-6xl min-w-0 min-h-0 overflow-y-auto no-scrollbar">
+        <div className="pt-10 pb-10">
+          <div className="mb-10 pr-28">
+            <h1 className="text-3xl font-semibold text-gray-900 tracking-tight">
+              {greeting}
+              {firstName ? `, ${firstName}` : ""} 👋
+            </h1>
+            <p className="text-gray-500 mt-1.5 text-[15px]">
+              Here&apos;s what needs your attention today.
             </p>
           </div>
+
+          <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-10">
+            <StatCard label="Outstanding" value={outstandingValue} />
+            <StatCard
+              label="Unbilled"
+              value={unbilledValue}
+              hint={unbilledHint}
+            />
+            <StatCard
+              label="Open proposals"
+              value={proposalsValue}
+              hint={proposalsHint}
+            />
+            <StatCard
+              label="Collected"
+              value={collectedValue}
+              hint="This month"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-900 tracking-tight mb-4">
+                Needs your attention
+              </h2>
+              <div className="space-y-2">
+                <AttentionItem
+                  icon={<AlertCircle className="w-4 h-4 text-gray-900" />}
+                  text="Acme invoice 11 days overdue"
+                  action="Send reminder"
+                />
+                <AttentionItem
+                  icon={<Clock className="w-4 h-4 text-gray-900" />}
+                  text="22h unbilled for Globex"
+                  action="Create invoice"
+                />
+                <AttentionItem
+                  icon={<Eye className="w-4 h-4 text-gray-900" />}
+                  text="Globex viewed your proposal"
+                  action="View proposal"
+                />
+              </div>
+            </div>
+
+            <div>
+              <h2 className="text-sm font-semibold text-gray-900 tracking-tight mb-4 flex items-center justify-between">
+                Active work
+                <button className="text-gray-400 hover:text-gray-900 transition-colors">
+                  <Plus className="w-4 h-4" />
+                </button>
+              </h2>
+              <div className="rounded-2xl border border-line divide-y divide-line bg-white">
+                <WorkItem client="Acme" project="Website redesign" progress="24/40h" />
+                <WorkItem client="Globex" project="Branding" progress="Milestone 2" />
+                <WorkItem client="Stark" project="Consulting" progress="7.5h this week" />
+              </div>
+            </div>
+          </div>
+
+          <div className="mb-10">
+            <h2 className="text-sm font-semibold text-gray-900 tracking-tight mb-4">
+              Your money flow
+            </h2>
+            <div className="rounded-2xl border border-line bg-white p-6">
+              <div className="flex items-center justify-between gap-2">
+                <FlowStep
+                  icon={FileText}
+                  label="Proposals"
+                  amount={proposalsValue}
+                  count={
+                    statsLoading
+                      ? "—"
+                      : `${stats.openProposalCount} active`
+                  }
+                  tone="violet"
+                />
+                <ArrowRight className="w-4 h-4 text-gray-300 shrink-0" strokeWidth={1.5} />
+                <FlowStep
+                  icon={Clock}
+                  label="Unbilled"
+                  amount={unbilledValue}
+                  count={unbilledHint ?? "—"}
+                  tone="amber"
+                />
+                <ArrowRight className="w-4 h-4 text-gray-300 shrink-0" strokeWidth={1.5} />
+                <FlowStep
+                  icon={Receipt}
+                  label="Outstanding"
+                  amount={outstandingValue}
+                  count={
+                    statsLoading
+                      ? "—"
+                      : `${stats.outstandingCount} invoice${stats.outstandingCount === 1 ? "" : "s"}`
+                  }
+                  tone="blue"
+                />
+                <ArrowRight className="w-4 h-4 text-gray-300 shrink-0" strokeWidth={1.5} />
+                <FlowStep
+                  icon={CheckCircle2}
+                  label="Paid"
+                  amount={collectedValue}
+                  count="This month"
+                  tone="emerald"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900 tracking-tight mb-4">
+              Recent activity
+            </h2>
+            <div className="rounded-2xl border border-line bg-white">
+              <ActivityItem
+                icon={<CheckCircle2 className="w-4 h-4" />}
+                title="Payment received"
+                body="Stark Industries paid $5,000.00 for INV-1041. Funds are on the way to your Stripe account."
+                time="2 hours ago"
+              />
+              <ActivityItem
+                icon={<Eye className="w-4 h-4" />}
+                title="Proposal viewed"
+                body="Globex Inc viewed the Brand Identity proposal."
+                time="Yesterday"
+              />
+              <ActivityItem
+                icon={<Send className="w-4 h-4" />}
+                title="Reminder sent"
+                body="Automated reminder sent to Wayne Enterprises for INV-1044."
+                time="Oct 10"
+                last
+              />
+            </div>
+          </div>
         </div>
-        <button className="bg-[#3B82F6] text-white px-4 py-2.5 rounded-full text-sm font-medium hover:bg-blue-600 transition-colors flex items-center gap-2 shrink-0">
-          <Mail className="w-4 h-4" />
-          Send reminder
-        </button>
       </div>
 
-      {/* Invoice list — softer panel */}
-      <div className="surface-panel overflow-hidden">
-        <div className="px-6 py-4 flex items-center justify-between">
-          <h2 className="font-semibold text-gray-900">Recent invoices</h2>
-          <button className="text-sm font-medium text-gray-400 hover:text-gray-700 transition-colors flex items-center gap-1">
-            View all <ArrowUpRight className="w-3.5 h-3.5" />
-          </button>
+      <aside className="hidden lg:flex w-[280px] shrink-0 min-h-0 h-full flex-col justify-end pb-8">
+        <div
+          className={`rounded-2xl border p-5 transition-colors ${
+            isTracking ? "border-gray-900 bg-gray-50" : "border-line bg-white"
+          }`}
+        >
+          <div className="flex items-center gap-3 mb-4">
+            <div
+              className={`size-10 rounded-2xl flex items-center justify-center shrink-0 ${
+                isTracking
+                  ? "bg-[#2563EB] text-white"
+                  : "bg-gray-100 text-gray-700"
+              }`}
+            >
+              <Timer className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="font-semibold text-gray-900 text-[15px]">Time tracking</h2>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {isTracking ? "Timer is running" : "Start a timer for billable work"}
+              </p>
+            </div>
+          </div>
+
+          <TimerStartForm variant="sidebar" />
+
+          {isTracking && selectedClient && (
+            <p className="text-xs text-gray-700 mt-3 leading-relaxed">
+              {selectedClient.name}
+              {workDescription ? ` · ${workDescription}` : ""}
+            </p>
+          )}
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left">
-            <thead className="text-gray-400 font-medium">
-              <tr className="border-y border-[#EEF0F3]">
-                <th className="px-6 py-3 font-medium">Client</th>
-                <th className="px-6 py-3 font-medium">Invoice</th>
-                <th className="px-6 py-3 font-medium">Amount</th>
-                <th className="px-6 py-3 font-medium">Status</th>
-                <th className="px-6 py-3 font-medium">Due</th>
-                <th className="px-6 py-3 font-medium text-right">Next</th>
-              </tr>
-            </thead>
-            <tbody className="text-gray-700">
-              <InvoiceRow
-                client="Acme Corp"
-                invoice="INV-1042"
-                amount="$2,400.00"
-                status="Overdue"
-                dueDate="Oct 24"
-                action="Send reminder"
-              />
-              <InvoiceRow
-                client="Globex Inc"
-                invoice="INV-1043"
-                amount="$1,800.00"
-                status="Viewed"
-                dueDate="Nov 02"
-                action="Wait"
-              />
-              <InvoiceRow
-                client="Stark Industries"
-                invoice="INV-1041"
-                amount="$5,000.00"
-                status="Paid"
-                dueDate="Oct 15"
-                action="—"
-              />
-              <InvoiceRow
-                client="Wayne Enterprises"
-                invoice="INV-1044"
-                amount="$3,250.00"
-                status="Sent"
-                dueDate="Nov 10"
-                action="Wait"
-              />
-            </tbody>
-          </table>
-        </div>
-      </div>
+      </aside>
     </main>
   );
 }
@@ -147,106 +413,126 @@ export default function Dashboard() {
 function StatCard({
   label,
   value,
-  valueColor = "text-gray-900",
   hint,
-  hintColor = "text-gray-400",
-  accent = "bg-white",
 }: {
   label: string;
   value: string;
-  valueColor?: string;
   hint?: string;
-  hintColor?: string;
-  accent?: string;
 }) {
   return (
-    <div className={`${accent} border border-[#EEF0F3] rounded-[1.25rem] p-5`}>
-      <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">
-        {label}
-      </span>
-      <h3 className={`text-2xl font-semibold tracking-tight mt-2 ${valueColor}`}>
-        {value}
-      </h3>
-      {hint && <p className={`text-xs mt-1.5 ${hintColor}`}>{hint}</p>}
+    <div className="bg-white border border-line rounded-2xl p-5">
+      <span className="text-xs font-medium text-gray-500 tracking-wide">{label}</span>
+      <h3 className="text-2xl font-semibold tracking-tight mt-2 text-gray-900">{value}</h3>
+      {hint && <p className="text-[13px] text-gray-400 mt-1.5">{hint}</p>}
     </div>
   );
 }
 
-function InvoiceRow({
-  client,
-  invoice,
-  amount,
-  status,
-  dueDate,
+function AttentionItem({
+  icon,
+  text,
   action,
 }: {
-  client: string;
-  invoice: string;
-  amount: string;
-  status: string;
-  dueDate: string;
+  icon: React.ReactNode;
+  text: string;
   action: string;
 }) {
-  const getStatusBadge = (s: string) => {
-    switch (s.toLowerCase()) {
-      case "overdue":
-        return (
-          <Badge label={s} type="red" icon={<AlertCircle className="w-3 h-3" />} />
-        );
-      case "paid":
-        return (
-          <Badge label={s} type="green" icon={<CheckCircle2 className="w-3 h-3" />} />
-        );
-      case "viewed":
-        return <Badge label={s} type="blue" icon={<Eye className="w-3 h-3" />} />;
-      case "sent":
-        return <Badge label={s} type="gray" icon={<Send className="w-3 h-3" />} />;
-      default:
-        return <Badge label={s} type="gray" />;
-    }
-  };
-
   return (
-    <tr className="border-b border-[#EEF0F3] last:border-0 hover:bg-[#FAFBFC] transition-colors cursor-pointer">
-      <td className="px-6 py-4 font-medium text-gray-900">{client}</td>
-      <td className="px-6 py-4 text-gray-400">{invoice}</td>
-      <td className="px-6 py-4 font-medium">{amount}</td>
-      <td className="px-6 py-4">{getStatusBadge(status)}</td>
-      <td className="px-6 py-4 text-gray-400">{dueDate}</td>
-      <td className="px-6 py-4 text-right">
-        {action === "Send reminder" ? (
-          <button className="text-sm font-medium text-[#3B82F6] hover:text-blue-700 transition-colors">
-            Send reminder
-          </button>
-        ) : (
-          <span className="text-sm text-gray-300">{action}</span>
-        )}
-      </td>
-    </tr>
+    <div className="p-3.5 rounded-2xl border border-line bg-white flex items-center justify-between gap-4 hover:border-gray-300 transition-colors">
+      <div className="flex items-center gap-3 min-w-0">
+        <div className="shrink-0 w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+          {icon}
+        </div>
+        <span className="font-medium text-[14px] text-gray-900 truncate">{text}</span>
+      </div>
+      <button className="shrink-0 text-sm font-medium text-[#2563EB] hover:text-[#1d4ed8] flex items-center gap-1 transition-colors">
+        {action} <ArrowRight className="w-3.5 h-3.5" />
+      </button>
+    </div>
   );
 }
 
-function Badge({
-  label,
-  type,
-  icon,
+function WorkItem({
+  client,
+  project,
+  progress,
 }: {
-  label: string;
-  type: string;
-  icon?: React.ReactNode;
+  client: string;
+  project: string;
+  progress: string;
 }) {
-  const styles: Record<string, string> = {
-    red: "bg-red-50 text-red-600",
-    blue: "bg-[#EAF3FF] text-[#3B82F6]",
-    green: "bg-emerald-50 text-emerald-700",
-    gray: "bg-gray-50 text-gray-500",
-  };
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 text-xs font-medium rounded-full px-2.5 py-0.5 ${styles[type]}`}
+    <div className="p-4 flex justify-between items-center hover:bg-gray-50/80 transition-colors cursor-pointer group">
+      <div>
+        <div className="font-medium text-[15px] text-gray-900 group-hover:text-gray-700 transition-colors">
+          {client}
+        </div>
+        <div className="text-[13px] text-gray-500">{project}</div>
+      </div>
+      <div className="text-[14px] font-medium text-gray-600">{progress}</div>
+    </div>
+  );
+}
+
+const FLOW_TONES = {
+  violet: "bg-[#7C3AED] text-white shadow-[0_6px_16px_rgba(124,58,237,0.3)]",
+  amber: "bg-[#D97706] text-white shadow-[0_6px_16px_rgba(217,119,6,0.3)]",
+  blue: "bg-[#2563EB] text-white shadow-[0_6px_16px_rgba(37,99,235,0.3)]",
+  emerald: "bg-[#059669] text-white shadow-[0_6px_16px_rgba(5,150,105,0.3)]",
+} as const;
+
+function FlowStep({
+  icon: Icon,
+  label,
+  amount,
+  count,
+  tone,
+}: {
+  icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
+  label: string;
+  amount: string;
+  count: string;
+  tone: keyof typeof FLOW_TONES;
+}) {
+  return (
+    <div className="flex flex-col items-center flex-1 text-center group cursor-pointer">
+      <div
+        className={`w-11 h-11 rounded-full flex items-center justify-center mb-3 transition-transform group-hover:scale-105 ${FLOW_TONES[tone]}`}
+      >
+        <Icon className="w-5 h-5" strokeWidth={1.75} />
+      </div>
+      <div className="text-[11px] font-medium text-gray-400 tracking-wide mb-1">{label}</div>
+      <div className="text-[17px] font-semibold tracking-tight text-gray-900">{amount}</div>
+      <div className="text-[12px] text-gray-400 mt-0.5">{count}</div>
+    </div>
+  );
+}
+
+function ActivityItem({
+  icon,
+  title,
+  body,
+  time,
+  last = false,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  body: string;
+  time: string;
+  last?: boolean;
+}) {
+  return (
+    <div
+      className={`p-4 flex items-start gap-4 ${last ? "" : "border-b border-line"}`}
     >
-      {icon}
-      {label}
-    </span>
+      <div className="w-8 h-8 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center shrink-0 mt-0.5">
+        {icon}
+      </div>
+      <div>
+        <p className="text-[15px] font-medium text-gray-900">{title}</p>
+        <p className="text-sm text-gray-500 mt-0.5">{body}</p>
+        <p className="text-xs text-gray-400 mt-1.5">{time}</p>
+      </div>
+    </div>
   );
 }

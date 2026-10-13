@@ -17,7 +17,7 @@ import {
 } from "@/components/TimeTrackingContext";
 
 type TimerStartFormProps = {
-  variant?: "compact" | "page";
+  variant?: "compact" | "page" | "sidebar";
   onBackToAi?: () => void;
   showBackButton?: boolean;
 };
@@ -40,13 +40,74 @@ export function TimerStartForm({
   } = useTimeTracking();
 
   const isPage = variant === "page";
+  const isSidebar = variant === "sidebar";
+
+  if (isSidebar) {
+    return (
+      <div className="flex flex-col gap-3 w-full">
+        <TimerClientSelect
+          selected={selectedClient}
+          onChange={setSelectedClient}
+          disabled={isTracking}
+          variant="sidebar"
+        />
+
+        <input
+          type="text"
+          value={workDescription}
+          onChange={(e) => setWorkDescription(e.target.value)}
+          placeholder="What are you working on?"
+          disabled={isTracking}
+          className="w-full rounded-xl border border-line bg-[#FAFBFC] px-3 py-2.5 text-sm text-gray-900 outline-none placeholder:text-gray-400 focus:border-gray-300 focus:bg-white disabled:text-gray-700"
+        />
+
+        {isTracking && (
+          <div className="flex items-center justify-between px-0.5">
+            <div className="flex items-center gap-2 text-xs text-gray-600">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-gray-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-gray-900" />
+              </span>
+              Tracking
+            </div>
+            <span className="font-mono font-semibold text-gray-900 tabular-nums text-lg">
+              {formatElapsed(elapsedSeconds)}
+            </span>
+          </div>
+        )}
+
+        <button
+          onClick={() => (isTracking ? stopTimer() : startTimer())}
+          disabled={!isTracking && !canStart}
+          className={`w-full h-10 rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+            isTracking
+              ? "bg-white text-gray-900 border border-gray-900 hover:bg-gray-50"
+              : "btn-primary border border-transparent"
+          }`}
+          title={isTracking ? "Stop timer" : "Start timer"}
+        >
+          {isTracking ? (
+            <>
+              <Square className="w-3.5 h-3.5 fill-current" />
+              <span>Stop</span>
+            </>
+          ) : (
+            <>
+              <Play className="w-3.5 h-3.5 fill-current" />
+              <span>Start timer</span>
+            </>
+          )}
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div
       className={
         isPage
-          ? `surface-panel p-3 flex items-center gap-3 transition-colors ${
-              isTracking ? "border-emerald-200 bg-[#F3FAF6]" : ""
+          ? `rounded-2xl border border-line bg-white p-3 flex items-center gap-3 transition-colors ${
+              isTracking ? "border-gray-900 bg-gray-50" : ""
             }`
           : "flex items-center gap-2 pl-1 pr-1 w-full"
       }
@@ -54,7 +115,7 @@ export function TimerStartForm({
       {showBackButton && (
         <button
           onClick={onBackToAi}
-          className="size-8 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center shrink-0 hover:bg-emerald-100 transition-colors"
+          className="size-8 rounded-full bg-gray-100 text-gray-700 border border-line flex items-center justify-center shrink-0 hover:bg-gray-200 transition-colors"
           title="Back to AI"
         >
           <Timer className="w-4 h-4" />
@@ -65,8 +126,8 @@ export function TimerStartForm({
         <div
           className={`size-10 rounded-2xl flex items-center justify-center shrink-0 ${
             isTracking
-              ? "bg-emerald-100 text-emerald-600"
-              : "bg-[#EAF3FF] text-[#3B82F6]"
+              ? "bg-[#2563EB] text-white"
+              : "bg-gray-100 text-gray-700"
           }`}
         >
           <Timer className="w-5 h-5" />
@@ -95,12 +156,12 @@ export function TimerStartForm({
         <div className="flex items-center gap-2 shrink-0">
           {isPage && (
             <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-gray-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-gray-900" />
             </span>
           )}
           <span
-            className={`font-mono font-semibold text-emerald-600 tabular-nums ${
+            className={`font-mono font-semibold text-gray-900 tabular-nums ${
               isPage ? "text-lg" : "text-sm px-1"
             }`}
           >
@@ -114,21 +175,21 @@ export function TimerStartForm({
         disabled={!isTracking && !canStart}
         className={`${
           isPage ? "h-10 px-5 rounded-xl text-sm font-medium gap-2" : "size-8 rounded-full mr-0.5"
-        } border border-transparent flex items-center justify-center shrink-0 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+        } flex items-center justify-center shrink-0 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
           isTracking
-            ? "bg-red-500 text-white hover:bg-red-600"
-            : "bg-emerald-500 text-white hover:bg-emerald-600"
+            ? "bg-white text-gray-900 border border-gray-900 hover:bg-gray-50"
+            : "btn-primary border border-transparent"
         }`}
         title={isTracking ? "Stop timer" : "Start timer"}
       >
         {isTracking ? (
           <>
-            <Square className={`${isPage ? "w-3.5 h-3.5" : "w-3.5 h-3.5"} fill-current`} />
+            <Square className="w-3.5 h-3.5 fill-current" />
             {isPage && <span>Stop</span>}
           </>
         ) : (
           <>
-            <Play className={`${isPage ? "w-3.5 h-3.5" : "w-3.5 h-3.5"} fill-current ${isPage ? "" : "ml-0.5"}`} />
+            <Play className={`w-3.5 h-3.5 fill-current ${isPage ? "" : "ml-0.5"}`} />
             {isPage && <span>Start</span>}
           </>
         )}
@@ -146,12 +207,13 @@ function TimerClientSelect({
   selected: TimerClient | null;
   onChange: (client: TimerClient) => void;
   disabled?: boolean;
-  variant?: "compact" | "page";
+  variant?: "compact" | "page" | "sidebar";
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
   const isPage = variant === "page";
+  const isSidebar = variant === "sidebar";
 
   const filtered = TIMER_CLIENTS.filter(
     (c) =>
@@ -173,14 +235,16 @@ function TimerClientSelect({
   }, []);
 
   return (
-    <div className="relative shrink-0" ref={containerRef}>
+    <div className={`relative ${isSidebar ? "w-full" : "shrink-0"}`} ref={containerRef}>
       <button
         type="button"
         disabled={disabled}
         onClick={() => !disabled && setIsOpen(!isOpen)}
         className={`flex items-center gap-1.5 transition-colors text-left disabled:opacity-70 disabled:cursor-not-allowed ${
-          isPage
-            ? "min-w-[160px] px-3 py-2.5 rounded-full border border-[#EEF0F3] bg-[#FAFBFC] hover:bg-white"
+          isSidebar
+            ? "w-full px-3 py-2.5 rounded-xl border border-line bg-[#FAFBFC] hover:bg-white"
+            : isPage
+            ? "min-w-[160px] px-3 py-2.5 rounded-full border border-line bg-[#FAFBFC] hover:bg-white"
             : "max-w-[140px] px-2.5 py-1.5 rounded-full border border-gray-200 bg-gray-50 hover:bg-gray-100"
         }`}
       >
@@ -197,9 +261,9 @@ function TimerClientSelect({
 
       {isOpen && (
         <div
-          className={`absolute left-0 w-[280px] bg-white rounded-2xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.15)] border border-gray-100 overflow-hidden z-50 ${
-            isPage ? "top-full mt-2" : "bottom-full mb-2"
-          }`}
+          className={`absolute left-0 bg-white rounded-2xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.15)] border border-line overflow-hidden z-50 ${
+            isSidebar ? "w-full" : "w-[280px]"
+          } ${isPage || isSidebar ? "top-full mt-2" : "bottom-full mb-2"}`}
         >
           <div className="p-3 border-b border-gray-50 flex items-center gap-2">
             <input
@@ -225,7 +289,7 @@ function TimerClientSelect({
                   className="w-full flex items-center justify-between p-2 hover:bg-gray-50 rounded-xl transition-colors text-left"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-7 h-7 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-xs shrink-0">
+                    <div className="w-7 h-7 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center font-bold text-xs shrink-0">
                       {client.name.charAt(0)}
                     </div>
                     <div>
@@ -236,7 +300,7 @@ function TimerClientSelect({
                     </div>
                   </div>
                   {selected?.name === client.name && (
-                    <Check className="w-4 h-4 text-emerald-600" />
+                    <Check className="w-4 h-4 text-gray-900" />
                   )}
                 </button>
               ))

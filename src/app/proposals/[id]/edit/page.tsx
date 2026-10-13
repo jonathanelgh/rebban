@@ -1,17 +1,37 @@
 "use client";
 
-import React, { useState, Suspense, useRef, useEffect } from "react";
+import React, { useState, Suspense, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
-  ChevronLeft, Folder, Eye, Zap, MoreHorizontal,
+  ChevronLeft, ChevronRight, Folder, Eye, Zap,
   ChevronUp, ChevronDown, Trash, Check,
   Image as ImageIcon, Plus, GripVertical, XCircle,
   LayoutTemplate, Palette, Type, AlignLeft,
   Columns, CreditCard, BoxSelect, AppWindow, GalleryHorizontalEnd,
   Layout, Users, Calendar, ScrollText, ListChecks,
-  Target, Package, Route, Ban, UserCheck, RefreshCw, ArrowRight, PenLine
+  Target, Package, Route, Ban, UserCheck, RefreshCw, ArrowRight, PenLine, BookmarkPlus, X,
+  UploadCloud, Loader2, Send
 } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+import { useProfile } from "@/components/ProfileContext";
+import { MenuSelect } from "@/components/MenuSelect";
+import { SendProposalModal } from "@/components/SendProposalModal";
+import { ProposalActivityLog } from "@/components/ProposalActivityLog";
+import {
+  ProposalSendMenu,
+  isProposalAlreadySent,
+  resumeStatusFromTimestamps,
+} from "@/components/ProposalSendMenu";
+import { DEFAULT_PROPOSAL_SEND_MESSAGE } from "@/lib/proposals/followups";
+import type { Enums } from "@/types/database";
+import {
+  asProposalContent,
+  blockTypesFromContent,
+  toProposalContentJson,
+  type ProposalContentSnapshot,
+  type ProposalHeaderTheme,
+} from "@/lib/proposals/content";
 
 type SectionType =
   | 'global'
@@ -36,7 +56,7 @@ type SectionType =
   | 'media-text'
   | 'about';
 type BlockType = Exclude<SectionType, 'global' | 'header'>;
-type ThemeType = 'cover' | 'classic' | 'pastel';
+type ThemeType = 'cover' | 'classic' | 'pastel' | 'alpine' | 'splash' | 'auburn';
 type ElementKind = 'text' | 'heading' | 'image' | 'button';
 
 type CanvasBlock = {
@@ -134,7 +154,7 @@ const DEFAULT_ELEMENT_STYLES: Record<string, ElementStyle> = {
     lineHeight: 1.4,
   },
   'header-date': {
-    content: 'October 9, 2026',
+    content: '',
     fontFamily: 'Inter',
     fontWeight: 'Normal',
     color: '#374151',
@@ -142,7 +162,7 @@ const DEFAULT_ELEMENT_STYLES: Record<string, ElementStyle> = {
     lineHeight: 1.4,
   },
   'header-validity': {
-    content: 'November 8, 2026',
+    content: '',
     fontFamily: 'Inter',
     fontWeight: 'Normal',
     color: '#374151',
@@ -524,6 +544,7 @@ type LineItem = {
 };
 
 type ScopeEntry = { id: string; text: string };
+type ApproachStep = { id: string; title: string; description: string };
 type AboutStat = { id: string; value: string; label: string };
 type TimelinePhase = { id: string; week: string; title: string; detail: string };
 type PaymentMilestone = { id: string; label: string; pct: string; when: string };
@@ -541,6 +562,41 @@ const ELEMENT_PALETTE: { kind: ElementPaletteKind; label: string }[] = [
 type CurrencyCode = 'USD' | 'EUR' | 'GBP';
 
 const createEntryId = () => `entry-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+function splitApproachText(text: string) {
+  const parts = text.split(/\s+[—–-]\s+/);
+  if (parts.length >= 2) {
+    return { title: parts[0], description: parts.slice(1).join(" — ") };
+  }
+  return { title: text, description: "" };
+}
+
+function normalizeApproachSteps(raw: unknown[]): ApproachStep[] {
+  return raw.map((item) => {
+    if (!item || typeof item !== "object") {
+      return { id: createEntryId(), title: "New step", description: "" };
+    }
+    const rec = item as Record<string, unknown>;
+    const id = typeof rec.id === "string" ? rec.id : createEntryId();
+    if (typeof rec.title === "string") {
+      return {
+        id,
+        title: rec.title,
+        description:
+          typeof rec.description === "string"
+            ? rec.description
+            : typeof rec.detail === "string"
+              ? rec.detail
+              : "",
+      };
+    }
+    if (typeof rec.text === "string") {
+      const parsed = splitApproachText(rec.text);
+      return { id, title: parsed.title, description: parsed.description };
+    }
+    return { id, title: "New step", description: "" };
+  });
+}
 
 const DEFAULT_SCOPE_INCLUDED: ScopeEntry[] = [
   { id: 'scope-in-1', text: 'Discovery workshop & research synthesis' },
@@ -591,11 +647,11 @@ const DEFAULT_DELIVERABLES: ScopeEntry[] = [
   { id: 'del-4', text: 'Launch checklist and 14-day post-launch support' },
 ];
 
-const DEFAULT_APPROACH: ScopeEntry[] = [
-  { id: 'ap-1', text: 'Discover — kickoff, stakeholder input, and success metrics' },
-  { id: 'ap-2', text: 'Design — wireframes, visual direction, and review cycles' },
-  { id: 'ap-3', text: 'Build — front-end, CMS, content integration, and QA' },
-  { id: 'ap-4', text: 'Launch — final polish, training, and handoff' },
+const DEFAULT_APPROACH: ApproachStep[] = [
+  { id: 'ap-1', title: 'Discover', description: 'Kickoff, stakeholder input, and success metrics' },
+  { id: 'ap-2', title: 'Design', description: 'Wireframes, visual direction, and review cycles' },
+  { id: 'ap-3', title: 'Build', description: 'Front-end, CMS, content integration, and QA' },
+  { id: 'ap-4', title: 'Launch', description: 'Final polish, training, and handoff' },
 ];
 
 const DEFAULT_RESPONSIBILITIES: ScopeEntry[] = [
@@ -656,18 +712,135 @@ const UNIT_LABEL: Record<LineItem['unit'], string> = {
   day: '/ day',
 };
 
+type PricingType = 'fixed' | 'hourly' | 'daily' | 'retainer' | 'mixed';
+
+const PRICING_TYPE_OPTIONS: { value: PricingType; label: string }[] = [
+  { value: 'fixed', label: 'Fixed' },
+  { value: 'hourly', label: 'Hourly' },
+  { value: 'daily', label: 'Daily' },
+  { value: 'retainer', label: 'Retainer' },
+  { value: 'mixed', label: 'Mixed' },
+];
+
+function inferPricingType(items: LineItem[]): PricingType {
+  if (!items.length) return 'fixed';
+  const units = new Set(items.map((item) => item.unit));
+  if (units.size > 1) return 'mixed';
+  if (units.has('hr')) return 'hourly';
+  if (units.has('day')) return 'daily';
+  return 'fixed';
+}
+
+function defaultExpiresAtIso(from = new Date()) {
+  const d = new Date(from);
+  d.setHours(23, 59, 59, 999);
+  d.setDate(d.getDate() + 14);
+  return d.toISOString();
+}
+
+function daysUntilExpiry(iso: string) {
+  const end = new Date(iso);
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+  return Math.round((endDay.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function formatExpiryLabel(iso: string) {
+  const days = daysUntilExpiry(iso);
+  if (days === 14) return "14 days";
+  if (days <= 0) return "Expired";
+  if (days === 1) return "1 day";
+  if (days < 90) return `${days} days`;
+  return new Date(iso).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatHeaderDate(date: Date | string) {
+  const d = typeof date === "string" ? new Date(date) : date;
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString(undefined, {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatPreparedFor(name: string | null | undefined, company: string | null | undefined) {
+  const person = name?.trim() || "";
+  const org = company?.trim() || "";
+  if (person && org && person.toLowerCase() !== org.toLowerCase()) {
+    return `${person} · ${org}`;
+  }
+  return person || org || "";
+}
+
+function toDateInputValue(iso: string) {
+  const d = new Date(iso);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function fromDateInputValue(value: string) {
+  const [y, m, d] = value.split("-").map(Number);
+  if (!y || !m || !d) return defaultExpiresAtIso();
+  return new Date(y, m - 1, d, 23, 59, 59, 999).toISOString();
+}
+
+function parseLocalDateValue(value: string) {
+  const [y, m, d] = value.split("-").map(Number);
+  if (!y || !m || !d) return new Date();
+  return new Date(y, m - 1, d);
+}
+
+function startOfMonth(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function sameLocalDay(a: Date, b: Date) {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+function buildMonthCells(month: Date) {
+  const first = startOfMonth(month);
+  const startOffset = first.getDay(); // Sunday = 0
+  const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+  const cells: Array<Date | null> = [];
+  for (let i = 0; i < startOffset; i++) cells.push(null);
+  for (let day = 1; day <= daysInMonth; day++) {
+    cells.push(new Date(month.getFullYear(), month.getMonth(), day));
+  }
+  while (cells.length % 7 !== 0) cells.push(null);
+  return cells;
+}
+
 export default function ProposalEditorPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-[#F7F8FA] flex flex-col font-sans"></div>}>
+    <Suspense fallback={<div className="h-full min-h-0 bg-[#F7F8FA] flex flex-col font-sans"></div>}>
       <ProposalEditorContent />
     </Suspense>
   );
 }
 
 function ProposalEditorContent() {
+  const params = useParams();
+  const router = useRouter();
+  const proposalId = typeof params.id === "string" ? params.id : "";
   const searchParams = useSearchParams();
   const templateId = searchParams.get('template') || 'marketing';
+  const { organizationId, fullName, logoUrl } = useProfile();
+  const freelancerName = fullName?.trim() || "";
 
+  const [proposalTitle, setProposalTitle] = useState('Untitled proposal');
   const [activeSection, setActiveSection] = useState<SectionType>('global');
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
   const [activeElement, setActiveElement] = useState<{ id: string, type: ElementKind } | null>(null);
@@ -678,6 +851,35 @@ function ProposalEditorContent() {
   const [draggingType, setDraggingType] = useState<BlockType | null>(null);
   const [draggingElementKind, setDraggingElementKind] = useState<ElementPaletteKind | null>(null);
   const [elementDropTarget, setElementDropTarget] = useState<string | null>(null);
+  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+  const [templateCategory, setTemplateCategory] = useState('consulting');
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [templateMessage, setTemplateMessage] = useState<string | null>(null);
+  const [contentReady, setContentReady] = useState(false);
+  const [sendOpen, setSendOpen] = useState(false);
+  const [sendAgainFeedback, setSendAgainFeedback] = useState<{
+    to: string;
+  } | null>(null);
+  const [activityRefreshKey, setActivityRefreshKey] = useState(0);
+  const [sendMenuBusy, setSendMenuBusy] = useState(false);
+  const [proposalStatus, setProposalStatus] = useState<Enums<"proposal_status"> | null>(null);
+  const [resumeStatus, setResumeStatus] = useState<Enums<"proposal_status"> | null>(null);
+  const [clientShareUrl, setClientShareUrl] = useState<string | null>(null);
+  const [clientEmail, setClientEmail] = useState<string | null>(null);
+  const [clientName, setClientName] = useState<string | null>(null);
+  const [clientCompany, setClientCompany] = useState<string | null>(null);
+  const [clientPersonName, setClientPersonName] = useState<string | null>(null);
+  const [lastRecipientEmail, setLastRecipientEmail] = useState<string | null>(null);
+  const [lastRecipientName, setLastRecipientName] = useState<string | null>(null);
+  const [expiresAt, setExpiresAt] = useState<string>(() => defaultExpiresAtIso());
+  const [expiryModalOpen, setExpiryModalOpen] = useState(false);
+  const [expiryDraft, setExpiryDraft] = useState(() =>
+    toDateInputValue(defaultExpiresAtIso())
+  );
+  const [expiryCalendarMonth, setExpiryCalendarMonth] = useState(() =>
+    startOfMonth(new Date(defaultExpiresAtIso()))
+  );
 
   const updateElementStyle = (id: string, patch: Partial<ElementStyle>) => {
     setElementStyles((prev) => ({
@@ -946,21 +1148,17 @@ function ProposalEditorContent() {
     insertBlockAt({ type, label: type, variant }, afterId);
   };
   
-  // Set initial header theme based on the selected template
-  const [headerTheme, setHeaderTheme] = useState<ThemeType>(() => {
-    if (templateId === 'creative' || templateId === 'tech') return 'cover';
-    if (templateId === 'minimalist' || templateId === 'blank') return 'classic';
-    return 'pastel';
-  });
-
   type HeaderLayout = {
     backgroundImage: string;
+    backgroundImagePath?: string;
     overlayOpacity: number;
     shellBackgroundColor: string;
     contentBackgroundColor: string;
     contentPadding: number;
     contentBorderRadius: number;
   };
+
+  const MAX_HEADER_IMAGE_BYTES = 5 * 1024 * 1024;
 
   const HEADER_THEME_PRESETS: Record<ThemeType, HeaderLayout> = {
     cover: {
@@ -987,13 +1185,43 @@ function ProposalEditorContent() {
       contentPadding: 40,
       contentBorderRadius: 16,
     },
+    alpine: {
+      backgroundImage: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&q=80',
+      overlayOpacity: 28,
+      shellBackgroundColor: '#E7EEF3',
+      contentBackgroundColor: '#FFFFFF',
+      contentPadding: 36,
+      contentBorderRadius: 18,
+    },
+    splash: {
+      backgroundImage: 'https://images.unsplash.com/photo-1557683316-973673baf926?auto=format&fit=crop&q=80',
+      overlayOpacity: 42,
+      shellBackgroundColor: '#0F172A',
+      contentBackgroundColor: 'transparent',
+      contentPadding: 20,
+      contentBorderRadius: 0,
+    },
+    auburn: {
+      backgroundImage: '',
+      overlayOpacity: 0,
+      shellBackgroundColor: '#3F2417',
+      contentBackgroundColor: '#FFF8F1',
+      contentPadding: 40,
+      contentBorderRadius: 14,
+    },
   };
 
-  const [headerLayout, setHeaderLayout] = useState<HeaderLayout>(() => HEADER_THEME_PRESETS[
-    templateId === 'creative' || templateId === 'tech' ? 'cover'
-      : templateId === 'minimalist' || templateId === 'blank' ? 'classic'
-        : 'pastel'
-  ]);
+  const themeFromTemplateParam = (): ThemeType => {
+    if (templateId === 'creative' || templateId === 'tech') return 'cover';
+    if (templateId === 'minimalist' || templateId === 'blank') return 'classic';
+    return 'pastel';
+  };
+
+  // Set initial header theme based on the selected template
+  const [headerTheme, setHeaderTheme] = useState<ThemeType>(themeFromTemplateParam);
+  const [headerLayout, setHeaderLayout] = useState<HeaderLayout>(
+    () => HEADER_THEME_PRESETS[themeFromTemplateParam()]
+  );
 
   const updateHeaderLayout = (patch: Partial<HeaderLayout>) => {
     setHeaderLayout((prev) => ({ ...prev, ...patch }));
@@ -1003,6 +1231,73 @@ function ProposalEditorContent() {
     setHeaderTheme(theme);
     setHeaderLayout(HEADER_THEME_PRESETS[theme]);
   };
+
+  const headerImageInputRef = useRef<HTMLInputElement>(null);
+  const [headerImageUploading, setHeaderImageUploading] = useState(false);
+  const [headerImageError, setHeaderImageError] = useState<string | null>(null);
+
+  async function resolveHeaderImageUrl(pathOrUrl: string | null | undefined) {
+    if (!pathOrUrl) return null;
+    if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")) {
+      return pathOrUrl;
+    }
+    const supabase = createClient();
+    const { data, error } = await supabase.storage
+      .from("org-assets")
+      .createSignedUrl(pathOrUrl, 60 * 60 * 24 * 365);
+    if (error || !data?.signedUrl) return null;
+    return data.signedUrl;
+  }
+
+  async function handleHeaderImageUpload(file: File | null) {
+    if (!file) return;
+    if (!organizationId || !proposalId) {
+      setHeaderImageError("Save the proposal before uploading an image.");
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      setHeaderImageError("Please choose a PNG, JPG, WebP, or GIF image.");
+      return;
+    }
+    if (file.size > MAX_HEADER_IMAGE_BYTES) {
+      setHeaderImageError("Image must be 5MB or smaller.");
+      return;
+    }
+
+    setHeaderImageUploading(true);
+    setHeaderImageError(null);
+
+    try {
+      const supabase = createClient();
+      const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
+      const safeExt =
+        ext === "jpeg" ? "jpg" : ["png", "jpg", "webp", "gif"].includes(ext) ? ext : "jpg";
+      const path = `${organizationId}/proposals/${proposalId}/header-${Date.now()}.${safeExt}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("org-assets")
+        .upload(path, file, { upsert: true, contentType: file.type });
+
+      if (uploadError) throw new Error(uploadError.message);
+
+      const signedUrl = await resolveHeaderImageUrl(path);
+      if (!signedUrl) throw new Error("Could not create image URL.");
+
+      updateHeaderLayout({
+        backgroundImage: signedUrl,
+        backgroundImagePath: path,
+        overlayOpacity:
+          headerLayout.overlayOpacity > 0 ? headerLayout.overlayOpacity : 45,
+      });
+    } catch (err) {
+      setHeaderImageError(
+        err instanceof Error ? err.message : "Failed to upload image."
+      );
+    } finally {
+      setHeaderImageUploading(false);
+      if (headerImageInputRef.current) headerImageInputRef.current.value = "";
+    }
+  }
 
   const [overviewOpen, setOverviewOpen] = useState(true);
   const [styleOpen, setStyleOpen] = useState(true);
@@ -1027,6 +1322,9 @@ function ProposalEditorContent() {
     },
   ]);
   const [currency, setCurrency] = useState<CurrencyCode>('USD');
+  const [pricingType, setPricingType] = useState<PricingType>('hourly');
+  const [proposalAmount, setProposalAmount] = useState(0);
+  const [amountFocused, setAmountFocused] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [isAddingItem, setIsAddingItem] = useState(false);
   const [itemSearch, setItemSearch] = useState('');
@@ -1040,10 +1338,323 @@ function ProposalEditorContent() {
   const [sectionElements, setSectionElements] = useState<Record<string, InSectionElement[]>>({});
   const [projectGoals, setProjectGoals] = useState<ScopeEntry[]>(DEFAULT_GOALS);
   const [keyDeliverables, setKeyDeliverables] = useState<ScopeEntry[]>(DEFAULT_DELIVERABLES);
-  const [approachSteps, setApproachSteps] = useState<ScopeEntry[]>(DEFAULT_APPROACH);
+  const [approachSteps, setApproachSteps] = useState<ApproachStep[]>(DEFAULT_APPROACH);
   const [clientResponsibilities, setClientResponsibilities] = useState<ScopeEntry[]>(DEFAULT_RESPONSIBILITIES);
   const [aboutStats, setAboutStats] = useState<AboutStat[]>(DEFAULT_ABOUT_STATS);
   const [sectionStyles, setSectionStyles] = useState<Record<string, { backgroundColor?: string; paddingTop?: number; paddingBottom?: number }>>({});
+
+  const applyContentSnapshot = useCallback((content: ProposalContentSnapshot) => {
+    const rawTheme = (content.headerTheme || themeFromTemplateParam()) as ThemeType;
+    const theme = HEADER_THEME_PRESETS[rawTheme] ? rawTheme : themeFromTemplateParam();
+    setHeaderTheme(theme);
+    if (content.headerLayout && typeof content.headerLayout === 'object') {
+      const layout = {
+        ...HEADER_THEME_PRESETS[theme],
+        ...(content.headerLayout as Partial<HeaderLayout>),
+      };
+      setHeaderLayout(layout);
+      const path = layout.backgroundImagePath;
+      if (path && !path.startsWith("http")) {
+        void resolveHeaderImageUrl(path).then((url) => {
+          if (url) {
+            setHeaderLayout((prev) => ({
+              ...prev,
+              backgroundImage: url,
+              backgroundImagePath: path,
+            }));
+          }
+        });
+      }
+    } else {
+      setHeaderLayout(HEADER_THEME_PRESETS[theme]);
+    }
+
+    const types = blockTypesFromContent(content);
+    setBlocks(
+      types.map((type) => ({
+        id: createBlockId(),
+        type: type as BlockType,
+      }))
+    );
+
+    if (content.elementStyles && typeof content.elementStyles === 'object') {
+      setElementStyles({
+        ...DEFAULT_ELEMENT_STYLES,
+        ...(content.elementStyles as Record<string, ElementStyle>),
+      });
+    }
+    if (Array.isArray(content.lineItems) && content.lineItems.length) {
+      setLineItems(content.lineItems as LineItem[]);
+    }
+    if (content.currency && content.currency in CURRENCY_META) {
+      setCurrency(content.currency as CurrencyCode);
+    }
+    if (content.pricingType) {
+      setPricingType(content.pricingType);
+    } else if (Array.isArray(content.lineItems) && content.lineItems.length) {
+      setPricingType(inferPricingType(content.lineItems as LineItem[]));
+    }
+    if (Array.isArray(content.scopeIncluded)) setScopeIncluded(content.scopeIncluded as ScopeEntry[]);
+    if (Array.isArray(content.scopeExcluded)) setScopeExcluded(content.scopeExcluded as ScopeEntry[]);
+    if (Array.isArray(content.timelinePhases)) setTimelinePhases(content.timelinePhases as TimelinePhase[]);
+    if (Array.isArray(content.paymentMilestones)) setPaymentMilestones(content.paymentMilestones as PaymentMilestone[]);
+    if (Array.isArray(content.termEntries)) setTermEntries(content.termEntries as TermEntry[]);
+    if (Array.isArray(content.projectGoals)) setProjectGoals(content.projectGoals as ScopeEntry[]);
+    if (Array.isArray(content.keyDeliverables)) setKeyDeliverables(content.keyDeliverables as ScopeEntry[]);
+    if (Array.isArray(content.approachSteps)) {
+      setApproachSteps(normalizeApproachSteps(content.approachSteps));
+    }
+    if (Array.isArray(content.clientResponsibilities)) {
+      setClientResponsibilities(content.clientResponsibilities as ScopeEntry[]);
+    }
+    if (Array.isArray(content.aboutStats)) setAboutStats(content.aboutStats as AboutStat[]);
+    if (content.sectionStyles && typeof content.sectionStyles === 'object') {
+      setSectionStyles(content.sectionStyles as typeof sectionStyles);
+    }
+    if (content.sectionElements && typeof content.sectionElements === 'object') {
+      setSectionElements(content.sectionElements as Record<string, InSectionElement[]>);
+    }
+  }, [templateId]);
+
+  useEffect(() => {
+    if (!proposalId) {
+      setContentReady(true);
+      return;
+    }
+
+    let cancelled = false;
+    async function loadProposal() {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('proposals')
+        .select(
+          'id, title, content, currency, amount, template_id, client_id, expires_at, status, sent_at, viewed_at, accepted_at, declined_at'
+        )
+        .eq('id', proposalId)
+        .maybeSingle();
+
+      if (cancelled) return;
+
+      if (error || !data) {
+        setContentReady(true);
+        return;
+      }
+
+      setProposalTitle(data.title || 'Untitled proposal');
+      setProposalStatus(data.status);
+      if (data.status === 'draft') {
+        setResumeStatus(
+          resumeStatusFromTimestamps({
+            sent_at: data.sent_at,
+            viewed_at: data.viewed_at,
+            accepted_at: data.accepted_at,
+            declined_at: data.declined_at,
+          })
+        );
+      } else {
+        setResumeStatus(null);
+      }
+      if (data.currency && data.currency in CURRENCY_META) {
+        setCurrency(data.currency as CurrencyCode);
+      }
+      if (typeof data.amount === 'number') {
+        setProposalAmount(Number(data.amount) || 0);
+      }
+
+      const nextExpiry = data.expires_at || defaultExpiresAtIso();
+      setExpiresAt(nextExpiry);
+      setExpiryDraft(toDateInputValue(nextExpiry));
+      if (!data.expires_at) {
+        await supabase
+          .from('proposals')
+          .update({ expires_at: nextExpiry })
+          .eq('id', proposalId);
+      }
+
+      if (data.client_id) {
+        const { data: client } = await supabase
+          .from('clients')
+          .select('name, company, email')
+          .eq('id', data.client_id)
+          .maybeSingle();
+        if (!cancelled && client) {
+          setClientEmail(client.email);
+          setClientPersonName(client.name);
+          setClientCompany(client.company);
+          setClientName(
+            formatPreparedFor(client.name, client.company) ||
+              client.company ||
+              client.name
+          );
+        }
+      }
+
+      const { data: shareLink } = await supabase
+        .from('proposal_share_links')
+        .select('token, recipient_email, recipient_name')
+        .eq('proposal_id', proposalId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!cancelled) {
+        const appUrl = (
+          process.env.NEXT_PUBLIC_APP_URL ||
+          (typeof window !== 'undefined' ? window.location.origin : '')
+        ).replace(/\/$/, '');
+        setClientShareUrl(
+          shareLink?.token && appUrl ? `${appUrl}/p/${shareLink.token}` : null
+        );
+        setLastRecipientEmail(shareLink?.recipient_email || null);
+        setLastRecipientName(shareLink?.recipient_name || null);
+      }
+
+      const content = asProposalContent(data.content);
+      const hasTemplateShape =
+        Boolean(content.blockTypes?.length) ||
+        Boolean(content.blocks?.length) ||
+        Boolean(content.headerTheme) ||
+        Boolean(content.elementStyles);
+
+      if (hasTemplateShape) {
+        applyContentSnapshot(content);
+      } else if (data.template_id) {
+        const { data: template } = await supabase
+          .from('proposal_templates')
+          .select('content, header_theme')
+          .eq('id', data.template_id)
+          .maybeSingle();
+        if (!cancelled && template) {
+          applyContentSnapshot({
+            ...asProposalContent(template.content),
+            headerTheme: (template.header_theme as ProposalHeaderTheme) || undefined,
+          });
+        }
+      }
+
+      setContentReady(true);
+    }
+
+    void loadProposal();
+    return () => {
+      cancelled = true;
+    };
+  }, [proposalId, applyContentSnapshot]);
+
+  function buildContentSnapshot(): ProposalContentSnapshot {
+    return {
+      version: 1,
+      headerTheme: headerTheme as ProposalHeaderTheme,
+      headerLayout: headerLayout as unknown as Record<string, unknown>,
+      blockTypes: blocks.map((b) => b.type),
+      blocks: blocks.map((b) => ({ type: b.type, variant: b.variant ?? null })),
+      elementStyles: elementStyles as unknown as Record<string, unknown>,
+      lineItems,
+      currency,
+      pricingType,
+      scopeIncluded,
+      scopeExcluded,
+      timelinePhases,
+      paymentMilestones,
+      termEntries,
+      projectGoals,
+      keyDeliverables,
+      approachSteps,
+      clientResponsibilities,
+      aboutStats,
+      sectionStyles: sectionStyles as unknown as Record<string, unknown>,
+      sectionElements: sectionElements as unknown as Record<string, unknown>,
+    };
+  }
+
+  async function persistProposalContent() {
+    if (!proposalId) return;
+    const supabase = createClient();
+    await supabase
+      .from('proposals')
+      .update({
+        content: toProposalContentJson(buildContentSnapshot()),
+        title: proposalTitle,
+        expires_at: expiresAt,
+        amount: proposalAmount,
+        currency,
+      })
+      .eq('id', proposalId);
+  }
+
+  async function persistOverviewPricing(next: {
+    amount?: number;
+    pricingType?: PricingType;
+    currency?: CurrencyCode;
+  }) {
+    if (!proposalId) return;
+    const supabase = createClient();
+    const patch: {
+      amount?: number;
+      currency?: string;
+      content?: ReturnType<typeof toProposalContentJson>;
+      updated_at: string;
+    } = {
+      updated_at: new Date().toISOString(),
+    };
+    if (typeof next.amount === 'number') patch.amount = next.amount;
+    if (next.currency) patch.currency = next.currency;
+    if (next.pricingType) {
+      patch.content = toProposalContentJson({
+        ...buildContentSnapshot(),
+        pricingType: next.pricingType,
+      });
+    }
+    await supabase.from('proposals').update(patch).eq('id', proposalId);
+  }
+
+  async function saveExpiryDate(nextIso: string) {
+    setExpiresAt(nextIso);
+    setExpiryDraft(toDateInputValue(nextIso));
+    setExpiryModalOpen(false);
+    if (!proposalId) return;
+    const supabase = createClient();
+    await supabase
+      .from('proposals')
+      .update({ expires_at: nextIso, updated_at: new Date().toISOString() })
+      .eq('id', proposalId);
+  }
+
+  async function handleSaveAsTemplate() {
+    if (!organizationId || !templateName.trim()) return;
+    setSavingTemplate(true);
+    setTemplateMessage(null);
+
+    const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    const snapshot = buildContentSnapshot();
+    const { error } = await supabase.from('proposal_templates').insert({
+      organization_id: organizationId,
+      created_by: user?.id ?? null,
+      name: templateName.trim(),
+      category: templateCategory,
+      is_system: false,
+      is_blank: false,
+      header_theme: headerTheme,
+      thumbnail_url: headerLayout.backgroundImage || null,
+      content: toProposalContentJson(snapshot),
+    });
+
+    setSavingTemplate(false);
+
+    if (error) {
+      setTemplateMessage(error.message);
+      return;
+    }
+
+    await persistProposalContent();
+    setSaveTemplateOpen(false);
+    setTemplateName('');
+    setTemplateMessage('Template saved.');
+    window.setTimeout(() => setTemplateMessage(null), 2200);
+  }
 
   const updateSectionStyle = (blockId: string, patch: { backgroundColor?: string; paddingTop?: number; paddingBottom?: number }) => {
     setSectionStyles((prev) => ({
@@ -1060,6 +1671,71 @@ function ProposalEditorContent() {
   };
 
   const pricingTotal = lineItems.reduce((sum, item) => sum + item.qty * item.price, 0);
+
+  useEffect(() => {
+    if (!contentReady || amountFocused) return;
+    setProposalAmount(pricingTotal);
+  }, [pricingTotal, contentReady, amountFocused]);
+
+  const proposalDateLabel = formatHeaderDate(new Date());
+  const expiryDateLabel = formatHeaderDate(expiresAt);
+  const preparedForLabel = formatPreparedFor(clientPersonName, clientCompany);
+
+  useEffect(() => {
+    setElementStyles((prev) => {
+      const nextDate = prev["header-date"]?.content === proposalDateLabel
+        ? prev["header-date"]
+        : { ...prev["header-date"], content: proposalDateLabel };
+      const nextValidity = prev["header-validity"]?.content === expiryDateLabel
+        ? prev["header-validity"]
+        : { ...prev["header-validity"], content: expiryDateLabel };
+      const nextClient =
+        !preparedForLabel || prev["header-client"]?.content === preparedForLabel
+          ? prev["header-client"]
+          : { ...prev["header-client"], content: preparedForLabel };
+      const nextToName =
+        !preparedForLabel || prev["header-to-name"]?.content === preparedForLabel
+          ? prev["header-to-name"]
+          : { ...prev["header-to-name"], content: preparedForLabel };
+      const coverSubtitle = preparedForLabel
+        ? `Prepared for ${preparedForLabel}`
+        : prev["header-cover-subtitle"]?.content;
+      const nextCover =
+        !coverSubtitle || prev["header-cover-subtitle"]?.content === coverSubtitle
+          ? prev["header-cover-subtitle"]
+          : { ...prev["header-cover-subtitle"], content: coverSubtitle };
+      const nextLogoName =
+        !freelancerName || prev["header-logo-name"]?.content === freelancerName
+          ? prev["header-logo-name"]
+          : { ...prev["header-logo-name"], content: freelancerName };
+      const nextFromName =
+        !freelancerName || prev["header-from-name"]?.content === freelancerName
+          ? prev["header-from-name"]
+          : { ...prev["header-from-name"], content: freelancerName };
+
+      if (
+        nextDate === prev["header-date"] &&
+        nextValidity === prev["header-validity"] &&
+        nextClient === prev["header-client"] &&
+        nextToName === prev["header-to-name"] &&
+        nextCover === prev["header-cover-subtitle"] &&
+        nextLogoName === prev["header-logo-name"] &&
+        nextFromName === prev["header-from-name"]
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        "header-date": nextDate,
+        "header-validity": nextValidity,
+        "header-client": nextClient,
+        "header-to-name": nextToName,
+        "header-cover-subtitle": nextCover,
+        "header-logo-name": nextLogoName,
+        "header-from-name": nextFromName,
+      };
+    });
+  }, [proposalDateLabel, expiryDateLabel, preparedForLabel, freelancerName]);
 
   const updateLineItem = (id: string, patch: Partial<LineItem>) => {
     setLineItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
@@ -1219,13 +1895,19 @@ function ProposalEditorContent() {
   };
 
   const addApproachStep = () => {
-    const entry: ScopeEntry = { id: createEntryId(), text: 'New process step' };
+    const entry: ApproachStep = {
+      id: createEntryId(),
+      title: "New step",
+      description: "Short description of this phase",
+    };
     setApproachSteps((prev) => [...prev, entry]);
-    setEditingEntry({ kind: 'approach', id: entry.id });
+    setEditingEntry({ kind: "approach", id: entry.id });
   };
 
-  const updateApproachStep = (id: string, text: string) => {
-    setApproachSteps((prev) => prev.map((e) => (e.id === id ? { ...e, text } : e)));
+  const updateApproachStep = (id: string, patch: Partial<ApproachStep>) => {
+    setApproachSteps((prev) =>
+      prev.map((e) => (e.id === id ? { ...e, ...patch } : e))
+    );
   };
 
   const removeApproachStep = (id: string) => {
@@ -1332,8 +2014,7 @@ function ProposalEditorContent() {
 
     const muted = useLightText ? 'text-white/60' : 'text-gray-400';
     const label = useLightText ? 'text-white/50' : 'text-gray-400';
-    const rule = useLightText ? 'border-white/15' : 'border-[#EEF0F3]';
-    const logoMark = useLightText ? 'bg-white/15 text-white' : 'bg-gray-900 text-white';
+    const rule = useLightText ? 'border-white/15' : 'border-line';
 
     const titleStyle = useLightText
       ? { ...getTextStyle('header-title'), color: '#FFFFFF', fontSize: 40 }
@@ -1357,7 +2038,7 @@ function ProposalEditorContent() {
     return (
       <EditableBlock key="header" {...getEditableBlockProps('header', 'header')}>
         <div
-          className="relative overflow-hidden border-b border-[#EEF0F3]"
+          className="relative overflow-hidden border-b border-line"
           style={{ backgroundColor: shellBackgroundColor }}
           onClick={(e) => {
             e.stopPropagation();
@@ -1389,21 +2070,27 @@ function ProposalEditorContent() {
             >
               <div className="flex items-center justify-between gap-6 mb-12">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className={`w-9 h-9 rounded-md flex items-center justify-center shrink-0 ${logoMark}`}>
-                    <span className="text-[11px] font-bold tracking-wide">
-                      {(elementStyles['header-logo-name']?.content || 'SN').slice(0, 2).toUpperCase()}
-                    </span>
-                  </div>
+                  {logoUrl ? (
+                    <div className="w-9 h-9 rounded-md overflow-hidden shrink-0 bg-white/10 border border-black/5">
+                      <img
+                        src={logoUrl}
+                        alt=""
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
+                  ) : null}
                   <InlineEditableText
                     as="div"
                     id="header-logo-name"
                     type="text"
                     sectionId="header"
                     style={logoStyle}
-                    content={elementStyles['header-logo-name']?.content || ''}
+                    content={freelancerName || elementStyles['header-logo-name']?.content || ''}
                     isActive={activeElement?.id === 'header-logo-name'}
                     onSelect={(e) => handleElementClick(e, 'text', 'header-logo-name', 'header')}
-                    onChange={(value) => updateElementStyle('header-logo-name', { content: value })}
+                    onChange={() => {
+                      // Bound to the freelancer profile name.
+                    }}
                   />
                 </div>
                 <InlineEditableText
@@ -1441,10 +2128,12 @@ function ProposalEditorContent() {
                   type="text"
                   sectionId="header"
                   style={clientStyle}
-                  content={elementStyles['header-client']?.content || ''}
+                  content={preparedForLabel || elementStyles['header-client']?.content || ''}
                   isActive={activeElement?.id === 'header-client'}
                   onSelect={(e) => handleElementClick(e, 'text', 'header-client', 'header')}
-                  onChange={(value) => updateElementStyle('header-client', { content: value })}
+                  onChange={() => {
+                    // Bound to the linked client name + company.
+                  }}
                 />
               </div>
 
@@ -1457,10 +2146,12 @@ function ProposalEditorContent() {
                     type="text"
                     sectionId="header"
                     style={dateStyle}
-                    content={elementStyles['header-date']?.content || ''}
+                    content={proposalDateLabel}
                     isActive={activeElement?.id === 'header-date'}
                     onSelect={(e) => handleElementClick(e, 'text', 'header-date', 'header')}
-                    onChange={(value) => updateElementStyle('header-date', { content: value })}
+                    onChange={() => {
+                      // Date is live — styling only; content stays current date.
+                    }}
                   />
                 </div>
                 <div>
@@ -1471,10 +2162,12 @@ function ProposalEditorContent() {
                     type="text"
                     sectionId="header"
                     style={validityStyle}
-                    content={elementStyles['header-validity']?.content || ''}
+                    content={expiryDateLabel}
                     isActive={activeElement?.id === 'header-validity'}
                     onSelect={(e) => handleElementClick(e, 'text', 'header-validity', 'header')}
-                    onChange={(value) => updateElementStyle('header-validity', { content: value })}
+                    onChange={() => {
+                      // Driven by Overview expiration — change it there.
+                    }}
                   />
                 </div>
               </div>
@@ -1489,27 +2182,66 @@ function ProposalEditorContent() {
     <div className="mb-5 space-y-5 animate-in fade-in duration-200">
       <div>
         <label className="block text-xs font-bold text-gray-900 mb-2">Background image</label>
+        <input
+          ref={headerImageInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+          className="hidden"
+          onChange={(e) => {
+            void handleHeaderImageUpload(e.target.files?.[0] ?? null);
+          }}
+        />
         <button
           type="button"
-          onClick={() => updateHeaderLayout({
-            backgroundImage: 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80',
-            overlayOpacity: headerLayout.overlayOpacity || 45,
-          })}
-          className="w-full py-2.5 bg-gray-50 border border-gray-200 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors flex items-center justify-center gap-2 mb-2"
+          disabled={headerImageUploading || !organizationId || !proposalId}
+          onClick={() => headerImageInputRef.current?.click()}
+          className="w-full py-2.5 bg-gray-50 border border-gray-200 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors flex items-center justify-center gap-2 mb-2 disabled:opacity-50"
         >
-          <ImageIcon className="w-4 h-4" /> {headerLayout.backgroundImage ? 'Replace image' : 'Add image'}
+          {headerImageUploading ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <UploadCloud className="w-4 h-4" />
+          )}
+          {headerImageUploading
+            ? "Uploading…"
+            : headerLayout.backgroundImage
+              ? "Upload new image"
+              : "Upload image"}
         </button>
+        {headerLayout.backgroundImage && (
+          <div className="mb-2 rounded-lg overflow-hidden border border-gray-200 aspect-[16/9] bg-gray-50">
+            <img
+              src={headerLayout.backgroundImage}
+              alt=""
+              className="w-full h-full object-cover"
+            />
+          </div>
+        )}
         <input
           type="text"
           value={headerLayout.backgroundImage}
-          onChange={(e) => updateHeaderLayout({ backgroundImage: e.target.value })}
-          placeholder="Image URL"
+          onChange={(e) =>
+            updateHeaderLayout({
+              backgroundImage: e.target.value,
+              backgroundImagePath: undefined,
+            })
+          }
+          placeholder="Or paste an image URL"
           className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm font-medium text-gray-700 outline-none bg-white"
         />
+        {headerImageError && (
+          <p className="mt-2 text-[12px] text-red-600">{headerImageError}</p>
+        )}
         {headerLayout.backgroundImage && (
           <button
             type="button"
-            onClick={() => updateHeaderLayout({ backgroundImage: '', overlayOpacity: 0 })}
+            onClick={() =>
+              updateHeaderLayout({
+                backgroundImage: "",
+                backgroundImagePath: undefined,
+                overlayOpacity: 0,
+              })
+            }
             className="mt-2 text-xs font-semibold text-red-500 hover:text-red-600"
           >
             Remove image
@@ -1615,6 +2347,137 @@ function ProposalEditorContent() {
     </div>
   );
 
+  const renderApproachStepsList = (blockId: string) => (
+    <div className="group/list">
+      <ol className="relative space-y-0">
+        {approachSteps.map((item, index) => {
+          const isEditing =
+            editingEntry?.kind === "approach" && editingEntry.id === item.id;
+          const isLast = index === approachSteps.length - 1;
+          if (isEditing) {
+            return (
+              <li key={item.id} className="relative flex gap-4 pb-6 last:pb-0">
+                {!isLast && (
+                  <div className="absolute left-[17px] top-10 bottom-0 w-px bg-gray-200" />
+                )}
+                <div className="relative z-10 w-9 h-9 rounded-full bg-gray-900 text-white text-[13px] font-semibold flex items-center justify-center shrink-0">
+                  {String(index + 1).padStart(2, "0")}
+                </div>
+                <div className="flex-1 rounded-2xl border border-emerald-200 bg-emerald-50/40 p-3.5 space-y-2.5">
+                  <div>
+                    <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">
+                      Title
+                    </label>
+                    <input
+                      autoFocus
+                      type="text"
+                      value={item.title}
+                      onChange={(e) =>
+                        updateApproachStep(item.id, { title: e.target.value })
+                      }
+                      placeholder="Phase title"
+                      className="w-full border border-emerald-500 rounded-lg px-3 py-2 text-[15px] font-semibold text-gray-900 outline-none bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">
+                      Description
+                    </label>
+                    <textarea
+                      value={item.description}
+                      onChange={(e) =>
+                        updateApproachStep(item.id, {
+                          description: e.target.value,
+                        })
+                      }
+                      rows={2}
+                      placeholder="What happens in this phase"
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[14px] text-gray-700 outline-none bg-white resize-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-2 pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => removeApproachStep(item.id)}
+                      className="text-[12px] font-semibold text-red-500 hover:text-red-600"
+                    >
+                      Remove step
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingEntry(null)}
+                      className="text-[12px] font-semibold text-emerald-700 hover:text-emerald-800"
+                    >
+                      Done
+                    </button>
+                  </div>
+                </div>
+              </li>
+            );
+          }
+          return (
+            <li
+              key={item.id}
+              className="group relative flex gap-4 pb-6 last:pb-0 cursor-pointer"
+              onClick={(e) => {
+                e.stopPropagation();
+                startEditingEntry("approach", item.id, "approach", blockId);
+              }}
+            >
+              {!isLast && (
+                <div className="absolute left-[17px] top-10 bottom-0 w-px bg-gradient-to-b from-gray-200 to-transparent" />
+              )}
+              <div className="relative z-10 w-9 h-9 rounded-full bg-gray-900 text-white text-[13px] font-semibold flex items-center justify-center shrink-0 shadow-sm group-hover:bg-emerald-600 transition-colors">
+                {String(index + 1).padStart(2, "0")}
+              </div>
+              <div className="flex-1 min-w-0 rounded-2xl border border-transparent group-hover:border-gray-200 group-hover:bg-[#FAFBFC] transition-all px-3.5 py-2.5 -ml-1">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-[16px] font-semibold text-gray-900 tracking-tight">
+                      {item.title || "Untitled step"}
+                    </div>
+                    {item.description ? (
+                      <p className="mt-1 text-[14px] text-gray-500 leading-relaxed">
+                        {item.description}
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-[13px] text-gray-400 italic">
+                        Add a description…
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeApproachStep(item.id);
+                    }}
+                    className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-1"
+                    title="Remove"
+                  >
+                    <XCircle className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setActiveSection("approach");
+          setActiveBlockId(blockId);
+          addApproachStep();
+        }}
+        className="mt-4 opacity-0 group-hover/list:opacity-100 focus:opacity-100 transition-opacity text-emerald-600 hover:text-emerald-700 font-semibold text-sm inline-flex items-center gap-1.5"
+      >
+        <Plus className="w-4 h-4" /> Add step
+      </button>
+    </div>
+  );
+
   const renderEditableBulletList = (
     blockId: string,
     sectionId: SectionType,
@@ -1624,53 +2487,9 @@ function ProposalEditorContent() {
     onRemove: (id: string) => void,
     onAdd: () => void,
     addLabel: string,
-  ) => (
-    <div className="group/list">
-      <ul className="space-y-3">
-        {entries.map((item) => {
-          const isEditing = editingEntry?.kind === kind && editingEntry.id === item.id;
-          if (isEditing) {
-            return (
-              <li key={item.id} className="flex gap-2 items-start bg-blue-50/40 -mx-2 px-2 py-2 rounded-md">
-                <span className="text-gray-400 select-none mt-2">—</span>
-                <input
-                  autoFocus
-                  type="text"
-                  value={item.text}
-                  onChange={(e) => onUpdate(item.id, e.target.value)}
-                  onBlur={() => setEditingEntry(null)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') setEditingEntry(null); }}
-                  className="flex-1 border border-emerald-500 rounded-md px-3 py-1.5 text-[14px] text-gray-700 outline-none bg-white"
-                />
-                <button type="button" onClick={() => onRemove(item.id)} className="text-gray-300 hover:text-red-500 mt-1.5" title="Remove">
-                  <XCircle className="w-4 h-4" />
-                </button>
-              </li>
-            );
-          }
-          return (
-            <li
-              key={item.id}
-              className="group flex gap-3 text-[14px] text-gray-700 leading-relaxed cursor-pointer hover:bg-gray-50 -mx-2 px-2 py-1.5 rounded-md"
-              onClick={(e) => {
-                e.stopPropagation();
-                startEditingEntry(kind, item.id, sectionId, blockId);
-              }}
-            >
-              <span className="text-gray-400 select-none mt-px">—</span>
-              <span className="flex-1">{item.text}</span>
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); onRemove(item.id); }}
-                className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                title="Remove"
-              >
-                <XCircle className="w-4 h-4" />
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+    variant: "dash" | "check" | "deliverable" = "dash",
+  ) => {
+    const addButton = (
       <button
         type="button"
         onClick={(e) => {
@@ -1679,12 +2498,223 @@ function ProposalEditorContent() {
           setActiveBlockId(blockId);
           onAdd();
         }}
-        className="mt-3 opacity-0 group-hover/list:opacity-100 transition-opacity text-emerald-600 hover:text-emerald-700 font-semibold text-sm inline-flex items-center gap-1.5"
+        className="mt-4 opacity-0 group-hover/list:opacity-100 focus:opacity-100 transition-opacity text-emerald-600 hover:text-emerald-700 font-semibold text-sm inline-flex items-center gap-1.5"
       >
         <Plus className="w-4 h-4" /> {addLabel}
       </button>
-    </div>
-  );
+    );
+
+    if (variant === "check") {
+      return (
+        <div className="group/list">
+          <ul className="space-y-1">
+            {entries.map((item) => {
+              const isEditing = editingEntry?.kind === kind && editingEntry.id === item.id;
+              if (isEditing) {
+                return (
+                  <li
+                    key={item.id}
+                    className="flex gap-3 items-start rounded-lg bg-emerald-50/50 -mx-2 px-2 py-2"
+                  >
+                    <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 mt-0.5">
+                      <Check className="w-3 h-3" strokeWidth={2.5} />
+                    </div>
+                    <input
+                      autoFocus
+                      type="text"
+                      value={item.text}
+                      onChange={(e) => onUpdate(item.id, e.target.value)}
+                      onBlur={() => setEditingEntry(null)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") setEditingEntry(null);
+                      }}
+                      className="flex-1 border border-emerald-400 rounded-md px-2.5 py-1 text-[15px] text-gray-800 outline-none bg-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => onRemove(item.id)}
+                      className="text-gray-300 hover:text-red-500 mt-1"
+                      title="Remove"
+                    >
+                      <XCircle className="w-4 h-4" />
+                    </button>
+                  </li>
+                );
+              }
+              return (
+                <li
+                  key={item.id}
+                  className="group flex gap-3 items-start rounded-lg -mx-2 px-2 py-1.5 cursor-pointer hover:bg-gray-50/80 transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    startEditingEntry(kind, item.id, sectionId, blockId);
+                  }}
+                >
+                  <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 mt-0.5">
+                    <Check className="w-3 h-3" strokeWidth={2.5} />
+                  </div>
+                  <span className="flex-1 text-[15px] text-gray-800 leading-relaxed">
+                    {item.text}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRemove(item.id);
+                    }}
+                    className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity mt-0.5"
+                    title="Remove"
+                  >
+                    <XCircle className="w-4 h-4" />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          {addButton}
+        </div>
+      );
+    }
+
+    if (variant === "deliverable") {
+      return (
+        <div className="group/list">
+          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {entries.map((item, index) => {
+              const isEditing = editingEntry?.kind === kind && editingEntry.id === item.id;
+              if (isEditing) {
+                return (
+                  <li
+                    key={item.id}
+                    className="flex flex-col gap-3 rounded-2xl border border-blue-200 bg-blue-50/40 p-4"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-semibold uppercase tracking-wider text-blue-600">
+                        Deliverable {String(index + 1).padStart(2, "0")}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onRemove(item.id)}
+                        className="text-gray-300 hover:text-red-500"
+                        title="Remove"
+                      >
+                        <XCircle className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <textarea
+                      autoFocus
+                      value={item.text}
+                      onChange={(e) => onUpdate(item.id, e.target.value)}
+                      onBlur={() => setEditingEntry(null)}
+                      rows={3}
+                      className="w-full border border-blue-300 rounded-xl px-3 py-2 text-[15px] text-gray-800 outline-none bg-white resize-none"
+                    />
+                  </li>
+                );
+              }
+              return (
+                <li
+                  key={item.id}
+                  className="group relative flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white p-4 min-h-[120px] cursor-pointer hover:border-gray-300 hover:shadow-[0_4px_16px_rgba(16,24,40,0.06)] transition-all"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    startEditingEntry(kind, item.id, sectionId, blockId);
+                  }}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="w-9 h-9 rounded-xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center shrink-0">
+                      <Package className="w-4 h-4" strokeWidth={1.75} />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRemove(item.id);
+                      }}
+                      className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Remove"
+                    >
+                      <XCircle className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
+                      {String(index + 1).padStart(2, "0")}
+                    </div>
+                    <p className="text-[15px] font-medium text-gray-900 leading-snug">
+                      {item.text}
+                    </p>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+          {addButton}
+        </div>
+      );
+    }
+
+    return (
+      <div className="group/list">
+        <ul className="space-y-3">
+          {entries.map((item) => {
+            const isEditing = editingEntry?.kind === kind && editingEntry.id === item.id;
+            if (isEditing) {
+              return (
+                <li key={item.id} className="flex gap-2 items-start bg-blue-50/40 -mx-2 px-2 py-2 rounded-md">
+                  <span className="text-gray-400 select-none mt-2">—</span>
+                  <input
+                    autoFocus
+                    type="text"
+                    value={item.text}
+                    onChange={(e) => onUpdate(item.id, e.target.value)}
+                    onBlur={() => setEditingEntry(null)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") setEditingEntry(null);
+                    }}
+                    className="flex-1 border border-emerald-500 rounded-md px-3 py-1.5 text-[14px] text-gray-700 outline-none bg-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => onRemove(item.id)}
+                    className="text-gray-300 hover:text-red-500 mt-1.5"
+                    title="Remove"
+                  >
+                    <XCircle className="w-4 h-4" />
+                  </button>
+                </li>
+              );
+            }
+            return (
+              <li
+                key={item.id}
+                className="group flex gap-3 text-[14px] text-gray-700 leading-relaxed cursor-pointer hover:bg-gray-50 -mx-2 px-2 py-1.5 rounded-md"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  startEditingEntry(kind, item.id, sectionId, blockId);
+                }}
+              >
+                <span className="text-gray-400 select-none mt-px">—</span>
+                <span className="flex-1">{item.text}</span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRemove(item.id);
+                  }}
+                  className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="Remove"
+                >
+                  <XCircle className="w-4 h-4" />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        {addButton}
+      </div>
+    );
+  };
 
   const getSectionBodyProps = (blockId: string, sectionType: SectionType) => {
     const style = sectionStyles[blockId] || {};
@@ -2120,36 +3150,38 @@ function ProposalEditorContent() {
   const renderScope = (blockId: string) => (
     <EditableBlock key={blockId} {...getEditableBlockProps(blockId, 'scope')}>
       <div {...getSectionBodyProps(blockId, 'scope')}>
-        <InlineEditableText
-          as="h2"
-          id="scope-heading"
-          type="heading"
-          sectionId="scope"
-          className="mb-2"
-          style={getTextStyle('scope-heading')}
-          content={elementStyles['scope-heading']?.content || ''}
-          isActive={activeElement?.id === 'scope-heading'}
-          onSelect={(e) => handleElementClick(e, 'heading', 'scope-heading', 'scope', blockId)}
-          onChange={(value) => updateElementStyle('scope-heading', { content: value })}
-        />
-        <InlineEditableText
-          as="p"
-          id="scope-intro"
-          type="text"
-          sectionId="scope"
-          className="mb-8 max-w-2xl"
-          style={getTextStyle('scope-intro')}
-          content={elementStyles['scope-intro']?.content || ''}
-          isActive={activeElement?.id === 'scope-intro'}
-          onSelect={(e) => handleElementClick(e, 'text', 'scope-intro', 'scope', blockId)}
-          onChange={(value) => updateElementStyle('scope-intro', { content: value })}
-        />
+        <div className="mb-8 max-w-2xl">
+          <InlineEditableText
+            as="h2"
+            id="scope-heading"
+            type="heading"
+            sectionId="scope"
+            className="mb-2"
+            style={getTextStyle('scope-heading')}
+            content={elementStyles['scope-heading']?.content || ''}
+            isActive={activeElement?.id === 'scope-heading'}
+            onSelect={(e) => handleElementClick(e, 'heading', 'scope-heading', 'scope', blockId)}
+            onChange={(value) => updateElementStyle('scope-heading', { content: value })}
+          />
+          <InlineEditableText
+            as="p"
+            id="scope-intro"
+            type="text"
+            sectionId="scope"
+            style={getTextStyle('scope-intro')}
+            content={elementStyles['scope-intro']?.content || ''}
+            isActive={activeElement?.id === 'scope-intro'}
+            onSelect={(e) => handleElementClick(e, 'text', 'scope-intro', 'scope', blockId)}
+            onChange={(value) => updateElementStyle('scope-intro', { content: value })}
+          />
+        </div>
         {renderEditableBulletList(
           blockId, 'scope', 'scope-included', scopeIncluded,
           (id, text) => updateScopeEntry('included', id, text),
           (id) => removeScopeEntry('included', id),
           () => addScopeEntry('included'),
           'Add item',
+          'check',
         )}
         {renderSectionExtras(blockId, 'scope')}
       </div>
@@ -2170,9 +3202,11 @@ function ProposalEditorContent() {
   const renderDeliverables = (blockId: string) => (
     <EditableBlock key={blockId} {...getEditableBlockProps(blockId, 'deliverables')}>
       <div {...getSectionBodyProps(blockId, 'deliverables')}>
-        <InlineEditableText as="h2" id="deliverables-heading" type="heading" sectionId="deliverables" className="mb-2" style={getTextStyle('deliverables-heading')} content={elementStyles['deliverables-heading']?.content || ''} isActive={activeElement?.id === 'deliverables-heading'} onSelect={(e) => handleElementClick(e, 'heading', 'deliverables-heading', 'deliverables', blockId)} onChange={(value) => updateElementStyle('deliverables-heading', { content: value })} />
-        <InlineEditableText as="p" id="deliverables-intro" type="text" sectionId="deliverables" className="mb-8 max-w-2xl" style={getTextStyle('deliverables-intro')} content={elementStyles['deliverables-intro']?.content || ''} isActive={activeElement?.id === 'deliverables-intro'} onSelect={(e) => handleElementClick(e, 'text', 'deliverables-intro', 'deliverables', blockId)} onChange={(value) => updateElementStyle('deliverables-intro', { content: value })} />
-        {renderEditableBulletList(blockId, 'deliverables', 'deliverables', keyDeliverables, updateDeliverableEntry, removeDeliverableEntry, addDeliverableEntry, 'Add deliverable')}
+        <div className="mb-8 max-w-2xl">
+          <InlineEditableText as="h2" id="deliverables-heading" type="heading" sectionId="deliverables" className="mb-2" style={getTextStyle('deliverables-heading')} content={elementStyles['deliverables-heading']?.content || ''} isActive={activeElement?.id === 'deliverables-heading'} onSelect={(e) => handleElementClick(e, 'heading', 'deliverables-heading', 'deliverables', blockId)} onChange={(value) => updateElementStyle('deliverables-heading', { content: value })} />
+          <InlineEditableText as="p" id="deliverables-intro" type="text" sectionId="deliverables" style={getTextStyle('deliverables-intro')} content={elementStyles['deliverables-intro']?.content || ''} isActive={activeElement?.id === 'deliverables-intro'} onSelect={(e) => handleElementClick(e, 'text', 'deliverables-intro', 'deliverables', blockId)} onChange={(value) => updateElementStyle('deliverables-intro', { content: value })} />
+        </div>
+        {renderEditableBulletList(blockId, 'deliverables', 'deliverables', keyDeliverables, updateDeliverableEntry, removeDeliverableEntry, addDeliverableEntry, 'Add deliverable', 'deliverable')}
         {renderSectionExtras(blockId, 'deliverables')}
       </div>
     </EditableBlock>
@@ -2181,9 +3215,11 @@ function ProposalEditorContent() {
   const renderApproach = (blockId: string) => (
     <EditableBlock key={blockId} {...getEditableBlockProps(blockId, 'approach')}>
       <div {...getSectionBodyProps(blockId, 'approach')}>
-        <InlineEditableText as="h2" id="approach-heading" type="heading" sectionId="approach" className="mb-2" style={getTextStyle('approach-heading')} content={elementStyles['approach-heading']?.content || ''} isActive={activeElement?.id === 'approach-heading'} onSelect={(e) => handleElementClick(e, 'heading', 'approach-heading', 'approach', blockId)} onChange={(value) => updateElementStyle('approach-heading', { content: value })} />
-        <InlineEditableText as="p" id="approach-intro" type="text" sectionId="approach" className="mb-8 max-w-2xl" style={getTextStyle('approach-intro')} content={elementStyles['approach-intro']?.content || ''} isActive={activeElement?.id === 'approach-intro'} onSelect={(e) => handleElementClick(e, 'text', 'approach-intro', 'approach', blockId)} onChange={(value) => updateElementStyle('approach-intro', { content: value })} />
-        {renderEditableBulletList(blockId, 'approach', 'approach', approachSteps, updateApproachStep, removeApproachStep, addApproachStep, 'Add step')}
+        <div className="mb-8 max-w-2xl">
+          <InlineEditableText as="h2" id="approach-heading" type="heading" sectionId="approach" className="mb-2" style={getTextStyle('approach-heading')} content={elementStyles['approach-heading']?.content || ''} isActive={activeElement?.id === 'approach-heading'} onSelect={(e) => handleElementClick(e, 'heading', 'approach-heading', 'approach', blockId)} onChange={(value) => updateElementStyle('approach-heading', { content: value })} />
+          <InlineEditableText as="p" id="approach-intro" type="text" sectionId="approach" style={getTextStyle('approach-intro')} content={elementStyles['approach-intro']?.content || ''} isActive={activeElement?.id === 'approach-intro'} onSelect={(e) => handleElementClick(e, 'text', 'approach-intro', 'approach', blockId)} onChange={(value) => updateElementStyle('approach-intro', { content: value })} />
+        </div>
+        {renderApproachStepsList(blockId)}
         {renderSectionExtras(blockId, 'approach')}
       </div>
     </EditableBlock>
@@ -2637,7 +3673,7 @@ function ProposalEditorContent() {
         className={`${bodyProps.className} group/pricing`}
       >
         <table className="w-full text-sm">
-          <thead className="border-b-2 border-gray-100 text-gray-900 font-bold text-left">
+          <thead className="border-b-2 border-line text-gray-900 font-bold text-left">
             <tr>
               <th className="pb-4 w-[55%]">Items</th>
               <th className="pb-4 text-center w-[15%]">Qty</th>
@@ -2709,7 +3745,7 @@ function ProposalEditorContent() {
                         <button
                           type="button"
                           onClick={() => setEditingItemId(null)}
-                          className="p-1 text-emerald-600 hover:bg-emerald-50 bg-white border border-gray-100 rounded shadow-sm"
+                          className="p-1 text-emerald-600 hover:bg-emerald-50 bg-white border border-line rounded shadow-sm"
                           title="Done"
                         >
                           <Check className="w-3.5 h-3.5" />
@@ -2717,7 +3753,7 @@ function ProposalEditorContent() {
                         <button
                           type="button"
                           onClick={() => removeLineItem(item.id)}
-                          className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 bg-white border border-gray-100 rounded shadow-sm"
+                          className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 bg-white border border-line rounded shadow-sm"
                           title="Remove item"
                         >
                           <XCircle className="w-3.5 h-3.5" />
@@ -2801,14 +3837,14 @@ function ProposalEditorContent() {
                     </button>
                   </div>
 
-                  <div className="absolute top-[72px] left-2 w-[380px] bg-white border border-gray-100 shadow-xl rounded-lg overflow-hidden z-30">
+                  <div className="absolute top-[72px] left-2 w-[380px] bg-white border border-line shadow-xl rounded-lg overflow-hidden z-30">
                     {filteredCatalog.length > 0 ? (
                       filteredCatalog.map((suggestion, idx) => (
                         <button
                           key={suggestion.title}
                           type="button"
                           onClick={() => addLineItemFromCatalog(suggestion)}
-                          className={`w-full text-left p-3 border-b border-gray-100 last:border-0 transition-colors ${
+                          className={`w-full text-left p-3 border-b border-line last:border-0 transition-colors ${
                             idx === 0 ? 'bg-[#22c55e] text-white hover:bg-emerald-600' : 'hover:bg-gray-50 text-gray-900'
                           }`}
                         >
@@ -2827,7 +3863,7 @@ function ProposalEditorContent() {
                     <button
                       type="button"
                       onClick={addBlankLineItem}
-                      className="w-full text-left p-3 text-sm font-semibold text-[#3B82F6] hover:bg-blue-50 flex items-center gap-2 border-t border-gray-100"
+                      className="w-full text-left p-3 text-sm font-semibold text-[#3B82F6] hover:bg-blue-50 flex items-center gap-2 border-t border-line"
                     >
                       <Plus className="w-4 h-4" />
                       Create &quot;{itemSearch.trim() || 'New Line Item'}&quot;
@@ -2947,49 +3983,471 @@ function ProposalEditorContent() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F7F8FA] flex flex-col font-sans">
+    <div className="h-full min-h-0 bg-[#F7F8FA] flex flex-col font-sans">
       
       {/* Top Navbar */}
-      <header className="h-16 bg-white border-b border-[#EEF0F3] px-4 flex items-center justify-between shrink-0 z-20">
+      <header className="h-16 bg-white border-b border-line px-4 flex items-center justify-between shrink-0 z-20">
         <div className="flex items-center gap-6">
           <Link href="/proposals" className="flex items-center gap-1.5 text-sm font-semibold text-gray-600 hover:text-gray-900 transition-colors">
             <ChevronLeft className="w-4 h-4" />
             Proposals
           </Link>
-          <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
-            <Folder className="w-4 h-4 text-emerald-500" />
-            Website Redesign
+          <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 min-w-0">
+            <Folder className="w-4 h-4 text-emerald-500 shrink-0" />
+            <span className="truncate max-w-[280px]">{proposalTitle}</span>
           </div>
         </div>
-        <div className="flex items-center gap-4">
-          <button className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors">
+        <div className="flex items-center gap-3">
+          {templateMessage && (
+            <span className="text-[13px] font-medium text-emerald-600">
+              {templateMessage}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setTemplateName(proposalTitle ? `${proposalTitle} template` : '');
+              setSaveTemplateOpen(true);
+            }}
+            className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors"
+          >
+            <BookmarkPlus className="w-4 h-4 text-[#2563EB]" /> Save as template
+          </button>
+          <button
+            type="button"
+            onClick={() => void persistProposalContent()}
+            className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors"
+          >
             <Eye className="w-4 h-4 text-emerald-500" /> Preview
           </button>
-          <div className="w-px h-4 bg-gray-200"></div>
-          <button className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors">
-            <Zap className="w-4 h-4 text-emerald-500" /> Automation
-          </button>
-          <button className="bg-[#3B82F6] hover:bg-blue-600 text-white px-5 py-2 rounded-lg text-sm font-semibold transition-colors shadow-sm ml-2">
-            Send Proposal
-          </button>
-          <button className="p-2 border border-gray-200 rounded-lg text-gray-400 hover:text-gray-900 hover:bg-gray-50 transition-colors">
-            <MoreHorizontal className="w-4 h-4" />
-          </button>
+          {isProposalAlreadySent(proposalStatus) && (
+            <>
+              <div className="w-px h-4 bg-gray-200"></div>
+              <button
+                type="button"
+                className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors"
+              >
+                <Zap className="w-4 h-4 text-emerald-500" /> Automation
+              </button>
+            </>
+          )}
+          <ProposalSendMenu
+            status={proposalStatus}
+            clientUrl={clientShareUrl}
+            editingPreviouslySent={
+              proposalStatus === "draft" && Boolean(resumeStatus)
+            }
+            busy={sendMenuBusy}
+            onSend={async () => {
+              setSendMenuBusy(true);
+              await persistProposalContent();
+              setSendMenuBusy(false);
+              setSendOpen(true);
+            }}
+            onSendAgain={async () => {
+              if (!proposalId) return;
+              setSendMenuBusy(true);
+              setTemplateMessage(null);
+              try {
+                await persistProposalContent();
+                const recipientEmail =
+                  lastRecipientEmail || clientEmail || "";
+                const recipientName =
+                  lastRecipientName || clientPersonName || clientName || "";
+                if (!recipientEmail) {
+                  setTemplateMessage("Add a client email before sending again.");
+                  window.setTimeout(() => setTemplateMessage(null), 3200);
+                  return;
+                }
+                const res = await fetch(`/api/proposals/${proposalId}/send`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    recipientEmail,
+                    recipientName,
+                    message: DEFAULT_PROPOSAL_SEND_MESSAGE,
+                    sequenceKey: "none",
+                    followUpSteps: [],
+                  }),
+                });
+                const json = (await res.json()) as {
+                  error?: string;
+                  url?: string;
+                  recipientEmail?: string;
+                };
+                if (!res.ok) {
+                  setTemplateMessage(json.error || "Could not send again.");
+                  window.setTimeout(() => setTemplateMessage(null), 4000);
+                  return;
+                }
+                setProposalStatus("sent");
+                setResumeStatus(null);
+                if (json.url) setClientShareUrl(json.url);
+                if (json.recipientEmail) {
+                  setLastRecipientEmail(json.recipientEmail);
+                }
+                setActivityRefreshKey((k) => k + 1);
+                setSendAgainFeedback({
+                  to: json.recipientEmail || recipientEmail,
+                });
+              } finally {
+                setSendMenuBusy(false);
+              }
+            }}
+            onMakeChanges={async () => {
+              if (!proposalId || !proposalStatus) return;
+              setSendMenuBusy(true);
+              const previous = proposalStatus;
+              const supabase = createClient();
+              const now = new Date().toISOString();
+              await supabase
+                .from("proposals")
+                .update({ status: "draft", updated_at: now })
+                .eq("id", proposalId);
+              await supabase.rpc("cancel_proposal_followups", {
+                p_proposal_id: proposalId,
+              });
+              setResumeStatus(previous);
+              setProposalStatus("draft");
+              setSendMenuBusy(false);
+              setTemplateMessage("Editing unlocked. Close when you are done.");
+              window.setTimeout(() => setTemplateMessage(null), 3200);
+            }}
+            onCloseEditing={async () => {
+              if (!proposalId || !resumeStatus) return;
+              setSendMenuBusy(true);
+              try {
+                await persistProposalContent();
+                const supabase = createClient();
+                const now = new Date().toISOString();
+                await supabase
+                  .from("proposals")
+                  .update({ status: resumeStatus, updated_at: now })
+                  .eq("id", proposalId);
+                setProposalStatus(resumeStatus);
+                setResumeStatus(null);
+                setTemplateMessage("Back to the live proposal.");
+                window.setTimeout(() => setTemplateMessage(null), 2800);
+              } finally {
+                setSendMenuBusy(false);
+              }
+            }}
+          />
         </div>
       </header>
 
+      {sendOpen && proposalId && (
+        <SendProposalModal
+          proposalId={proposalId}
+          proposalTitle={proposalTitle}
+          defaultEmail={clientEmail}
+          defaultName={clientPersonName || clientName}
+          onClose={() => setSendOpen(false)}
+          onSent={({ url, recipientEmail }) => {
+            setSendOpen(false);
+            setProposalStatus("sent");
+            setResumeStatus(null);
+            setClientShareUrl(url);
+            setLastRecipientEmail(recipientEmail);
+            const qs = new URLSearchParams({
+              sent: "1",
+              to: recipientEmail,
+              title: proposalTitle,
+            });
+            router.push(`/proposals?${qs.toString()}`);
+          }}
+        />
+      )}
+
+      {sendAgainFeedback && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm">
+          <div
+            className="absolute inset-0"
+            onClick={() => setSendAgainFeedback(null)}
+            aria-hidden
+          />
+          <div className="relative bg-white rounded-3xl border border-line w-full max-w-[420px] overflow-hidden shadow-[0_24px_60px_rgba(16,24,40,0.16)] px-6 pt-8 pb-6 text-center">
+            <div className="mx-auto w-14 h-14 rounded-2xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center mb-4">
+              <Send className="w-6 h-6" strokeWidth={1.75} />
+            </div>
+            <h2 className="text-xl font-semibold text-gray-900 tracking-tight">
+              Sent again
+            </h2>
+            <p className="text-[15px] text-gray-500 mt-2 leading-relaxed">
+              <span className="font-medium text-gray-800">{proposalTitle}</span>
+              {` was emailed to ${sendAgainFeedback.to}.`}
+            </p>
+            <p className="text-[13px] text-gray-400 mt-2">
+              You will get an alert when they open, sign, or decline it.
+            </p>
+            <button
+              type="button"
+              onClick={() => setSendAgainFeedback(null)}
+              className="btn-primary mt-6 w-full px-5 py-2.5 rounded-xl text-sm font-semibold"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+
+      {expiryModalOpen && (() => {
+        const selectedDate = parseLocalDateValue(expiryDraft);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const monthLabel = expiryCalendarMonth.toLocaleDateString(undefined, {
+          month: "long",
+          year: "numeric",
+        });
+        const cells = buildMonthCells(expiryCalendarMonth);
+        const weekdays = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+
+        return (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm">
+            <div
+              className="absolute inset-0"
+              onClick={() => setExpiryModalOpen(false)}
+              aria-hidden
+            />
+            <div className="relative bg-white rounded-3xl border border-line w-full max-w-[380px] overflow-hidden shadow-[0_24px_60px_rgba(16,24,40,0.16)]">
+              <div className="px-6 pt-6 pb-3 flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900 tracking-tight">
+                    Expiration date
+                  </h2>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {selectedDate.toLocaleDateString(undefined, {
+                      weekday: "short",
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                    {" · "}
+                    {formatExpiryLabel(fromDateInputValue(expiryDraft))}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setExpiryModalOpen(false)}
+                  className="p-2 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="px-5 pb-2">
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {[7, 14, 30, 60].map((days) => (
+                    <button
+                      key={days}
+                      type="button"
+                      onClick={() => {
+                        const d = new Date();
+                        d.setHours(23, 59, 59, 999);
+                        d.setDate(d.getDate() + days);
+                        const value = toDateInputValue(d.toISOString());
+                        setExpiryDraft(value);
+                        setExpiryCalendarMonth(startOfMonth(d));
+                      }}
+                      className={`px-3 py-1.5 rounded-full text-[13px] font-medium border transition-colors ${
+                        daysUntilExpiry(fromDateInputValue(expiryDraft)) === days
+                          ? "border-emerald-600 bg-emerald-50 text-emerald-700"
+                          : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                      }`}
+                    >
+                      {days} days
+                    </button>
+                  ))}
+                </div>
+
+                <div className="rounded-2xl border border-line bg-[#FAFBFC] p-3">
+                  <div className="flex items-center justify-between mb-3 px-1">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setExpiryCalendarMonth(
+                          new Date(
+                            expiryCalendarMonth.getFullYear(),
+                            expiryCalendarMonth.getMonth() - 1,
+                            1
+                          )
+                        )
+                      }
+                      className="p-2 rounded-xl text-gray-500 hover:text-gray-900 hover:bg-white transition-colors"
+                      aria-label="Previous month"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <span className="text-[14px] font-semibold text-gray-900">
+                      {monthLabel}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setExpiryCalendarMonth(
+                          new Date(
+                            expiryCalendarMonth.getFullYear(),
+                            expiryCalendarMonth.getMonth() + 1,
+                            1
+                          )
+                        )
+                      }
+                      className="p-2 rounded-xl text-gray-500 hover:text-gray-900 hover:bg-white transition-colors"
+                      aria-label="Next month"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-7 gap-1 mb-1">
+                    {weekdays.map((day) => (
+                      <div
+                        key={day}
+                        className="h-8 flex items-center justify-center text-[11px] font-semibold text-gray-400"
+                      >
+                        {day}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-7 gap-1">
+                    {cells.map((date, index) => {
+                      if (!date) {
+                        return <div key={`empty-${index}`} className="h-9" />;
+                      }
+
+                      const value = toDateInputValue(date.toISOString());
+                      const disabled = date < today;
+                      const selected = sameLocalDay(date, selectedDate);
+                      const isToday = sameLocalDay(date, today);
+
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          disabled={disabled}
+                          onClick={() => setExpiryDraft(value)}
+                          className={`h-9 rounded-xl text-[13px] font-medium transition-colors ${
+                            selected
+                              ? "bg-emerald-600 text-white shadow-sm"
+                              : disabled
+                                ? "text-gray-300 cursor-not-allowed"
+                                : isToday
+                                  ? "text-emerald-700 bg-white border border-emerald-200 hover:bg-emerald-50"
+                                  : "text-gray-700 hover:bg-white"
+                          }`}
+                        >
+                          {date.getDate()}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="px-6 py-5 mt-2 border-t border-line flex items-center justify-end gap-2 bg-[#FAFBFC]">
+                <button
+                  type="button"
+                  onClick={() => setExpiryModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!expiryDraft}
+                  onClick={() => void saveExpiryDate(fromDateInputValue(expiryDraft))}
+                  className="btn-primary px-5 py-2.5 rounded-xl text-sm disabled:opacity-50"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {saveTemplateOpen && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm">
+          <div className="absolute inset-0" onClick={() => setSaveTemplateOpen(false)} aria-hidden />
+          <div className="relative bg-white rounded-3xl border border-line w-full max-w-[440px] overflow-hidden shadow-[0_24px_60px_rgba(16,24,40,0.16)]">
+            <div className="px-6 pt-6 pb-4 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 tracking-tight">Save as template</h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  Reuse this layout and content for other clients.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSaveTemplateOpen(false)}
+                className="p-2 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-6 pb-2 space-y-4">
+              <label className="block">
+                <span className="block text-[13px] font-medium text-gray-700 mb-1.5">Template name</span>
+                <input
+                  autoFocus
+                  value={templateName}
+                  onChange={(e) => setTemplateName(e.target.value)}
+                  placeholder="e.g. Website redesign template"
+                  className="w-full border border-line rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-gray-300"
+                />
+              </label>
+              <label className="block">
+                <span className="block text-[13px] font-medium text-gray-700 mb-1.5">Category</span>
+                <MenuSelect
+                  value={templateCategory}
+                  onChange={setTemplateCategory}
+                  options={[
+                    { value: 'consulting', label: 'Consulting' },
+                    { value: 'marketing', label: 'Marketing' },
+                    { value: 'design', label: 'Design' },
+                    { value: 'development', label: 'Development' },
+                    { value: 'general', label: 'General' },
+                  ]}
+                />
+              </label>
+              {templateMessage && !templateMessage.includes('saved') && (
+                <p className="text-[13px] text-red-600">{templateMessage}</p>
+              )}
+            </div>
+            <div className="px-6 py-5 mt-2 border-t border-line flex items-center justify-end gap-2 bg-[#FAFBFC]">
+              <button
+                type="button"
+                onClick={() => setSaveTemplateOpen(false)}
+                className="px-4 py-2.5 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!templateName.trim() || savingTemplate || !organizationId}
+                onClick={() => void handleSaveAsTemplate()}
+                className="btn-primary px-5 py-2.5 rounded-xl text-sm disabled:opacity-50"
+              >
+                {savingTemplate ? 'Saving…' : 'Save template'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Editor Layout */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex min-h-0 overflow-hidden">
         
         {/* Main Canvas Area */}
         <main 
-          className="flex-1 overflow-y-auto p-12 relative custom-scrollbar block"
+          className="flex-1 min-h-0 overflow-y-auto p-12 relative custom-scrollbar block"
           onClick={handleCanvasClick}
         >
           {/* The "Paper" Document */}
           <div 
             className={`w-full max-w-[850px] mx-auto bg-white shadow-sm border min-h-[1100px] mb-32 flex flex-col h-fit transition-colors ${
-              draggingType && dropTarget === 'end' ? 'border-emerald-400 ring-2 ring-emerald-100' : 'border-[#EEF0F3]'
+              draggingType && dropTarget === 'end' ? 'border-emerald-400 ring-2 ring-emerald-100' : 'border-line'
             }`}
             onClick={(e) => e.stopPropagation()}
             onDragOver={(e) => {
@@ -3040,13 +4498,21 @@ function ProposalEditorContent() {
 
         {/* Right Settings Sidebar */}
         <aside 
-          className="w-[340px] bg-[#FAFBFC] border-l border-[#EEF0F3] overflow-y-auto shrink-0 flex flex-col z-10"
+          className="w-[340px] bg-[#FAFBFC] border-l border-line overflow-y-auto min-h-0 shrink-0 flex flex-col z-10"
           onClick={(e) => e.stopPropagation()}
         >
-          
+          {isProposalAlreadySent(proposalStatus) && proposalId ? (
+            <ProposalActivityLog
+              proposalId={proposalId}
+              open
+              variant="panel"
+              refreshKey={activityRefreshKey}
+            />
+          ) : (
+          <>
           {/* Default / Global State */}
           {activeSection === 'global' && (
-            <div className="animate-in fade-in duration-200 divide-y divide-[#EEF0F3]">
+            <div className="animate-in fade-in duration-200 divide-y divide-line">
               
               {/* Overview Section */}
               <div className="bg-white">
@@ -3064,17 +4530,61 @@ function ProposalEditorContent() {
                       <span className="text-gray-500 font-medium">Status</span>
                       <span className="font-semibold bg-gray-100 text-gray-600 px-2.5 py-0.5 rounded-full text-xs">Drafted</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-500 font-medium">Fee Structure</span>
-                      <span className="font-semibold text-gray-900">Multi-Select</span>
+                    <div className="flex justify-between items-center gap-3">
+                      <span className="text-gray-500 font-medium shrink-0">Pricing</span>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-gray-400 font-semibold">
+                          {CURRENCY_META[currency].symbol}
+                        </span>
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={Number.isFinite(proposalAmount) ? proposalAmount : 0}
+                          onFocus={() => setAmountFocused(true)}
+                          onChange={(e) => {
+                            setProposalAmount(Number(e.target.value) || 0);
+                          }}
+                          onBlur={() => {
+                            setAmountFocused(false);
+                            const next = Math.max(0, Number(proposalAmount) || 0);
+                            setProposalAmount(next);
+                            void persistOverviewPricing({ amount: next });
+                          }}
+                          className="w-[110px] text-right font-semibold text-gray-900 bg-transparent border border-transparent hover:border-gray-200 focus:border-emerald-400 focus:bg-white rounded-lg px-2 py-1 outline-none transition-colors"
+                        />
+                      </div>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-500 font-medium">Amount</span>
-                      <span className="font-semibold text-gray-900">3 Options</span>
+                    <div className="flex justify-between items-center gap-3">
+                      <span className="text-gray-500 font-medium shrink-0">Pricing type</span>
+                      <div className="w-[132px]">
+                        <MenuSelect
+                          value={pricingType}
+                          options={PRICING_TYPE_OPTIONS}
+                          onChange={(value) => {
+                            setPricingType(value);
+                            void persistOverviewPricing({ pricingType: value });
+                          }}
+                          className="[&_button]:py-1.5 [&_button]:px-2.5 [&_button]:rounded-lg [&_button]:text-[13px] [&_button]:font-semibold [&_button]:border-gray-200"
+                        />
+                      </div>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-500 font-medium">Expiration Date</span>
-                      <span className="font-semibold text-emerald-600 cursor-pointer hover:text-emerald-700">Set Expiration</span>
+                    <div className="flex justify-between items-center gap-3">
+                      <span className="text-gray-500 font-medium">Expiration</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setExpiryDraft(toDateInputValue(expiresAt));
+                          setExpiryCalendarMonth(
+                            startOfMonth(new Date(expiresAt))
+                          );
+                          setExpiryModalOpen(true);
+                        }}
+                        className="font-semibold text-emerald-600 hover:text-emerald-700 transition-colors"
+                        title={new Date(expiresAt).toLocaleString()}
+                      >
+                        {formatExpiryLabel(expiresAt)}
+                      </button>
                     </div>
                   </div>
                 )}
@@ -3108,9 +4618,9 @@ function ProposalEditorContent() {
                       <div className="grid grid-cols-2 gap-3">
                         <ThemeCard name="Cover" active={headerTheme === 'cover'} onClick={() => applyHeaderTheme('cover')} icon={<BoxSelect className="w-4 h-4" />} />
                         <ThemeCard name="Classic" active={headerTheme === 'classic'} onClick={() => applyHeaderTheme('classic')} icon={<AlignLeft className="w-4 h-4" />} />
-                        <ThemeCard name="Alpine" active={false} onClick={() => {}} icon={<Columns className="w-4 h-4" />} />
-                        <ThemeCard name="Splash" active={false} onClick={() => {}} icon={<LayoutTemplate className="w-4 h-4" />} />
-                        <ThemeCard name="Auburn" active={false} onClick={() => {}} icon={<BoxSelect className="w-4 h-4" />} />
+                        <ThemeCard name="Alpine" active={headerTheme === 'alpine'} onClick={() => applyHeaderTheme('alpine')} icon={<Columns className="w-4 h-4" />} />
+                        <ThemeCard name="Splash" active={headerTheme === 'splash'} onClick={() => applyHeaderTheme('splash')} icon={<LayoutTemplate className="w-4 h-4" />} />
+                        <ThemeCard name="Auburn" active={headerTheme === 'auburn'} onClick={() => applyHeaderTheme('auburn')} icon={<BoxSelect className="w-4 h-4" />} />
                         <ThemeCard name="Pastel" active={headerTheme === 'pastel'} onClick={() => applyHeaderTheme('pastel')} icon={<LayoutTemplate className="w-4 h-4" />} />
                       </div>
                     </div>
@@ -3162,7 +4672,7 @@ function ProposalEditorContent() {
           {/* Active Section Edit State */}
           {activeSection !== 'global' && (
             <div className="animate-in fade-in slide-in-from-right-4 duration-200 bg-white h-full flex flex-col">
-              <div className="p-4 border-b border-[#EEF0F3] bg-white sticky top-0 z-10 shrink-0">
+              <div className="p-4 border-b border-line bg-white sticky top-0 z-10 shrink-0">
                 <button 
                   onClick={() => { setActiveSection('global'); setActiveBlockId(null); setActiveElement(null); setAddMenuFor(null); setEditingEntry(null); setEditingItemId(null); setIsAddingItem(false); }} 
                   className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-lg text-sm transition-colors shadow-sm"
@@ -3354,7 +4864,7 @@ function ProposalEditorContent() {
                       <div className="mb-5 space-y-3">
                         <label className="block text-xs font-bold text-gray-900 mb-2">Stats</label>
                         {aboutStats.map((stat) => (
-                          <div key={stat.id} className="p-3 rounded-lg border border-gray-100 bg-gray-50/80 space-y-2">
+                          <div key={stat.id} className="p-3 rounded-lg border border-line bg-gray-50/80 space-y-2">
                             <input
                               type="text"
                               value={stat.value}
@@ -3393,7 +4903,7 @@ function ProposalEditorContent() {
                     {['summary', 'goals', 'scope', 'deliverables', 'approach', 'timeline', 'payment', 'exclusions', 'responsibilities', 'revisions', 'terms', 'next-steps', 'signature', 'content', 'header', 'image', 'two-column', 'media-text', 'about'].includes(activeSection as string) && (
                       <div className="animate-in fade-in duration-200">
                         {editingEntry && (
-                        <div className="text-sm text-gray-500 mb-5 pb-5 border-b border-gray-100">
+                        <div className="text-sm text-gray-500 mb-5 pb-5 border-b border-line">
                           <p className="font-semibold text-gray-900">
                             {activeSection === 'goals' && `${projectGoals.length} goals`}
                             {activeSection === 'scope' && `${scopeIncluded.length} items`}
@@ -3424,6 +4934,43 @@ function ProposalEditorContent() {
                               />
                               <button type="button" onClick={() => removeScopeEntry(list, entry.id)} className="w-full border border-red-100 text-red-600 hover:bg-red-50 font-semibold py-2 rounded-md text-sm">
                                 Remove item
+                              </button>
+                            </div>
+                          );
+                        })()}
+
+                        {editingEntry?.kind === 'approach' && (() => {
+                          const step = approachSteps.find((s) => s.id === editingEntry.id);
+                          if (!step) return null;
+                          return (
+                            <div className="mb-5 p-3 rounded-lg border border-blue-100 bg-blue-50/50 space-y-3">
+                              <div className="text-xs font-bold text-gray-900">Selected step</div>
+                              <div>
+                                <label className="block text-[11px] font-semibold text-gray-500 mb-1">Title</label>
+                                <input
+                                  type="text"
+                                  value={step.title}
+                                  onChange={(e) => updateApproachStep(step.id, { title: e.target.value })}
+                                  className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm font-semibold outline-none bg-white"
+                                  placeholder="Phase title"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[11px] font-semibold text-gray-500 mb-1">Description</label>
+                                <textarea
+                                  value={step.description}
+                                  onChange={(e) => updateApproachStep(step.id, { description: e.target.value })}
+                                  rows={3}
+                                  className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm outline-none bg-white resize-y"
+                                  placeholder="What happens in this phase"
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => removeApproachStep(step.id)}
+                                className="w-full border border-red-100 text-red-600 hover:bg-red-50 font-semibold py-2 rounded-md text-sm"
+                              >
+                                Remove step
                               </button>
                             </div>
                           );
@@ -3534,7 +5081,7 @@ function ProposalEditorContent() {
 
                     {activeSection === 'pricing' && (
                       <div className="animate-in fade-in duration-200">
-                        <div className="text-sm text-gray-500 mb-5 pb-5 border-b border-gray-100">
+                        <div className="text-sm text-gray-500 mb-5 pb-5 border-b border-line">
                           <p className="mb-1">Click a row to edit it. Use <span className="font-semibold text-gray-700">Add Item</span> to search the catalog or create a custom line.</p>
                           <p className="mt-2 font-semibold text-gray-900">{lineItems.length} items · {formatMoney(pricingTotal)}</p>
                         </div>
@@ -3632,6 +5179,8 @@ function ProposalEditorContent() {
               </div>
             </div>
           )}
+          </>
+          )}
 
         </aside>
       </div>
@@ -3720,8 +5269,8 @@ function SectionAddMenu({
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div className="absolute left-1/2 top-full mt-2 -translate-x-1/2 z-50 w-[280px] bg-white border border-gray-100 shadow-xl rounded-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-        <div className="px-3 py-2 border-b border-gray-100 text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+      <div className="absolute left-1/2 top-full mt-2 -translate-x-1/2 z-50 w-[280px] bg-white border border-line shadow-xl rounded-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div className="px-3 py-2 border-b border-line text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
           Add section
         </div>
         <div className="p-2 grid grid-cols-2 gap-1.5 max-h-[320px] overflow-y-auto">
@@ -3842,14 +5391,14 @@ function EditableBlock({
         {isActive && (
           <div className="absolute top-1/2 -right-12 -translate-y-1/2 flex flex-col gap-1 z-20">
             <button 
-              className="p-1.5 text-emerald-600 hover:bg-emerald-50 bg-white shadow-sm border border-gray-100 rounded-md mb-2 flex items-center justify-center transition-colors"
+              className="p-1.5 text-emerald-600 hover:bg-emerald-50 bg-white shadow-sm border border-line rounded-md mb-2 flex items-center justify-center transition-colors"
               title="Finish section"
               onClick={(e) => { e.stopPropagation(); onSelect('global', 'global'); }}
             >
               <Check className="w-4 h-4" />
             </button>
             
-            <div className="bg-white shadow-sm border border-gray-100 rounded-md overflow-hidden flex flex-col">
+            <div className="bg-white shadow-sm border border-line rounded-md overflow-hidden flex flex-col">
               {onMoveUp && (
                 <>
                   <button type="button" onClick={(e) => { e.stopPropagation(); onMoveUp(); }} className="p-2 text-gray-400 hover:text-gray-900 hover:bg-gray-50 transition-colors" title="Move Up"><ChevronUp className="w-4 h-4" /></button>

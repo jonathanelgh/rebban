@@ -1,22 +1,33 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-satoshi), "Satoshi", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
   --color-surface: #ffffff;
   --color-ink: #1a1d23;
   --color-muted: #6b7280;
-  --color-line: #eef0f3;
-  --color-accent: #3b82f6;
-  --color-accent-soft: #d3e8fb;
+  --color-line: #e2e5ea;
+  --color-accent: #2563eb;
+  --color-accent-soft: #dbeafe;
   --color-warm: #fff9d6;
-  --color-warm-border: #f5efc2;
+  --color-warm-border: #ebe4b8;
 }
 
 @layer base {
   body {
     color: var(--color-ink);
-    background: #ffffff;
+    background: #f0f1f3;
+    font-family: var(--font-satoshi), "Satoshi", ui-sans-serif, system-ui, sans-serif;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
   }
 }
 
@@ -53,5 +64,29 @@
 
   .pill-filter:hover {
     background: #f9fafb;
+  }
+
+  .btn-primary {
+    background: #2563eb;
+    color: #ffffff;
+    font-weight: 500;
+    transition:
+      background-color 0.2s ease,
+      box-shadow 0.2s ease,
+      transform 0.2s ease;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background: #1d4ed8;
+    box-shadow: 0 8px 20px rgba(37, 99, 235, 0.35);
+  }
+
+  .btn-primary:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+
+  .btn-primary:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 }
