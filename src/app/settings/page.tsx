@@ -41,7 +41,13 @@ const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 
 export default function SettingsPage() {
   return (
-    <Suspense fallback={<div className="px-8 py-10 text-sm text-gray-500">Loading settings…</div>}>
+    <Suspense
+      fallback={
+        <div className="px-4 py-8 md:px-8 md:py-10 text-sm text-gray-500">
+          Loading settings…
+        </div>
+      }
+    >
       <SettingsPageInner />
     </Suspense>
   );
@@ -369,17 +375,47 @@ function SettingsPageInner() {
     flashSaved();
   }
 
+  function selectSection(id: SectionId) {
+    setSection(id);
+    setError(null);
+    router.replace(`/settings?section=${id}`, { scroll: false });
+  }
+
   return (
-    <main className="w-full px-8 pt-10 pb-8 pr-36 max-w-7xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-3xl font-semibold text-gray-900 tracking-tight">Settings</h1>
-        <p className="text-gray-500 mt-1.5 text-[15px]">
+    <main className="w-full px-4 pt-6 pb-10 md:px-8 md:pt-10 md:pb-8 md:pr-36 max-w-7xl mx-auto">
+      <div className="mb-5 md:mb-8">
+        <h1 className="text-2xl md:text-3xl font-semibold text-gray-900 tracking-tight">
+          Settings
+        </h1>
+        <p className="text-gray-500 mt-1 md:mt-1.5 text-[14px] md:text-[15px]">
           Manage your profile, branding, and workspace defaults.
         </p>
       </div>
 
-      <div className="flex gap-8 items-start">
-        <aside className="w-[240px] shrink-0 sticky top-8">
+      {/* Mobile: horizontal section tabs */}
+      <nav className="lg:hidden flex gap-1 overflow-x-auto no-scrollbar mb-5 border-b border-line -mx-4 px-4">
+        {sections.map(({ id, label, icon: Icon }) => {
+          const active = section === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => selectSection(id)}
+              className={`inline-flex items-center gap-2 px-3.5 py-3 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap ${
+                active
+                  ? "border-[#2563EB] text-[#2563EB]"
+                  : "border-transparent text-gray-500"
+              }`}
+            >
+              <Icon className="w-4 h-4 shrink-0" strokeWidth={1.75} />
+              {label}
+            </button>
+          );
+        })}
+      </nav>
+
+      <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 items-start">
+        <aside className="hidden lg:block w-[240px] shrink-0 sticky top-8">
           <nav className="space-y-1">
             {sections.map(({ id, label, description, icon: Icon }) => {
               const active = section === id;
@@ -387,7 +423,7 @@ function SettingsPageInner() {
                 <button
                   key={id}
                   type="button"
-                  onClick={() => setSection(id)}
+                  onClick={() => selectSection(id)}
                   className={`w-full flex items-start gap-3 px-3 py-2.5 rounded-xl text-left transition-colors ${
                     active
                       ? "bg-[#EFF6FF] text-[#2563EB]"
@@ -418,8 +454,8 @@ function SettingsPageInner() {
           </nav>
         </aside>
 
-        <div className="flex-1 min-w-0 max-w-2xl">
-          <div className="surface-panel p-7">
+        <div className="flex-1 min-w-0 w-full max-w-2xl">
+          <div className="surface-panel p-4 sm:p-6 md:p-7">
             {section === "profile" && (
               <Section
                 title="Profile"
@@ -554,7 +590,7 @@ function SettingsPageInner() {
                       className={inputClass}
                     />
                   </Field>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <Field label="Org number">
                       <input
                         value={business.orgNumber}
@@ -643,9 +679,9 @@ function SettingsPageInner() {
                 title="Billing"
                 subtitle="Your Rebban plan and payment method."
               >
-                <div className="rounded-2xl border border-line bg-[#FAFBFC] p-5 mb-5">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
+                <div className="rounded-2xl border border-line bg-[#FAFBFC] p-4 sm:p-5 mb-5">
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
+                    <div className="min-w-0">
                       <div className="text-[13px] font-medium text-gray-500">Current plan</div>
                       <div className="text-xl font-semibold text-gray-900 mt-1">Basic</div>
                       <p className="text-[13px] text-gray-500 mt-1">
@@ -654,18 +690,18 @@ function SettingsPageInner() {
                     </div>
                     <button
                       type="button"
-                      className="btn-primary px-4 py-2 rounded-full text-sm"
+                      className="btn-primary w-full sm:w-auto px-4 py-2.5 rounded-full text-sm"
                     >
                       Upgrade
                     </button>
                   </div>
                 </div>
-                <div className="rounded-2xl border border-line p-5 flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center text-gray-600">
+                <div className="rounded-2xl border border-line p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center text-gray-600 shrink-0">
                       <CreditCard className="w-5 h-5" strokeWidth={1.75} />
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <div className="text-[14px] font-medium text-gray-900">
                         Visa ending in 4242
                       </div>
@@ -674,7 +710,7 @@ function SettingsPageInner() {
                   </div>
                   <button
                     type="button"
-                    className="text-sm font-medium text-[#2563EB] hover:text-[#1d4ed8] transition-colors"
+                    className="text-sm font-medium text-[#2563EB] hover:text-[#1d4ed8] transition-colors self-start sm:self-auto"
                   >
                     Update
                   </button>
@@ -705,7 +741,7 @@ function SettingsPageInner() {
                       />
                     </div>
                   </Field>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <Field label="Week starts on">
                       <select
                         value={preferences.weekStartsOn}
@@ -824,9 +860,9 @@ function SettingsPageInner() {
             )}
 
             {section !== "integrations" && section !== "billing" && (
-              <div className="mt-8 pt-5 border-t border-line flex items-center justify-end gap-3">
+              <div className="mt-6 md:mt-8 pt-5 border-t border-line flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3">
                 {saved && (
-                  <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-emerald-600">
+                  <span className="inline-flex items-center justify-center gap-1.5 text-[13px] font-medium text-emerald-600">
                     <Check className="w-3.5 h-3.5" />
                     Saved
                   </span>
@@ -835,7 +871,7 @@ function SettingsPageInner() {
                   type="button"
                   onClick={() => void handleSave()}
                   disabled={saving || uploading}
-                  className="btn-primary px-5 py-2.5 rounded-xl text-sm disabled:opacity-50"
+                  className="btn-primary w-full sm:w-auto px-5 py-3 sm:py-2.5 rounded-xl text-sm disabled:opacity-50"
                 >
                   {saving ? "Saving…" : "Save changes"}
                 </button>
@@ -859,8 +895,10 @@ function Section({
 }) {
   return (
     <div>
-      <h2 className="text-lg font-semibold text-gray-900 tracking-tight">{title}</h2>
-      <p className="text-sm text-gray-500 mt-1 mb-6">{subtitle}</p>
+      <h2 className="text-base sm:text-lg font-semibold text-gray-900 tracking-tight">
+        {title}
+      </h2>
+      <p className="text-sm text-gray-500 mt-1 mb-5 sm:mb-6">{subtitle}</p>
       {children}
     </div>
   );
@@ -927,12 +965,12 @@ function IntegrationRow({
   onDisconnect?: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-2xl border border-line px-4 py-3.5">
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl border border-line px-4 py-3.5">
       <div className="min-w-0">
         <div className="text-[14px] font-medium text-gray-900">{name}</div>
-        <div className="text-[13px] text-gray-500 mt-0.5">{description}</div>
+        <div className="text-[13px] text-gray-500 mt-0.5 leading-snug">{description}</div>
       </div>
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
         {connected ? (
           <>
             <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-emerald-700 bg-[#F3FAF6] px-3 py-1.5 rounded-full">
@@ -954,7 +992,7 @@ function IntegrationRow({
             type="button"
             onClick={onConnect}
             disabled={!onConnect}
-            className="text-sm font-medium text-[#2563EB] hover:text-[#1d4ed8] px-3 py-1.5 rounded-full hover:bg-[#EFF6FF] transition-colors disabled:opacity-50 disabled:hover:bg-transparent"
+            className="text-sm font-medium text-[#2563EB] hover:text-[#1d4ed8] px-3 py-2 sm:py-1.5 rounded-full hover:bg-[#EFF6FF] transition-colors disabled:opacity-50 disabled:hover:bg-transparent"
           >
             {actionLabel || "Connect"}
           </button>

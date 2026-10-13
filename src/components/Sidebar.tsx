@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense, useEffect, useState } from "react";
+import React, { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -32,6 +32,15 @@ import { useTimeTracking, formatElapsed } from "@/components/TimeTrackingContext
 import { useProfile } from "@/components/ProfileContext";
 import { UserAvatar } from "@/components/UserAvatar";
 import { createClient } from "@/lib/supabase/client";
+
+type SidebarMenu = "profile" | "alerts" | null;
+
+function canHover() {
+  return (
+    typeof window !== "undefined" &&
+    window.matchMedia("(hover: hover) and (pointer: fine)").matches
+  );
+}
 
 type NotificationRow = {
   id: string;
@@ -90,15 +99,18 @@ function SidebarInner({
 }) {
   const pathname = usePathname();
   const { isTracking, elapsedSeconds } = useTimeTracking();
-  const { avatarUrl, fullName } = useProfile();
+  const [openMenu, setOpenMenu] = useState<SidebarMenu>(null);
 
   // Hide the global sidebar in the proposal editor — it has its own focused layout.
   if (pathname.includes("/edit")) return null;
 
-  async function handleSignOut() {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    window.location.assign("/login");
+  function closeMenus() {
+    setOpenMenu(null);
+  }
+
+  function handleNavigate() {
+    closeMenus();
+    onMobileClose?.();
   }
 
   return (
@@ -108,107 +120,42 @@ function SidebarInner({
           <span className="text-[15px] font-semibold tracking-tight leading-none">R.</span>
         </div>
 
-        <div className="relative group flex items-center">
-          <div className="cursor-pointer relative z-10 hover:ring-2 hover:ring-gray-200 rounded-full transition-all">
-            <UserAvatar src={avatarUrl} alt={fullName ?? "Profile"} size="sm" />
-          </div>
-
-          {/* Hover Bridge */}
-          <div className="absolute left-full top-0 w-4 h-full hidden group-hover:block" />
-
-          {/* Popover */}
-          <div className="absolute left-full top-0 ml-3 hidden group-hover:block z-[80]">
-            <div className="w-[320px] bg-white rounded-2xl shadow-[0_4px_24px_rgba(0,0,0,0.12)] border border-gray-200 py-3 flex flex-col cursor-default">
-              
-              {/* Header */}
-              <div className="px-4 pb-3 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-[#f0f3f5] flex items-center justify-center shrink-0">
-                  <Building2 className="w-5 h-5 text-gray-500" strokeWidth={1.5} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[15px] font-semibold text-gray-900 truncate">Nordic Elk AB</div>
-                  <div className="text-[13px] text-gray-500">Basic</div>
-                </div>
-              </div>
-
-              <div className="px-4 py-2 flex items-center justify-between hover:bg-gray-50 cursor-pointer">
-                <span className="text-[15px] text-gray-900">Online for messages</span>
-                <Toggle active={true} />
-              </div>
-
-              <div className="h-px bg-gray-200 my-2 mx-4" />
-
-              <MenuLink icon={User} label="My profile" href="/settings" />
-              <MenuLink icon={Users} label="Teams" />
-
-              {/* Promo Box */}
-              <div className="mx-4 my-2 p-3 border border-[#a8dfaa] bg-[#fcfdfa] rounded-xl relative group/promo">
-                <button className="absolute top-2 right-2 text-gray-400 hover:text-gray-600">
-                  <X className="w-4 h-4" />
-                </button>
-                <div className="flex items-center gap-1 font-semibold text-[14px] text-gray-900 mb-0.5">
-                  Try Business Plus <ArrowRight className="w-4 h-4 ml-0.5" />
-                </div>
-                <p className="text-[13px] text-gray-600 leading-snug pr-4">
-                  Upgrade for quicker access to the top 1% of freelancers. No upfront costs.
-                </p>
-              </div>
-
-              <MenuLink icon={IdCard} label="Membership" />
-              <MenuLink icon={Gauge} label="Account health" />
-              <MenuLink icon={Sun} label="Theme: Light" />
-              <MenuLink icon={Settings} label="Settings" href="/settings" />
-
-              <div className="h-px bg-gray-200 my-2 mx-4" />
-
-              <div className="px-4 py-2 flex items-center justify-between hover:bg-gray-50 cursor-pointer">
-                <span className="text-[15px] text-gray-900">New main menu</span>
-                <Toggle active={true} />
-              </div>
-
-              <button
-                type="button"
-                onClick={() => void handleSignOut()}
-                className="w-full flex items-center gap-3 px-4 py-2 hover:bg-gray-50 cursor-pointer text-gray-700 hover:text-gray-900 transition-colors text-left"
-              >
-                <LogOut className="w-5 h-5 text-gray-600" strokeWidth={1.5} />
-                <span className="text-[15px]">Log out</span>
-              </button>
-              <MenuLink icon={MoreHorizontal} label="More" />
-            </div>
-          </div>
-        </div>
+        <ProfileMenu
+          open={openMenu === "profile"}
+          onOpenChange={(next) => setOpenMenu(next ? "profile" : null)}
+          onNavigate={handleNavigate}
+        />
 
         <nav className="w-full space-y-0.5">
-          <NavItem href="/" icon={Home} label="Home" active={pathname === "/"} onNavigate={onMobileClose} />
-          <NavItem href="/clients" icon={Users} label="Clients" active={pathname === "/clients"} onNavigate={onMobileClose} />
+          <NavItem href="/" icon={Home} label="Home" active={pathname === "/"} onNavigate={handleNavigate} />
+          <NavItem href="/clients" icon={Users} label="Clients" active={pathname === "/clients"} onNavigate={handleNavigate} />
           <NavItem
             href="/tasks"
             icon={Kanban}
             label="Tasks"
             active={pathname.startsWith("/tasks")}
-            onNavigate={onMobileClose}
+            onNavigate={handleNavigate}
           />
           <NavItem
             href="/proposals"
             icon={FileText}
             label="Proposals"
             active={pathname.startsWith("/proposals")}
-            onNavigate={onMobileClose}
+            onNavigate={handleNavigate}
           />
           <NavItem
             href="/invoices"
             icon={FileSpreadsheet}
             label="Invoices"
             active={pathname === "/invoices"}
-            onNavigate={onMobileClose}
+            onNavigate={handleNavigate}
           />
           <NavItem
             href="/payments"
             icon={CreditCard}
             label="Payments"
             active={pathname === "/payments"}
-            onNavigate={onMobileClose}
+            onNavigate={handleNavigate}
           />
           <NavItem
             href="/time-tracking"
@@ -217,14 +164,19 @@ function SidebarInner({
             active={pathname === "/time-tracking"}
             badge={isTracking ? formatElapsed(elapsedSeconds) : undefined}
             badgeLive={isTracking}
-            onNavigate={onMobileClose}
+            onNavigate={handleNavigate}
           />
         </nav>
       </div>
 
       <div className="w-full space-y-0.5">
-        <AlertsMenu active={pathname === "/notifications"} onNavigate={onMobileClose} />
-        <NavItem href="/settings" icon={Settings} label="Settings" active={pathname === "/settings"} onNavigate={onMobileClose} />
+        <AlertsMenu
+          open={openMenu === "alerts"}
+          onOpenChange={(next) => setOpenMenu(next ? "alerts" : null)}
+          active={pathname === "/notifications"}
+          onNavigate={handleNavigate}
+        />
+        <NavItem href="/settings" icon={Settings} label="Settings" active={pathname === "/settings"} onNavigate={handleNavigate} />
       </div>
     </aside>
   );
@@ -295,14 +247,136 @@ function NavItem({
   );
 }
 
+function ProfileMenu({
+  open,
+  onOpenChange,
+  onNavigate,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onNavigate?: () => void;
+}) {
+  const { avatarUrl, fullName } = useProfile();
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: PointerEvent) {
+      if (!rootRef.current?.contains(e.target as Node)) {
+        onOpenChange(false);
+      }
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open, onOpenChange]);
+
+  async function handleSignOut() {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    window.location.assign("/login");
+  }
+
+  return (
+    <div
+      ref={rootRef}
+      className="relative flex items-center"
+      onMouseEnter={() => {
+        if (canHover()) onOpenChange(true);
+      }}
+      onMouseLeave={() => {
+        if (canHover()) onOpenChange(false);
+      }}
+    >
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        onClick={() => {
+          if (!canHover()) onOpenChange(!open);
+        }}
+        className={`relative z-10 rounded-full transition-all ${
+          open ? "ring-2 ring-gray-200" : "hover:ring-2 hover:ring-gray-200"
+        }`}
+      >
+        <UserAvatar src={avatarUrl} alt={fullName ?? "Profile"} size="sm" />
+      </button>
+
+      <div className={`absolute left-full top-0 w-4 h-full ${open ? "block" : "hidden"}`} />
+
+      <div className={`absolute left-full top-0 ml-3 z-[80] ${open ? "block" : "hidden"}`}>
+        <div className="w-[320px] bg-white rounded-2xl shadow-[0_4px_24px_rgba(0,0,0,0.12)] border border-gray-200 py-3 flex flex-col cursor-default">
+          <div className="px-4 pb-3 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-[#f0f3f5] flex items-center justify-center shrink-0">
+              <Building2 className="w-5 h-5 text-gray-500" strokeWidth={1.5} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[15px] font-semibold text-gray-900 truncate">Nordic Elk AB</div>
+              <div className="text-[13px] text-gray-500">Basic</div>
+            </div>
+          </div>
+
+          <div className="px-4 py-2 flex items-center justify-between hover:bg-gray-50 cursor-pointer">
+            <span className="text-[15px] text-gray-900">Online for messages</span>
+            <Toggle active={true} />
+          </div>
+
+          <div className="h-px bg-gray-200 my-2 mx-4" />
+
+          <MenuLink icon={User} label="My profile" href="/settings" onNavigate={onNavigate} />
+          <MenuLink icon={Users} label="Teams" />
+
+          <div className="mx-4 my-2 p-3 border border-[#a8dfaa] bg-[#fcfdfa] rounded-xl relative group/promo">
+            <button type="button" className="absolute top-2 right-2 text-gray-400 hover:text-gray-600">
+              <X className="w-4 h-4" />
+            </button>
+            <div className="flex items-center gap-1 font-semibold text-[14px] text-gray-900 mb-0.5">
+              Try Business Plus <ArrowRight className="w-4 h-4 ml-0.5" />
+            </div>
+            <p className="text-[13px] text-gray-600 leading-snug pr-4">
+              Upgrade for quicker access to the top 1% of freelancers. No upfront costs.
+            </p>
+          </div>
+
+          <MenuLink icon={IdCard} label="Membership" />
+          <MenuLink icon={Gauge} label="Account health" />
+          <MenuLink icon={Sun} label="Theme: Light" />
+          <MenuLink icon={Settings} label="Settings" href="/settings" onNavigate={onNavigate} />
+
+          <div className="h-px bg-gray-200 my-2 mx-4" />
+
+          <div className="px-4 py-2 flex items-center justify-between hover:bg-gray-50 cursor-pointer">
+            <span className="text-[15px] text-gray-900">New main menu</span>
+            <Toggle active={true} />
+          </div>
+
+          <button
+            type="button"
+            onClick={() => void handleSignOut()}
+            className="w-full flex items-center gap-3 px-4 py-2 hover:bg-gray-50 cursor-pointer text-gray-700 hover:text-gray-900 transition-colors text-left"
+          >
+            <LogOut className="w-5 h-5 text-gray-600" strokeWidth={1.5} />
+            <span className="text-[15px]">Log out</span>
+          </button>
+          <MenuLink icon={MoreHorizontal} label="More" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AlertsMenu({
+  open,
+  onOpenChange,
   active = false,
   onNavigate,
 }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   active?: boolean;
   onNavigate?: () => void;
 }) {
   const router = useRouter();
+  const rootRef = useRef<HTMLDivElement>(null);
   const [alerts, setAlerts] = useState<NotificationRow[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -335,6 +409,18 @@ function AlertsMenu({
     }, 30000);
     return () => window.clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    void loadAlerts();
+    function onPointerDown(e: PointerEvent) {
+      if (!rootRef.current?.contains(e.target as Node)) {
+        onOpenChange(false);
+      }
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open, onOpenChange]);
 
   const unreadCount = alerts.filter((a) => !a.read_at).length;
 
@@ -375,23 +461,35 @@ function AlertsMenu({
 
   return (
     <div
-      className="relative group flex flex-col items-center"
+      ref={rootRef}
+      className="relative flex flex-col items-center"
       onMouseEnter={() => {
-        void loadAlerts();
+        if (canHover()) {
+          onOpenChange(true);
+          void loadAlerts();
+        }
+      }}
+      onMouseLeave={() => {
+        if (canHover()) onOpenChange(false);
       }}
     >
       <button
         type="button"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        onClick={() => {
+          if (!canHover()) onOpenChange(!open);
+        }}
         className={`relative flex flex-col items-center justify-center gap-1 py-2.5 px-1 w-full transition-colors ${
-          active ? "text-gray-900" : "text-gray-500 group-hover:text-gray-800"
+          active || open ? "text-gray-900" : "text-gray-500 hover:text-gray-800"
         }`}
         title="Alerts"
       >
         <div className="relative flex items-center justify-center">
           <Bell
-            className={`w-6 h-6 transition-transform duration-200 ease-out group-hover:-rotate-12 ${
-              active ? "stroke-[2]" : "stroke-[1.75]"
-            }`}
+            className={`w-6 h-6 transition-transform duration-200 ease-out ${
+              open ? "-rotate-12" : ""
+            } ${active || open ? "stroke-[2]" : "stroke-[1.75]"}`}
           />
           {unreadCount > 0 && (
             <span className="absolute -top-1 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-[#2563EB] text-white text-[10px] font-semibold leading-4 text-center">
@@ -399,16 +497,14 @@ function AlertsMenu({
             </span>
           )}
         </div>
-        <span className={`text-[11px] leading-tight text-center tracking-tight ${active ? "font-medium" : ""}`}>
+        <span className={`text-[11px] leading-tight text-center tracking-tight ${active || open ? "font-medium" : ""}`}>
           Alerts
         </span>
       </button>
 
-      {/* Hover bridge */}
-      <div className="absolute left-full bottom-0 w-4 h-full hidden group-hover:block" />
+      <div className={`absolute left-full bottom-0 w-4 h-full ${open ? "block" : "hidden"}`} />
 
-      {/* Popover — anchored bottom so it stays on screen */}
-      <div className="absolute left-full bottom-0 ml-3 hidden group-hover:block z-[80]">
+      <div className={`absolute left-full bottom-0 ml-3 z-[80] ${open ? "block" : "hidden"}`}>
         <div className="w-[340px] bg-white rounded-2xl shadow-[0_4px_24px_rgba(0,0,0,0.12)] border border-gray-200 py-3 flex flex-col cursor-default">
           <div className="px-4 pb-3 flex items-center justify-between gap-3">
             <div>
@@ -492,6 +588,7 @@ function AlertsMenu({
 
           <Link
             href="/notifications"
+            onClick={() => onNavigate?.()}
             className="mx-4 py-2 text-center text-[14px] font-medium text-[#2563EB] hover:text-[#1d4ed8] hover:bg-[#EFF6FF] rounded-xl transition-colors"
           >
             View all alerts
@@ -514,17 +611,19 @@ function MenuLink({
   icon: Icon,
   label,
   href,
+  onNavigate,
 }: {
   icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
   label: string;
   href?: string;
+  onNavigate?: () => void;
 }) {
   const className =
     "flex items-center gap-3 px-4 py-2 hover:bg-gray-50 cursor-pointer text-gray-700 hover:text-gray-900 transition-colors";
 
   if (href) {
     return (
-      <Link href={href} className={className}>
+      <Link href={href} onClick={() => onNavigate?.()} className={className}>
         <Icon className="w-5 h-5 text-gray-600" strokeWidth={1.5} />
         <span className="text-[15px]">{label}</span>
       </Link>

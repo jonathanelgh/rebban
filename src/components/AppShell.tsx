@@ -59,13 +59,11 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
           className="relative z-0 min-h-0 min-w-0 flex-1 max-md:w-screen max-md:min-w-[100vw] max-md:max-w-[100vw] max-md:shrink-0"
           onClick={mobileNavOpen ? () => setMobileNavOpen(false) : undefined}
         >
-          <div
-            className={`relative h-full min-h-0 bg-white border-t border-line md:rounded-2xl md:border md:border-line md:shadow-[0_1px_2px_rgba(16,24,40,0.04)] ${
-              pathname === "/" || pathname.startsWith("/tasks")
-                ? "overflow-hidden"
-                : "overflow-y-auto no-scrollbar"
-            }`}
-          >
+          <div className="relative h-full min-h-0 overflow-hidden bg-white border-t border-line rounded-t-2xl md:rounded-2xl md:border md:border-line md:shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
+            {/*
+              Keep chrome outside the scroll container so the menu/create
+              buttons stay pinned on every page (not only dashboard/tasks).
+            */}
             <div className="absolute top-4 inset-x-4 z-40 flex items-center justify-between gap-3 pointer-events-none">
               <button
                 type="button"
@@ -93,10 +91,10 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
               )}
             </div>
             <div
-              className={`min-h-0 max-md:pt-16 ${
+              className={`h-full min-h-0 max-md:pt-16 ${
                 pathname === "/" || pathname.startsWith("/tasks")
-                  ? "h-full"
-                  : "min-h-full"
+                  ? "overflow-hidden"
+                  : "overflow-y-auto no-scrollbar"
               }`}
             >
               {children}
@@ -115,7 +113,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="flex h-full w-full">
           <aside className="hidden md:block w-[72px] shrink-0" />
           <div className="flex-1">
-            <div className="h-full bg-white md:rounded-2xl border-t border-line md:border" />
+            <div className="h-full bg-white rounded-t-2xl md:rounded-2xl border-t border-line md:border" />
           </div>
         </div>
       }
