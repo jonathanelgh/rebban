@@ -32,12 +32,12 @@ const CREATE_ITEMS = [
   },
   {
     href: "/time-tracking",
-    label: "New project",
-    description: "Track work against a client project",
+    label: "Track time",
+    description: "Start a timer for client work",
     icon: FolderKanban,
   },
   {
-    href: "/invoices",
+    href: "/invoices?new=1",
     label: "New invoice",
     description: "Bill for time or accepted proposals",
     icon: FileSpreadsheet,

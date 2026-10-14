@@ -23,6 +23,13 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "@/components/ProfileContext";
 import { MenuSelect } from "@/components/MenuSelect";
+import { asProposalContent } from "@/lib/proposals/content";
+import { nextInvoiceNumber } from "@/lib/invoices/numbering";
+import {
+  addDaysISO,
+  lineAmount,
+  todayISODate,
+} from "@/lib/invoices/totals";
 import type { Enums, Json } from "@/types/database";
 
 type ProposalStatus = Enums<"proposal_status">;
@@ -41,6 +48,7 @@ type ProposalRowData = {
   status: ProposalStatus;
   sentAt: string | null;
   updatedAt: string;
+  clientId: string | null;
   clientName: string;
   clientCompany: string | null;
 };
@@ -104,12 +112,14 @@ export default function ProposalsPage() {
   const {
     organizationId,
     organizationCurrency,
+    userId,
     loading: profileLoading,
   } = useProfile();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [proposals, setProposals] = useState<ProposalRowData[]>([]);
   const [clients, setClients] = useState<ClientOption[]>([]);
   const [loading, setLoading] = useState(true);
+  const [convertingId, setConvertingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | ProposalStatus>("all");
@@ -180,6 +190,7 @@ export default function ProposalsPage() {
           status: row.status,
           sentAt: row.sent_at,
           updatedAt: row.updated_at,
+          clientId: row.client_id,
           clientName: client?.name || "No client",
           clientCompany: client?.company ?? null,
         };
@@ -189,6 +200,116 @@ export default function ProposalsPage() {
 
     setLoading(false);
   }, [organizationId, organizationCurrency]);
+
+  async function convertToInvoice(proposal: ProposalRowData) {
+    if (!organizationId || !proposal.clientId) {
+      setError("This proposal needs a client before converting to an invoice.");
+      return;
+    }
+    setConvertingId(proposal.id);
+    setError(null);
+    const supabase = createClient();
+
+    const { data: full, error: loadError } = await supabase
+      .from("proposals")
+      .select("id, title, amount, currency, content, client_id")
+      .eq("id", proposal.id)
+      .eq("organization_id", organizationId)
+      .maybeSingle();
+
+    if (loadError || !full?.client_id) {
+      setError(loadError?.message || "Could not load proposal.");
+      setConvertingId(null);
+      return;
+    }
+
+    const content = asProposalContent(full.content);
+    const rawLines = Array.isArray(content.lineItems) ? content.lineItems : [];
+    const mappedLines = rawLines
+      .map((raw, index) => {
+        const item = raw as {
+          name?: string;
+          description?: string;
+          qty?: number;
+          quantity?: number;
+          price?: number;
+          unit_price?: number;
+        };
+        const quantity = Number(item.qty ?? item.quantity ?? 1) || 1;
+        const unitPrice = Number(item.price ?? item.unit_price ?? 0) || 0;
+        const description =
+          item.name?.trim() ||
+          item.description?.trim() ||
+          full.title ||
+          "Line item";
+        return {
+          description,
+          quantity,
+          unit_price: unitPrice,
+          amount: lineAmount(quantity, unitPrice),
+          position: index,
+        };
+      })
+      .filter((line) => line.description);
+
+    if (mappedLines.length === 0 && Number(full.amount || 0) > 0) {
+      mappedLines.push({
+        description: full.title || "Proposal work",
+        quantity: 1,
+        unit_price: Number(full.amount || 0),
+        amount: Number(full.amount || 0),
+        position: 0,
+      });
+    }
+
+    const subtotal = mappedLines.reduce((sum, line) => sum + line.amount, 0);
+    const issueDate = todayISODate();
+    const number = await nextInvoiceNumber(supabase, organizationId);
+
+    const { data: invoice, error: invoiceError } = await supabase
+      .from("invoices")
+      .insert({
+        organization_id: organizationId,
+        client_id: full.client_id,
+        proposal_id: full.id,
+        number,
+        status: "draft",
+        currency: full.currency || organizationCurrency || "USD",
+        issue_date: issueDate,
+        due_date: addDaysISO(issueDate, 14),
+        subtotal,
+        tax_total: 0,
+        total: subtotal,
+        notes: `Converted from proposal: ${full.title}`,
+        created_by: userId,
+      })
+      .select("id")
+      .single();
+
+    if (invoiceError || !invoice) {
+      setError(invoiceError?.message || "Could not create invoice.");
+      setConvertingId(null);
+      return;
+    }
+
+    if (mappedLines.length > 0) {
+      const { error: linesError } = await supabase.from("invoice_line_items").insert(
+        mappedLines.map((line) => ({
+          ...line,
+          organization_id: organizationId,
+          invoice_id: invoice.id,
+        }))
+      );
+      if (linesError) {
+        setError(linesError.message);
+        setConvertingId(null);
+        return;
+      }
+    }
+
+    setConvertingId(null);
+    router.push(`/invoices/${invoice.id}/edit`);
+  }
 
   useEffect(() => {
     if (profileLoading) return;
@@ -354,13 +475,18 @@ export default function ProposalsPage() {
                     status={statusLabel(proposal.status)}
                     statusKey={proposal.status}
                     sentDate={formatSentDate(proposal.sentAt)}
-                    action={actionForStatus(proposal.status)}
+                    action={
+                      convertingId === proposal.id
+                        ? "Converting…"
+                        : actionForStatus(proposal.status)
+                    }
                     onOpen={() =>
-                      router.push(
-                        proposal.status === "draft"
-                          ? `/proposals/${proposal.id}/edit`
-                          : `/proposals/${proposal.id}/edit`
-                      )
+                      router.push(`/proposals/${proposal.id}/edit`)
+                    }
+                    onConvert={
+                      proposal.status === "accepted"
+                        ? () => void convertToInvoice(proposal)
+                        : undefined
                     }
                   />
                 ))}
@@ -472,6 +598,7 @@ function ProposalRow({
   sentDate,
   action,
   onOpen,
+  onConvert,
 }: {
   client: string;
   project: string;
@@ -481,6 +608,7 @@ function ProposalRow({
   sentDate: string;
   action: string;
   onOpen: () => void;
+  onConvert?: () => void;
 }) {
   const getStatusBadge = (key: ProposalStatus, label: string) => {
     switch (key) {
@@ -534,16 +662,17 @@ function ProposalRow({
       <td className="px-6 py-4">{getStatusBadge(statusKey, status)}</td>
       <td className="px-6 py-4 text-gray-400">{sentDate}</td>
       <td className="px-6 py-4 text-right">
-        {action === "Convert to Invoice" ? (
+        {action === "Convert to Invoice" || action === "Converting…" ? (
           <button
             type="button"
+            disabled={action === "Converting…" || !onConvert}
             onClick={(e) => {
               e.stopPropagation();
-              onOpen();
+              onConvert?.();
             }}
-            className="text-sm font-medium text-emerald-600 hover:text-emerald-800 transition-colors"
+            className="text-sm font-medium text-emerald-600 hover:text-emerald-800 transition-colors disabled:opacity-50"
           >
-            Convert to Invoice
+            {action}
           </button>
         ) : action === "Follow up" ? (
           <button

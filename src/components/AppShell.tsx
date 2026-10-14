@@ -12,7 +12,8 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   const isFocusedLayout =
     pathname.includes("/edit") ||
     pathname.includes("/template") ||
-    pathname.startsWith("/p/");
+    pathname.startsWith("/p/") ||
+    pathname.startsWith("/pay/");
   const isAuthLayout =
     pathname.startsWith("/login") || pathname.startsWith("/signup");
   // Pages that already have a primary create CTA in the page header.
@@ -22,7 +23,9 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
     pathname === "/clients" ||
     pathname.startsWith("/clients/") ||
     pathname === "/tasks" ||
-    pathname.startsWith("/tasks/");
+    pathname.startsWith("/tasks/") ||
+    pathname === "/invoices" ||
+    pathname.startsWith("/invoices/");
 
   useEffect(() => {
     setMobileNavOpen(false);
@@ -32,7 +35,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
     return (
       <div
         className={`h-full w-full min-h-0 ${
-          pathname.startsWith("/p/")
+          pathname.startsWith("/p/") || pathname.startsWith("/pay/")
             ? "overflow-y-auto bg-[#F3F4F6]"
             : "overflow-hidden bg-white"
         }`}

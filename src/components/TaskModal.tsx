@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   X,
   ImagePlus,
@@ -11,9 +11,14 @@ import {
   Send,
   MessageSquare,
 } from "lucide-react";
+import {
+  TASK_COLUMNS,
+  type TaskPriority,
+  type UiTaskColumn,
+} from "@/lib/tasks";
 
-export type TaskPriority = "low" | "medium" | "high" | "urgent";
-export type TaskColumnId = "backlog" | "todo" | "in-progress" | "review" | "done";
+export type TaskColumnId = UiTaskColumn;
+export type { TaskPriority };
 
 export type TaskMedia = {
   id: string;
@@ -21,6 +26,9 @@ export type TaskMedia = {
   type: string;
   size: number;
   url: string;
+  storagePath?: string;
+  file?: File;
+  isNew?: boolean;
 };
 
 export type TaskComment = {
@@ -28,28 +36,27 @@ export type TaskComment = {
   author: string;
   body: string;
   createdAt: string;
+  authorId?: string;
+  isNew?: boolean;
 };
 
 export type TaskFormValues = {
   title: string;
   description: string;
   column: TaskColumnId;
-  client: string;
-  project: string;
+  clientId: string;
+  projectId: string;
+  newProjectName: string;
   priority: TaskPriority;
   dueDate: string;
-  assignee: string;
+  assigneeId: string;
   media: TaskMedia[];
   comments: TaskComment[];
 };
 
-const COLUMNS: { id: TaskColumnId; label: string }[] = [
-  { id: "backlog", label: "Backlog" },
-  { id: "todo", label: "To do" },
-  { id: "in-progress", label: "In progress" },
-  { id: "review", label: "Review" },
-  { id: "done", label: "Done" },
-];
+export type TaskOption = { id: string; name: string };
+export type TaskProjectOption = { id: string; name: string; clientId: string };
+export type TaskMemberOption = { id: string; name: string };
 
 const PRIORITIES: TaskPriority[] = ["low", "medium", "high", "urgent"];
 
@@ -59,11 +66,14 @@ const inputClass =
 type TaskModalProps = {
   mode: "create" | "edit";
   initialValues: TaskFormValues;
-  clients: string[];
-  projects: string[];
+  clients: TaskOption[];
+  projects: TaskProjectOption[];
+  members: TaskMemberOption[];
+  busy?: boolean;
+  error?: string | null;
   onClose: () => void;
-  onSave: (values: TaskFormValues) => void;
-  onDelete?: () => void;
+  onSave: (values: TaskFormValues) => void | Promise<void>;
+  onDelete?: () => void | Promise<void>;
 };
 
 function formatBytes(bytes: number) {
@@ -83,6 +93,9 @@ export function TaskModal({
   initialValues,
   clients,
   projects,
+  members,
+  busy = false,
+  error = null,
   onClose,
   onSave,
   onDelete,
@@ -90,20 +103,32 @@ export function TaskModal({
   const [values, setValues] = useState<TaskFormValues>(initialValues);
   const [commentDraft, setCommentDraft] = useState("");
   const [dragging, setDragging] = useState(false);
+  const [creatingProject, setCreatingProject] = useState(
+    Boolean(initialValues.newProjectName)
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setValues(initialValues);
     setCommentDraft("");
+    setCreatingProject(Boolean(initialValues.newProjectName));
   }, [initialValues]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape" && !busy) onClose();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, busy]);
+
+  const filteredProjects = useMemo(
+    () =>
+      values.clientId
+        ? projects.filter((project) => project.clientId === values.clientId)
+        : projects,
+    [projects, values.clientId]
+  );
 
   function update<K extends keyof TaskFormValues>(key: K, value: TaskFormValues[K]) {
     setValues((prev) => ({ ...prev, [key]: value }));
@@ -117,6 +142,8 @@ export function TaskModal({
       type: file.type || "application/octet-stream",
       size: file.size,
       url: URL.createObjectURL(file),
+      file,
+      isNew: true,
     }));
     update("media", [...values.media, ...next]);
   }
@@ -133,11 +160,14 @@ export function TaskModal({
   function addComment() {
     const body = commentDraft.trim();
     if (!body) return;
+    const me = members.find((m) => m.id === values.assigneeId) || members[0];
     const comment: TaskComment = {
       id: `c-${Date.now()}`,
-      author: "Sam",
+      author: me?.name || "You",
+      authorId: me?.id,
       body,
       createdAt: "Just now",
+      isNew: true,
     };
     update("comments", [...values.comments, comment]);
     setCommentDraft("");
@@ -150,24 +180,23 @@ export function TaskModal({
     );
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!values.title.trim()) return;
-    onSave({
+    if (!values.title.trim() || busy) return;
+    await onSave({
       ...values,
       title: values.title.trim(),
       description: values.description.trim(),
-      client: values.client.trim(),
-      project: values.project.trim(),
-      assignee: values.assignee.trim() || "Sam",
+      newProjectName: creatingProject ? values.newProjectName.trim() : "",
+      projectId: creatingProject ? "" : values.projectId,
     });
   }
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm">
-      <div className="absolute inset-0" onClick={onClose} aria-hidden />
+      <div className="absolute inset-0" onClick={busy ? undefined : onClose} aria-hidden />
       <form
-        onSubmit={handleSubmit}
+        onSubmit={(e) => void handleSubmit(e)}
         className="relative bg-white rounded-3xl border border-line w-full max-w-[640px] flex flex-col overflow-hidden shadow-[0_24px_60px_rgba(16,24,40,0.16)]"
       >
         <div className="px-7 pt-7 pb-4 flex items-start justify-between gap-4">
@@ -184,13 +213,20 @@ export function TaskModal({
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+            disabled={busy}
+            className="p-2 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         <div className="px-7 pb-2 space-y-4 max-h-[70vh] overflow-y-auto no-scrollbar">
+          {error && (
+            <p className="text-[13px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-3.5 py-2.5">
+              {error}
+            </p>
+          )}
+
           <Field label="Title">
             <input
               autoFocus
@@ -211,45 +247,103 @@ export function TaskModal({
             />
           </Field>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Client">
-              <input
-                list="task-clients"
-                value={values.client}
-                onChange={(e) => update("client", e.target.value)}
-                placeholder="Client name"
+              <select
+                value={values.clientId}
+                onChange={(e) => {
+                  const clientId = e.target.value;
+                  setValues((prev) => ({
+                    ...prev,
+                    clientId,
+                    projectId:
+                      prev.projectId &&
+                      projects.some(
+                        (p) => p.id === prev.projectId && p.clientId === clientId
+                      )
+                        ? prev.projectId
+                        : "",
+                  }));
+                }}
                 className={inputClass}
-              />
-              <datalist id="task-clients">
+              >
+                <option value="">No client</option>
                 {clients.map((client) => (
-                  <option key={client} value={client} />
+                  <option key={client.id} value={client.id}>
+                    {client.name}
+                  </option>
                 ))}
-              </datalist>
+              </select>
             </Field>
             <Field label="Project">
-              <input
-                list="task-projects"
-                value={values.project}
-                onChange={(e) => update("project", e.target.value)}
-                placeholder="Project name"
-                className={inputClass}
-              />
-              <datalist id="task-projects">
-                {projects.map((project) => (
-                  <option key={project} value={project} />
-                ))}
-              </datalist>
+              {creatingProject ? (
+                <div className="space-y-2">
+                  <input
+                    value={values.newProjectName}
+                    onChange={(e) => update("newProjectName", e.target.value)}
+                    placeholder="New project name"
+                    className={inputClass}
+                    disabled={!values.clientId}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCreatingProject(false);
+                      update("newProjectName", "");
+                    }}
+                    className="text-[12px] font-medium text-[#2563EB]"
+                  >
+                    Choose existing project
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <select
+                    value={values.projectId}
+                    onChange={(e) => {
+                      if (e.target.value === "__new__") {
+                        setCreatingProject(true);
+                        update("projectId", "");
+                        return;
+                      }
+                      const projectId = e.target.value;
+                      const project = projects.find((p) => p.id === projectId);
+                      setValues((prev) => ({
+                        ...prev,
+                        projectId,
+                        clientId: project?.clientId || prev.clientId,
+                      }));
+                    }}
+                    className={inputClass}
+                  >
+                    <option value="">No project</option>
+                    {filteredProjects.map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.name}
+                      </option>
+                    ))}
+                    <option value="__new__" disabled={!values.clientId}>
+                      + Create new project
+                    </option>
+                  </select>
+                  {!values.clientId && (
+                    <p className="text-[12px] text-gray-400">
+                      Select a client to create a project.
+                    </p>
+                  )}
+                </div>
+              )}
             </Field>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Status">
               <select
                 value={values.column}
                 onChange={(e) => update("column", e.target.value as TaskColumnId)}
                 className={inputClass}
               >
-                {COLUMNS.map((column) => (
+                {TASK_COLUMNS.map((column) => (
                   <option key={column.id} value={column.id}>
                     {column.label}
                   </option>
@@ -271,26 +365,31 @@ export function TaskModal({
             </Field>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Due date">
               <input
+                type="date"
                 value={values.dueDate}
                 onChange={(e) => update("dueDate", e.target.value)}
-                placeholder="e.g. Oct 18"
                 className={inputClass}
               />
             </Field>
             <Field label="Assignee">
-              <input
-                value={values.assignee}
-                onChange={(e) => update("assignee", e.target.value)}
-                placeholder="Sam"
+              <select
+                value={values.assigneeId}
+                onChange={(e) => update("assigneeId", e.target.value)}
                 className={inputClass}
-              />
+              >
+                <option value="">Unassigned</option>
+                {members.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.name}
+                  </option>
+                ))}
+              </select>
             </Field>
           </div>
 
-          {/* Media */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-[13px] font-medium text-gray-700">Media</span>
@@ -361,6 +460,7 @@ export function TaskModal({
                       className="flex items-center gap-3 rounded-xl border border-line bg-white px-3 py-2.5"
                     >
                       {isImage ? (
+                        // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={item.url}
                           alt={item.name}
@@ -392,7 +492,6 @@ export function TaskModal({
             )}
           </div>
 
-          {/* Comments */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-[13px] font-medium text-gray-700 flex items-center gap-1.5">
@@ -477,8 +576,9 @@ export function TaskModal({
           {mode === "edit" && onDelete ? (
             <button
               type="button"
-              onClick={onDelete}
-              className="px-4 py-2.5 rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
+              onClick={() => void onDelete()}
+              disabled={busy}
+              className="px-4 py-2.5 rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
             >
               Delete
             </button>
@@ -489,16 +589,21 @@ export function TaskModal({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2.5 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors"
+              disabled={busy}
+              className="px-4 py-2.5 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={!values.title.trim()}
-              className="btn-primary px-5 py-2.5 rounded-xl text-sm"
+              disabled={!values.title.trim() || busy}
+              className="btn-primary px-5 py-2.5 rounded-xl text-sm disabled:opacity-50"
             >
-              {mode === "create" ? "Create task" : "Save changes"}
+              {busy
+                ? "Saving…"
+                : mode === "create"
+                  ? "Create task"
+                  : "Save changes"}
             </button>
           </div>
         </div>

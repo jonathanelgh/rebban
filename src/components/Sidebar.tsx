@@ -147,7 +147,7 @@ function SidebarInner({
             href="/invoices"
             icon={FileSpreadsheet}
             label="Invoices"
-            active={pathname === "/invoices"}
+            active={pathname.startsWith("/invoices")}
             onNavigate={handleNavigate}
           />
           <NavItem

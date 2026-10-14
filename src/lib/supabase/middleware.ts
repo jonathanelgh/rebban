@@ -40,6 +40,9 @@ export async function updateSession(request: NextRequest) {
     path.startsWith("/auth/");
   const isPublicProposalRoute =
     path.startsWith("/p/") || path.startsWith("/api/p/");
+  const isPublicPayRoute =
+    path.startsWith("/pay/") || path.startsWith("/api/stripe/pay/");
+  const isStripeWebhook = path === "/api/stripe/webhook";
   // Gmail OAuth also returns ?code= — do not treat it as Supabase login.
   const isGmailOAuthRoute = path.startsWith("/api/gmail/");
 
@@ -60,8 +63,8 @@ export async function updateSession(request: NextRequest) {
     return supabaseResponse;
   }
 
-  // Public client proposal links (view / decline / sign).
-  if (isPublicProposalRoute) {
+  // Public client proposal links (view / decline / sign) and invoice pay pages.
+  if (isPublicProposalRoute || isPublicPayRoute || isStripeWebhook) {
     return supabaseResponse;
   }
 

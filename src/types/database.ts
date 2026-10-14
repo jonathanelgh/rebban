@@ -55,56 +55,6 @@ export type Database = {
           },
         ]
       }
-      gmail_connections: {
-        Row: {
-          access_token: string
-          connected_at: string
-          email: string
-          id: string
-          organization_id: string | null
-          refresh_token: string
-          revoked_at: string | null
-          scope: string | null
-          token_expiry: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          access_token: string
-          connected_at?: string
-          email: string
-          id?: string
-          organization_id?: string | null
-          refresh_token: string
-          revoked_at?: string | null
-          scope?: string | null
-          token_expiry: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          access_token?: string
-          connected_at?: string
-          email?: string
-          id?: string
-          organization_id?: string | null
-          refresh_token?: string
-          revoked_at?: string | null
-          scope?: string | null
-          token_expiry?: string
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "gmail_connections_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       clients: {
         Row: {
           company: string | null
@@ -157,6 +107,56 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "clients_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gmail_connections: {
+        Row: {
+          access_token: string
+          connected_at: string
+          email: string
+          id: string
+          organization_id: string | null
+          refresh_token: string
+          revoked_at: string | null
+          scope: string | null
+          token_expiry: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_token: string
+          connected_at?: string
+          email: string
+          id?: string
+          organization_id?: string | null
+          refresh_token: string
+          revoked_at?: string | null
+          scope?: string | null
+          token_expiry: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_token?: string
+          connected_at?: string
+          email?: string
+          id?: string
+          organization_id?: string | null
+          refresh_token?: string
+          revoked_at?: string | null
+          scope?: string | null
+          token_expiry?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gmail_connections_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
@@ -239,9 +239,13 @@ export type Database = {
           number: string | null
           organization_id: string
           paid_at: string | null
+          payment_token: string | null
           proposal_id: string | null
           sent_at: string | null
           status: Database["public"]["Enums"]["invoice_status"]
+          stripe_checkout_session_id: string | null
+          stripe_payment_intent_id: string | null
+          stripe_payment_status: string | null
           subtotal: number
           tax_total: number
           total: number
@@ -260,9 +264,13 @@ export type Database = {
           number?: string | null
           organization_id: string
           paid_at?: string | null
+          payment_token?: string | null
           proposal_id?: string | null
           sent_at?: string | null
           status?: Database["public"]["Enums"]["invoice_status"]
+          stripe_checkout_session_id?: string | null
+          stripe_payment_intent_id?: string | null
+          stripe_payment_status?: string | null
           subtotal?: number
           tax_total?: number
           total?: number
@@ -281,9 +289,13 @@ export type Database = {
           number?: string | null
           organization_id?: string
           paid_at?: string | null
+          payment_token?: string | null
           proposal_id?: string | null
           sent_at?: string | null
           status?: Database["public"]["Enums"]["invoice_status"]
+          stripe_checkout_session_id?: string | null
+          stripe_payment_intent_id?: string | null
+          stripe_payment_status?: string | null
           subtotal?: number
           tax_total?: number
           total?: number
@@ -465,6 +477,14 @@ export type Database = {
           name: string
           org_number: string | null
           slug: string
+          stripe_account_id: string | null
+          stripe_charges_enabled: boolean
+          stripe_customer_id: string | null
+          stripe_details_submitted: boolean
+          stripe_payouts_enabled: boolean
+          stripe_price_id: string | null
+          stripe_subscription_id: string | null
+          stripe_subscription_status: string | null
           tax_id: string | null
           type: Database["public"]["Enums"]["organization_type"]
           updated_at: string
@@ -482,6 +502,14 @@ export type Database = {
           name: string
           org_number?: string | null
           slug: string
+          stripe_account_id?: string | null
+          stripe_charges_enabled?: boolean
+          stripe_customer_id?: string | null
+          stripe_details_submitted?: boolean
+          stripe_payouts_enabled?: boolean
+          stripe_price_id?: string | null
+          stripe_subscription_id?: string | null
+          stripe_subscription_status?: string | null
           tax_id?: string | null
           type?: Database["public"]["Enums"]["organization_type"]
           updated_at?: string
@@ -499,6 +527,14 @@ export type Database = {
           name?: string
           org_number?: string | null
           slug?: string
+          stripe_account_id?: string | null
+          stripe_charges_enabled?: boolean
+          stripe_customer_id?: string | null
+          stripe_details_submitted?: boolean
+          stripe_payouts_enabled?: boolean
+          stripe_price_id?: string | null
+          stripe_subscription_id?: string | null
+          stripe_subscription_status?: string | null
           tax_id?: string | null
           type?: Database["public"]["Enums"]["organization_type"]
           updated_at?: string
@@ -651,6 +687,73 @@ export type Database = {
           },
         ]
       }
+      proposal_events: {
+        Row: {
+          actor_email: string | null
+          actor_name: string | null
+          actor_type: string
+          created_at: string
+          event_type: string
+          id: string
+          ip_address: string | null
+          metadata: Json
+          organization_id: string
+          proposal_id: string
+          share_link_id: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          actor_email?: string | null
+          actor_name?: string | null
+          actor_type?: string
+          created_at?: string
+          event_type: string
+          id?: string
+          ip_address?: string | null
+          metadata?: Json
+          organization_id: string
+          proposal_id: string
+          share_link_id?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          actor_email?: string | null
+          actor_name?: string | null
+          actor_type?: string
+          created_at?: string
+          event_type?: string
+          id?: string
+          ip_address?: string | null
+          metadata?: Json
+          organization_id?: string
+          proposal_id?: string
+          share_link_id?: string | null
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "proposal_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "proposal_events_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "proposals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "proposal_events_share_link_id_fkey"
+            columns: ["share_link_id"]
+            isOneToOne: false
+            referencedRelation: "proposal_share_links"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       proposal_followups: {
         Row: {
           body: string
@@ -729,73 +832,6 @@ export type Database = {
           },
           {
             foreignKeyName: "proposal_followups_share_link_id_fkey"
-            columns: ["share_link_id"]
-            isOneToOne: false
-            referencedRelation: "proposal_share_links"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      proposal_events: {
-        Row: {
-          actor_email: string | null
-          actor_name: string | null
-          actor_type: string
-          created_at: string
-          event_type: string
-          id: string
-          ip_address: string | null
-          metadata: Json
-          organization_id: string
-          proposal_id: string
-          share_link_id: string | null
-          user_agent: string | null
-        }
-        Insert: {
-          actor_email?: string | null
-          actor_name?: string | null
-          actor_type?: string
-          created_at?: string
-          event_type: string
-          id?: string
-          ip_address?: string | null
-          metadata?: Json
-          organization_id: string
-          proposal_id: string
-          share_link_id?: string | null
-          user_agent?: string | null
-        }
-        Update: {
-          actor_email?: string | null
-          actor_name?: string | null
-          actor_type?: string
-          created_at?: string
-          event_type?: string
-          id?: string
-          ip_address?: string | null
-          metadata?: Json
-          organization_id?: string
-          proposal_id?: string
-          share_link_id?: string | null
-          user_agent?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "proposal_events_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "proposal_events_proposal_id_fkey"
-            columns: ["proposal_id"]
-            isOneToOne: false
-            referencedRelation: "proposals"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "proposal_events_share_link_id_fkey"
             columns: ["share_link_id"]
             isOneToOne: false
             referencedRelation: "proposal_share_links"
@@ -1104,6 +1140,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      stripe_webhook_events: {
+        Row: {
+          id: string
+          payload: Json | null
+          processed_at: string
+          type: string
+        }
+        Insert: {
+          id: string
+          payload?: Json | null
+          processed_at?: string
+          type: string
+        }
+        Update: {
+          id?: string
+          payload?: Json | null
+          processed_at?: string
+          type?: string
+        }
+        Relationships: []
       }
       task_attachments: {
         Row: {
@@ -1417,19 +1474,12 @@ export type Database = {
           subject: string
           updated_at: string
         }[]
-      }
-      create_user_notification: {
-        Args: {
-          p_organization_id: string
-          p_user_id: string
-          p_type: string
-          p_title: string
-          p_body: string
-          p_link?: string | null
-          p_entity_type?: string | null
-          p_entity_id?: string | null
+        SetofOptions: {
+          from: "*"
+          to: "proposal_followups"
+          isOneToOne: false
+          isSetofReturn: true
         }
-        Returns: string
       }
       create_organization: {
         Args: {
@@ -1449,6 +1499,14 @@ export type Database = {
           name: string
           org_number: string | null
           slug: string
+          stripe_account_id: string | null
+          stripe_charges_enabled: boolean
+          stripe_customer_id: string | null
+          stripe_details_submitted: boolean
+          stripe_payouts_enabled: boolean
+          stripe_price_id: string | null
+          stripe_subscription_id: string | null
+          stripe_subscription_status: string | null
           tax_id: string | null
           type: Database["public"]["Enums"]["organization_type"]
           updated_at: string
@@ -1459,6 +1517,19 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      create_user_notification: {
+        Args: {
+          p_body: string
+          p_entity_id?: string
+          p_entity_type?: string
+          p_link?: string
+          p_organization_id: string
+          p_title: string
+          p_type: string
+          p_user_id: string
+        }
+        Returns: string
       }
       decline_public_proposal: {
         Args: {

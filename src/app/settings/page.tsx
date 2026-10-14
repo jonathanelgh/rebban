@@ -135,6 +135,17 @@ function SettingsPageInner() {
   const [gmailEmail, setGmailEmail] = useState<string | null>(null);
   const [gmailBusy, setGmailBusy] = useState(false);
   const [gmailNotice, setGmailNotice] = useState<string | null>(null);
+  const [stripeConfigured, setStripeConfigured] = useState(false);
+  const [stripeConnected, setStripeConnected] = useState(false);
+  const [stripeReady, setStripeReady] = useState(false);
+  const [stripeBusy, setStripeBusy] = useState(false);
+  const [stripeNotice, setStripeNotice] = useState<string | null>(null);
+  const [billingConfigured, setBillingConfigured] = useState(false);
+  const [billingActive, setBillingActive] = useState(false);
+  const [billingPlanLabel, setBillingPlanLabel] = useState("Free");
+  const [billingStatus, setBillingStatus] = useState<string | null>(null);
+  const [billingBusy, setBillingBusy] = useState(false);
+  const [billingNotice, setBillingNotice] = useState<string | null>(null);
 
   const [profile, setProfile] = useState({
     name: "",
@@ -185,7 +196,10 @@ function SettingsPageInner() {
 
   useEffect(() => {
     const gmail = searchParams.get("gmail");
-    if (!gmail) return;
+    const stripe = searchParams.get("stripe");
+    const billing = searchParams.get("billing");
+    if (!gmail && !stripe && !billing) return;
+
     if (gmail === "connected") {
       setGmailNotice("Gmail connected. Proposal emails will send from your account.");
       setSection("integrations");
@@ -194,34 +208,99 @@ function SettingsPageInner() {
       setGmailNotice(reason);
       setSection("integrations");
     }
-    router.replace("/settings?section=integrations", { scroll: false });
+
+    if (stripe === "return" || stripe === "refresh") {
+      setSection("integrations");
+      setStripeNotice(
+        stripe === "return"
+          ? "Checking your Stripe account…"
+          : "Stripe onboarding link expired — start again to continue."
+      );
+      void (async () => {
+        const res = await fetch("/api/stripe/connect/refresh", { method: "POST" });
+        const json = await res.json();
+        if (res.ok) {
+          setStripeConnected(Boolean(json.connected));
+          setStripeReady(Boolean(json.ready));
+          setStripeNotice(
+            json.ready
+              ? "Stripe is ready. You can collect invoice payments."
+              : "Stripe connected — finish any remaining steps in Stripe to accept payments."
+          );
+        }
+      })();
+    }
+
+    if (billing === "success") {
+      setSection("billing");
+      setBillingNotice("Subscription updated. It can take a moment to sync.");
+    } else if (billing === "cancelled") {
+      setSection("billing");
+      setBillingNotice("Checkout cancelled.");
+    }
+
+    const nextSection = billing ? "billing" : "integrations";
+    router.replace(`/settings?section=${nextSection}`, { scroll: false });
   }, [searchParams, router]);
 
   useEffect(() => {
     if (section !== "integrations") return;
     let cancelled = false;
-    async function loadGmail() {
-      const res = await fetch("/api/gmail/status");
-      if (!res.ok || cancelled) return;
-      const json = (await res.json()) as {
-        configured?: boolean;
-        connected?: boolean;
-        email?: string | null;
-        canSend?: boolean;
-        needsReconnect?: boolean;
-      };
+    async function loadIntegrations() {
+      const [gmailRes, stripeRes] = await Promise.all([
+        fetch("/api/gmail/status"),
+        fetch("/api/stripe/connect/status"),
+      ]);
       if (cancelled) return;
-      setGmailConfigured(Boolean(json.configured));
-      setGmailConnected(Boolean(json.connected));
-      setGmailCanSend(Boolean(json.canSend));
-      setGmailEmail(json.email || null);
-      if (json.needsReconnect) {
-        setGmailNotice(
-          "Gmail is connected, but send permission is missing. Disconnect, add the gmail.send scope in Google Cloud, then reconnect."
-        );
+      if (gmailRes.ok) {
+        const json = (await gmailRes.json()) as {
+          configured?: boolean;
+          connected?: boolean;
+          email?: string | null;
+          canSend?: boolean;
+          needsReconnect?: boolean;
+        };
+        setGmailConfigured(Boolean(json.configured));
+        setGmailConnected(Boolean(json.connected));
+        setGmailCanSend(Boolean(json.canSend));
+        setGmailEmail(json.email || null);
+        if (json.needsReconnect) {
+          setGmailNotice(
+            "Gmail is connected, but send permission is missing. Disconnect, add the gmail.send scope in Google Cloud, then reconnect."
+          );
+        }
+      }
+      if (stripeRes.ok) {
+        const json = (await stripeRes.json()) as {
+          configured?: boolean;
+          connected?: boolean;
+          ready?: boolean;
+        };
+        setStripeConfigured(Boolean(json.configured));
+        setStripeConnected(Boolean(json.connected));
+        setStripeReady(Boolean(json.ready));
       }
     }
-    void loadGmail();
+    void loadIntegrations();
+    return () => {
+      cancelled = true;
+    };
+  }, [section]);
+
+  useEffect(() => {
+    if (section !== "billing") return;
+    let cancelled = false;
+    async function loadBilling() {
+      const res = await fetch("/api/stripe/billing/status");
+      if (!res.ok || cancelled) return;
+      const json = await res.json();
+      if (cancelled) return;
+      setBillingConfigured(Boolean(json.configured));
+      setBillingActive(Boolean(json.active));
+      setBillingPlanLabel(json.planLabel || "Free");
+      setBillingStatus(json.status || null);
+    }
+    void loadBilling();
     return () => {
       cancelled = true;
     };
@@ -240,6 +319,66 @@ function SettingsPageInner() {
     setGmailConnected(false);
     setGmailEmail(null);
     setGmailNotice("Gmail disconnected. Emails will use Rebban’s sender again.");
+  }
+
+  async function handleStripeConnect() {
+    setStripeBusy(true);
+    setStripeNotice(null);
+    try {
+      const res = await fetch("/api/stripe/connect/onboard", { method: "POST" });
+      const json = await res.json();
+      if (!res.ok || !json.url || typeof json.url !== "string") {
+        setStripeNotice(json.error || "Could not start Stripe onboarding.");
+        return;
+      }
+      const next = new URL(json.url);
+      window.location.assign(next.toString());
+    } catch (err) {
+      setStripeNotice(
+        err instanceof Error ? err.message : "Could not start Stripe onboarding."
+      );
+    } finally {
+      setStripeBusy(false);
+    }
+  }
+
+  async function handleStripeDashboard() {
+    setStripeBusy(true);
+    setStripeNotice(null);
+    const res = await fetch("/api/stripe/connect/dashboard", { method: "POST" });
+    const json = await res.json();
+    setStripeBusy(false);
+    if (!res.ok || !json.url) {
+      setStripeNotice(json.error || "Could not open Stripe Dashboard.");
+      return;
+    }
+    window.open(json.url as string, "_blank", "noopener,noreferrer");
+  }
+
+  async function handleBillingCheckout() {
+    setBillingBusy(true);
+    setBillingNotice(null);
+    const res = await fetch("/api/stripe/billing/checkout", { method: "POST" });
+    const json = await res.json();
+    setBillingBusy(false);
+    if (!res.ok || !json.url) {
+      setBillingNotice(json.error || "Could not start checkout.");
+      return;
+    }
+    window.location.href = json.url as string;
+  }
+
+  async function handleBillingPortal() {
+    setBillingBusy(true);
+    setBillingNotice(null);
+    const res = await fetch("/api/stripe/billing/portal", { method: "POST" });
+    const json = await res.json();
+    setBillingBusy(false);
+    if (!res.ok || !json.url) {
+      setBillingNotice(json.error || "Could not open billing portal.");
+      return;
+    }
+    window.location.href = json.url as string;
   }
 
   function flashSaved() {
@@ -679,20 +818,39 @@ function SettingsPageInner() {
                 title="Billing"
                 subtitle="Your Rebban plan and payment method."
               >
+                {billingNotice && (
+                  <p className="mb-4 text-[13px] text-gray-600 bg-[#FAFBFC] border border-line rounded-xl px-3.5 py-2.5">
+                    {billingNotice}
+                  </p>
+                )}
                 <div className="rounded-2xl border border-line bg-[#FAFBFC] p-4 sm:p-5 mb-5">
                   <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
                     <div className="min-w-0">
                       <div className="text-[13px] font-medium text-gray-500">Current plan</div>
-                      <div className="text-xl font-semibold text-gray-900 mt-1">Basic</div>
+                      <div className="text-xl font-semibold text-gray-900 mt-1">
+                        {billingPlanLabel}
+                      </div>
                       <p className="text-[13px] text-gray-500 mt-1">
-                        $19/month · Renews Nov 12, 2026
+                        {billingActive
+                          ? `Status: ${billingStatus || "active"}`
+                          : "Free forever for getting started. Upgrade when you need more."}
                       </p>
                     </div>
                     <button
                       type="button"
-                      className="btn-primary w-full sm:w-auto px-4 py-2.5 rounded-full text-sm"
+                      disabled={billingBusy || !billingConfigured}
+                      onClick={() => {
+                        void (billingActive
+                          ? handleBillingPortal()
+                          : handleBillingCheckout());
+                      }}
+                      className="btn-primary w-full sm:w-auto px-4 py-2.5 rounded-full text-sm disabled:opacity-50"
                     >
-                      Upgrade
+                      {billingBusy
+                        ? "Please wait…"
+                        : billingActive
+                          ? "Manage plan"
+                          : "Upgrade"}
                     </button>
                   </div>
                 </div>
@@ -703,17 +861,25 @@ function SettingsPageInner() {
                     </div>
                     <div className="min-w-0">
                       <div className="text-[14px] font-medium text-gray-900">
-                        Visa ending in 4242
+                        {billingActive ? "Payment method on file" : "No payment method"}
                       </div>
-                      <div className="text-[12px] text-gray-400 mt-0.5">Expires 08/28</div>
+                      <div className="text-[12px] text-gray-400 mt-0.5">
+                        {billingConfigured
+                          ? "Managed securely in the Stripe Customer Portal"
+                          : "Add STRIPE_PRICE_ID to enable paid plans"}
+                      </div>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    className="text-sm font-medium text-[#2563EB] hover:text-[#1d4ed8] transition-colors self-start sm:self-auto"
-                  >
-                    Update
-                  </button>
+                  {billingActive && (
+                    <button
+                      type="button"
+                      disabled={billingBusy}
+                      onClick={() => void handleBillingPortal()}
+                      className="text-sm font-medium text-[#2563EB] hover:text-[#1d4ed8] transition-colors self-start sm:self-auto disabled:opacity-50"
+                    >
+                      Update
+                    </button>
+                  )}
                 </div>
               </Section>
             )}
@@ -790,9 +956,9 @@ function SettingsPageInner() {
                 title="Integrations"
                 subtitle="Connect tools you already use to get paid and stay in sync."
               >
-                {gmailNotice && (
+                {(gmailNotice || stripeNotice) && (
                   <p className="mb-4 text-[13px] text-gray-600 bg-[#FAFBFC] border border-line rounded-xl px-3.5 py-2.5">
-                    {gmailNotice}
+                    {stripeNotice || gmailNotice}
                   </p>
                 )}
                 <div className="space-y-3">
@@ -832,8 +998,43 @@ function SettingsPageInner() {
                   />
                   <IntegrationRow
                     name="Stripe"
-                    description="Collect invoice payments"
-                    connected
+                    description={
+                      !stripeConfigured
+                        ? "Add STRIPE_SECRET_KEY to enable payouts"
+                        : stripeReady
+                          ? "Ready to collect invoice payments to your bank account"
+                          : stripeConnected
+                            ? "Finish onboarding to accept card payments"
+                            : "Get paid to your bank account when clients pay invoices"
+                    }
+                    connected={stripeReady}
+                    actionLabel={
+                      !stripeConfigured
+                        ? "Not configured"
+                        : stripeBusy
+                          ? "Please wait…"
+                          : stripeReady
+                            ? "Open dashboard"
+                            : stripeConnected
+                              ? "Continue setup"
+                              : "Connect"
+                    }
+                    onConnect={
+                      stripeConfigured && !stripeBusy
+                        ? () => {
+                            void (stripeReady
+                              ? handleStripeDashboard()
+                              : handleStripeConnect());
+                          }
+                        : undefined
+                    }
+                    onDisconnect={
+                      stripeConfigured && stripeConnected && !stripeBusy
+                        ? () => {
+                            void handleStripeDashboard();
+                          }
+                        : undefined
+                    }
                   />
                   <IntegrationRow
                     name="Google Calendar"

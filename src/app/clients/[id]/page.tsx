@@ -621,7 +621,11 @@ export default function ClientDetailPage() {
           headers={["Invoice", "Amount", "Status", "Due", "Issued"]}
         >
           {invoices.map((invoice) => (
-            <tr key={invoice.id} className="border-b border-line last:border-0">
+            <tr
+              key={invoice.id}
+              className="border-b border-line last:border-0 hover:bg-[#FAFBFC] cursor-pointer transition-colors"
+              onClick={() => router.push(`/invoices/${invoice.id}/edit`)}
+            >
               <td className="px-6 py-4 font-medium text-gray-900">
                 {invoice.number || "Draft invoice"}
               </td>

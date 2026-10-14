@@ -56,11 +56,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       className={`${satoshi.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className={`${satoshi.className} h-screen bg-[#F0F1F3] text-gray-900 overflow-hidden selection:bg-blue-100`}>
-        <TimeTrackingProvider>
-          <ProfileProvider>
+        <ProfileProvider>
+          <TimeTrackingProvider>
             <AppShell>{children}</AppShell>
-          </ProfileProvider>
-        </TimeTrackingProvider>
+          </TimeTrackingProvider>
+        </ProfileProvider>
       </body>
     </html>
   );
