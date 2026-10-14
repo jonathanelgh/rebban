@@ -69,13 +69,10 @@ export default function PublicInvoicePayPage() {
   );
   const checkoutRef = useRef<HTMLDivElement>(null);
   const confirmAttempted = useRef(false);
-
-  // Drop one-shot status query so banners/marks don't stick on refresh
-  useEffect(() => {
-    if (!token || !statusParam) return;
-    if (statusParam !== "success" && statusParam !== "cancelled") return;
-    router.replace(`/pay/${token}`, { scroll: false });
-  }, [token, statusParam, router]);
+  // Capture before we strip ?status / ?session_id from the URL
+  const pendingSessionId = useRef(
+    statusParam === "success" ? sessionIdParam : null
+  );
 
   const reload = useCallback(async () => {
     if (!token) return;
@@ -94,27 +91,48 @@ export default function PublicInvoicePayPage() {
     async (sessionId: string | null | undefined) => {
       if (!token || !sessionId) return;
       try {
-        await fetch(`/api/stripe/pay/${token}/confirm`, {
+        const res = await fetch(`/api/stripe/pay/${token}/confirm`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sessionId }),
         });
-      } catch {
-        // Webhook may still fulfill; UI stays optimistic.
+        if (!res.ok) {
+          console.error("[pay] confirm failed", await res.text().catch(() => ""));
+        }
+      } catch (err) {
+        console.error("[pay] confirm error", err);
       }
       await reload();
     },
     [token, reload]
   );
 
-  // After redirect from Checkout, verify + mark paid (webhook may not be set up yet)
+  // Fulfill first, then drop one-shot query params (don't race confirm away)
   useEffect(() => {
-    if (statusParam !== "success" || !sessionIdParam || confirmAttempted.current) {
-      return;
+    if (!token || !statusParam) return;
+    if (statusParam !== "success" && statusParam !== "cancelled") return;
+
+    let cancelled = false;
+    async function finish() {
+      if (
+        statusParam === "success" &&
+        pendingSessionId.current &&
+        !confirmAttempted.current
+      ) {
+        confirmAttempted.current = true;
+        const sessionId = pendingSessionId.current;
+        pendingSessionId.current = null;
+        await confirmPayment(sessionId);
+      }
+      if (!cancelled) {
+        router.replace(`/pay/${token}`, { scroll: false });
+      }
     }
-    confirmAttempted.current = true;
-    void confirmPayment(sessionIdParam);
-  }, [statusParam, sessionIdParam, confirmPayment]);
+    void finish();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, statusParam, confirmPayment, router]);
 
   useEffect(() => {
     if (!token) {
