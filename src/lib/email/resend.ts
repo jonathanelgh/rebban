@@ -1,5 +1,10 @@
 import { Resend } from "resend";
 import {
+  emailDetailCard,
+  escapeHtml as brandEscapeHtml,
+  rebbanEmailLayout,
+} from "@/lib/email/brand";
+import {
   getGmailConnectionStatus,
   sendEmailViaGmail,
 } from "@/lib/email/gmail";
@@ -15,6 +20,12 @@ export function getResend() {
   return new Resend(key);
 }
 
+export type EmailAttachment = {
+  filename: string;
+  content: Buffer;
+  contentType?: string;
+};
+
 async function sendHtmlEmail(options: {
   to: string;
   subject: string;
@@ -22,8 +33,12 @@ async function sendHtmlEmail(options: {
   fromUserId?: string | null;
   fromName?: string | null;
   useAdmin?: boolean;
+  /** When set, always send via Resend (Gmail MIME path has no attachments yet). */
+  attachments?: EmailAttachment[];
 }) {
-  if (options.fromUserId) {
+  const hasAttachments = Boolean(options.attachments?.length);
+
+  if (options.fromUserId && !hasAttachments) {
     const gmailResult = await sendEmailViaGmail({
       userId: options.fromUserId,
       to: options.to,
@@ -43,6 +58,11 @@ async function sendHtmlEmail(options: {
     to: options.to,
     subject: options.subject,
     html: options.html,
+    attachments: options.attachments?.map((file) => ({
+      filename: file.filename,
+      content: file.content,
+      contentType: file.contentType,
+    })),
   });
   if (error) throw new Error(error.message);
   return { provider: "resend" as const, id: data?.id || null, from: getFromEmail() };
@@ -301,6 +321,110 @@ export async function sendProposalAcceptedEmail(options: {
 
   if (error) throw new Error(error.message);
   return data;
+}
+
+export async function sendInvoicePaidFreelancerEmail(options: {
+  to: string;
+  freelancerName?: string | null;
+  clientName?: string | null;
+  invoiceNumber?: string | null;
+  amountLabel: string;
+  paidAtLabel: string;
+  invoiceUrl: string;
+}) {
+  const esc = brandEscapeHtml;
+  const freelancerFirst = firstName(options.freelancerName);
+  const greeting = freelancerFirst ? `Hi ${freelancerFirst},` : "Hi,";
+  const invoiceLabel = options.invoiceNumber?.trim()
+    ? `Invoice ${options.invoiceNumber.trim()}`
+    : "Your invoice";
+  const clientLabel = options.clientName?.trim() || "your client";
+
+  const bodyHtml = `
+    <p style="margin:0 0 12px;">${esc(greeting)}</p>
+    <p style="margin:0;">
+      Great news — <strong>${esc(clientLabel)}</strong> just paid
+      <strong>${esc(invoiceLabel)}</strong>.
+    </p>
+    ${emailDetailCard([
+      { label: "Amount", value: options.amountLabel },
+      { label: "Paid", value: options.paidAtLabel },
+      { label: "Client", value: clientLabel },
+    ])}
+    <p style="margin:20px 0 0;font-size:14px;color:#6B7280;">
+      Funds settle to your connected Stripe account per your payout schedule.
+    </p>`;
+
+  const html = rebbanEmailLayout({
+    preheader: `${invoiceLabel} was paid — ${options.amountLabel}`,
+    title: "Payment received",
+    bodyHtml,
+    cta: { label: "View invoice", url: options.invoiceUrl },
+    footerNote: null,
+  });
+
+  return sendHtmlEmail({
+    to: options.to,
+    subject: `Paid: ${invoiceLabel} · ${options.amountLabel}`,
+    html,
+  });
+}
+
+export async function sendInvoicePaidClientEmail(options: {
+  to: string;
+  clientName?: string | null;
+  organizationName: string;
+  invoiceNumber?: string | null;
+  amountLabel: string;
+  paidAtLabel: string;
+  fromName?: string | null;
+  pdf: Buffer;
+  pdfFilename: string;
+}) {
+  const esc = brandEscapeHtml;
+  const clientFirst = firstName(options.clientName);
+  const greeting = clientFirst ? `Hi ${clientFirst},` : "Hi,";
+  const invoiceLabel = options.invoiceNumber?.trim()
+    ? `Invoice ${options.invoiceNumber.trim()}`
+    : "your invoice";
+  const biz = options.organizationName.trim() || "your freelancer";
+
+  const bodyHtml = `
+    <p style="margin:0 0 12px;">${esc(greeting)}</p>
+    <p style="margin:0;">
+      This confirms your payment to <strong>${esc(biz)}</strong> for
+      <strong>${esc(invoiceLabel)}</strong>. A PDF copy is attached for your records.
+    </p>
+    ${emailDetailCard([
+      { label: "Amount paid", value: options.amountLabel },
+      { label: "Paid on", value: options.paidAtLabel },
+      { label: "Paid to", value: biz },
+    ])}
+    <p style="margin:20px 0 0;font-size:14px;color:#6B7280;">
+      Keep the attached PDF with your bookkeeping. No further action is needed.
+    </p>`;
+
+  const html = rebbanEmailLayout({
+    preheader: `Payment confirmation for ${invoiceLabel} — ${options.amountLabel}`,
+    title: "Payment confirmation",
+    bodyHtml,
+    cta: null,
+    footerNote: `Receipt from ${biz}`,
+  });
+
+  return sendHtmlEmail({
+    to: options.to,
+    subject: `Payment confirmation · ${invoiceLabel}`,
+    html,
+    fromName: options.fromName || biz,
+    attachments: [
+      {
+        filename: options.pdfFilename,
+        content: options.pdf,
+        contentType: "application/pdf",
+      },
+    ],
+  });
 }
 
 export async function sendProposalFollowUpEmail(options: {

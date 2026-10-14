@@ -15,8 +15,9 @@ type EventRow = {
 
 const LABELS: Record<string, string> = {
   sent: "Sent to client",
-  viewed: "Viewed by client",
-  paid: "Marked paid",
+  opened: "Opened by client",
+  viewed: "Viewed again",
+  paid: "Paid by client",
   voided: "Voided",
 };
 

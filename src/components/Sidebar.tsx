@@ -83,8 +83,10 @@ function alertIconForType(type: string): LucideIcon {
     case "invoice_sent":
       return Send;
     case "proposal_opened":
+    case "invoice_opened":
       return Eye;
     case "proposal_signed":
+    case "invoice_paid":
       return CheckCircle2;
     case "proposal_declined":
       return XCircle;

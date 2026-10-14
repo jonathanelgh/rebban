@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { useParams, useSearchParams } from "next/navigation";
-import { Check, CircleDollarSign, Download, Loader2 } from "lucide-react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { Check, Download, Loader2 } from "lucide-react";
 import { InvoiceDocument } from "@/components/invoices/InvoiceDocument";
+import { EmbeddedInvoiceCheckout } from "@/components/invoices/EmbeddedInvoiceCheckout";
 import { lineAmount } from "@/lib/invoices/totals";
 
 type PayPayload = {
@@ -54,30 +55,98 @@ type PayPayload = {
 
 export default function PublicInvoicePayPage() {
   const params = useParams();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const token = String(params.token || "");
   const statusParam = searchParams.get("status");
+  const sessionIdParam = searchParams.get("session_id");
 
   const [data, setData] = useState<PayPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [paying, setPaying] = useState(false);
+  const [paidOptimistic, setPaidOptimistic] = useState(
+    () => statusParam === "success"
+  );
+  const checkoutRef = useRef<HTMLDivElement>(null);
+  const confirmAttempted = useRef(false);
+
+  // Drop one-shot status query so banners/marks don't stick on refresh
+  useEffect(() => {
+    if (!token || !statusParam) return;
+    if (statusParam !== "success" && statusParam !== "cancelled") return;
+    router.replace(`/pay/${token}`, { scroll: false });
+  }, [token, statusParam, router]);
+
+  const reload = useCallback(async () => {
+    if (!token) return;
+    const res = await fetch(`/api/stripe/pay/${token}`);
+    const json = (await res.json().catch(() => ({}))) as {
+      error?: string;
+    } & Partial<PayPayload>;
+    if (!res.ok) {
+      setError(json.error || "Invoice not found");
+      return;
+    }
+    setData(json as PayPayload);
+  }, [token]);
+
+  const confirmPayment = useCallback(
+    async (sessionId: string | null | undefined) => {
+      if (!token || !sessionId) return;
+      try {
+        await fetch(`/api/stripe/pay/${token}/confirm`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId }),
+        });
+      } catch {
+        // Webhook may still fulfill; UI stays optimistic.
+      }
+      await reload();
+    },
+    [token, reload]
+  );
+
+  // After redirect from Checkout, verify + mark paid (webhook may not be set up yet)
+  useEffect(() => {
+    if (statusParam !== "success" || !sessionIdParam || confirmAttempted.current) {
+      return;
+    }
+    confirmAttempted.current = true;
+    void confirmPayment(sessionIdParam);
+  }, [statusParam, sessionIdParam, confirmPayment]);
 
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      setError("Invoice not found");
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     async function load() {
       setLoading(true);
-      const res = await fetch(`/api/stripe/pay/${token}`);
-      const json = await res.json();
-      if (cancelled) return;
-      if (!res.ok) {
-        setError(json.error || "Invoice not found");
-        setLoading(false);
-        return;
+      setError(null);
+      try {
+        const res = await fetch(`/api/stripe/pay/${token}`);
+        const json = (await res.json().catch(() => ({}))) as {
+          error?: string;
+        } & Partial<PayPayload>;
+        if (cancelled) return;
+        if (!res.ok) {
+          setError(json.error || "Invoice not found");
+          setData(null);
+          return;
+        }
+        setData(json as PayPayload);
+        // Fire-and-forget: activity + alert for freelancers (first open)
+        void fetch(`/api/stripe/pay/${token}/view`, { method: "POST" });
+      } catch (err) {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : "Could not load invoice");
+        setData(null);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setData(json as PayPayload);
-      setLoading(false);
     }
     void load();
     return () => {
@@ -85,23 +154,17 @@ export default function PublicInvoicePayPage() {
     };
   }, [token]);
 
-  async function handlePay() {
-    setPaying(true);
-    setError(null);
-    const res = await fetch(`/api/stripe/pay/${token}/checkout`, {
-      method: "POST",
-    });
-    const json = await res.json();
-    if (!res.ok || !json.url) {
-      setError(json.error || "Could not start checkout");
-      setPaying(false);
-      return;
-    }
-    window.location.href = json.url as string;
-  }
-
   function handleDownloadPdf() {
     window.print();
+  }
+
+  function scrollToCheckout() {
+    checkoutRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function handleCheckoutComplete(sessionId: string | null) {
+    setPaidOptimistic(true);
+    void confirmPayment(sessionId);
   }
 
   if (loading) {
@@ -123,11 +186,19 @@ export default function PublicInvoicePayPage() {
     );
   }
 
-  const paid = data.invoice.status === "paid" || statusParam === "success";
+  const paid = paidOptimistic || data.invoice.status === "paid";
+
+  const showPaymentColumn = !paid && data.invoice.payable;
 
   return (
     <div className="min-h-screen bg-[#F7F8FA] px-4 py-8 sm:py-10 print:bg-white print:p-0">
-      <div className="max-w-[820px] mx-auto">
+      <div
+        className={`mx-auto ${
+          showPaymentColumn || paid
+            ? "max-w-[1180px]"
+            : "max-w-[820px]"
+        }`}
+      >
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5 print:hidden">
           <div>
             <div className="text-[13px] text-gray-500">Invoice from</div>
@@ -152,89 +223,96 @@ export default function PublicInvoicePayPage() {
             ) : data.invoice.payable ? (
               <button
                 type="button"
-                onClick={() => void handlePay()}
-                disabled={paying}
-                className="btn-primary inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-sm disabled:opacity-50"
+                onClick={scrollToCheckout}
+                className="btn-primary inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-sm lg:hidden"
               >
-                {paying ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <CircleDollarSign className="w-4 h-4" />
-                )}
-                {paying ? "Redirecting…" : `Pay ${data.invoice.totalFormatted}`}
+                Pay {data.invoice.totalFormatted}
               </button>
             ) : null}
           </div>
         </div>
 
-        {statusParam === "cancelled" && !paid && (
-          <p className="mb-4 text-[13px] text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 print:hidden">
-            Checkout was cancelled. You can try again when ready.
-          </p>
-        )}
         {error && (
           <p className="mb-4 text-[13px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2 print:hidden">
             {error}
           </p>
         )}
 
-        <InvoiceDocument
-          bannerUrl={data.invoice.bannerUrl}
-          showLogo={data.invoice.showLogo}
-          logoUrl={data.business.logoUrl}
-          fromName={data.business.name}
-          fromAddress={data.business.address}
-          showTaxId={data.invoice.showTaxId}
-          taxId={data.invoice.taxId}
-          number={data.invoice.number}
-          issueDate={data.invoice.issueDate}
-          dueDate={data.invoice.dueDate}
-          showReference={data.invoice.showReference}
-          referenceNumber={data.invoice.referenceNumber}
-          billToName={data.client.name}
-          billToCompany={data.client.company}
-          billToEmail={data.client.email}
-          showShippingAddress={data.invoice.showShippingAddress}
-          shippingAddress={data.invoice.shippingAddress}
-          currency={data.invoice.currency}
-          lines={data.lines.map((line, i) => ({
-            id: String(i),
-            description: line.description,
-            quantity: line.quantity,
-            unitPrice: line.unitPrice,
-            amount: line.amount ?? lineAmount(line.quantity, line.unitPrice),
-          }))}
-          subtotal={data.invoice.subtotal}
-          taxEnabled={data.invoice.taxEnabled}
-          taxRate={data.invoice.taxRate}
-          taxTotal={data.invoice.taxTotal}
-          pricesIncludeTax={data.invoice.pricesIncludeTax}
-          total={data.invoice.total}
-          lateFeeEnabled={data.invoice.lateFeeEnabled}
-          lateFeePercent={data.invoice.lateFeePercent}
-          notes={data.invoice.notes}
-        />
-
-        {!paid && data.invoice.payable && (
-          <div className="mt-5 print:hidden">
-            <button
-              type="button"
-              onClick={() => void handlePay()}
-              disabled={paying}
-              className="w-full btn-primary inline-flex items-center justify-center gap-2 px-4 py-3 rounded-full text-sm disabled:opacity-50"
-            >
-              {paying ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <CircleDollarSign className="w-4 h-4" />
-              )}
-              {paying ? "Redirecting…" : `Pay ${data.invoice.totalFormatted}`}
-            </button>
-            <p className="text-center text-[12px] text-gray-400 mt-3">
-              Secure checkout powered by Stripe
-            </p>
+        <div
+          className={`grid gap-5 items-start ${
+            showPaymentColumn || paid
+              ? "lg:grid-cols-[minmax(0,1fr)_min(380px,36%)]"
+              : ""
+          }`}
+        >
+          <div className="min-w-0">
+            <InvoiceDocument
+              bannerUrl={data.invoice.bannerUrl}
+              showLogo={data.invoice.showLogo}
+              logoUrl={data.business.logoUrl}
+              fromName={data.business.name}
+              fromAddress={data.business.address}
+              showTaxId={data.invoice.showTaxId}
+              taxId={data.invoice.taxId}
+              number={data.invoice.number}
+              issueDate={data.invoice.issueDate}
+              dueDate={data.invoice.dueDate}
+              showReference={data.invoice.showReference}
+              referenceNumber={data.invoice.referenceNumber}
+              billToName={data.client.name}
+              billToCompany={data.client.company}
+              billToEmail={data.client.email}
+              showShippingAddress={data.invoice.showShippingAddress}
+              shippingAddress={data.invoice.shippingAddress}
+              currency={data.invoice.currency}
+              lines={data.lines.map((line, i) => ({
+                id: String(i),
+                description: line.description,
+                quantity: line.quantity,
+                unitPrice: line.unitPrice,
+                amount: line.amount ?? lineAmount(line.quantity, line.unitPrice),
+              }))}
+              subtotal={data.invoice.subtotal}
+              taxEnabled={data.invoice.taxEnabled}
+              taxRate={data.invoice.taxRate}
+              taxTotal={data.invoice.taxTotal}
+              pricesIncludeTax={data.invoice.pricesIncludeTax}
+              total={data.invoice.total}
+              lateFeeEnabled={data.invoice.lateFeeEnabled}
+              lateFeePercent={data.invoice.lateFeePercent}
+              notes={data.invoice.notes}
+            />
           </div>
-        )}
+
+          {showPaymentColumn && (
+            <aside
+              ref={checkoutRef}
+              className="print:hidden lg:sticky lg:top-6 order-first lg:order-none"
+            >
+              <EmbeddedInvoiceCheckout
+                token={token}
+                amountLabel={data.invoice.totalFormatted}
+                onComplete={handleCheckoutComplete}
+              />
+            </aside>
+          )}
+
+          {paid && (
+            <aside className="print:hidden lg:sticky lg:top-6">
+              <div className="rounded-2xl border border-emerald-100 bg-[#F3FAF6] px-5 py-6 text-center">
+                <div className="mx-auto mb-3 w-10 h-10 rounded-full bg-white border border-emerald-100 flex items-center justify-center text-emerald-700">
+                  <Check className="w-5 h-5" />
+                </div>
+                <p className="text-[15px] font-semibold text-emerald-900">
+                  Payment received
+                </p>
+                <p className="text-[13px] text-emerald-800/80 mt-1">
+                  Thank you — this invoice is paid.
+                </p>
+              </div>
+            </aside>
+          )}
+        </div>
       </div>
     </div>
   );

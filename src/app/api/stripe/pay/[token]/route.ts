@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
 import { formatInvoiceMoney, lineAmount } from "@/lib/invoices/totals";
 
 type RouteContext = { params: Promise<{ token: string }> };
@@ -12,98 +13,141 @@ function publicAssetUrl(pathOrUrl: string | null | undefined) {
   return `${base}/storage/v1/object/public/org-assets/${pathOrUrl}`;
 }
 
-export async function GET(_request: Request, context: RouteContext) {
-  const { token } = await context.params;
-  const admin = createAdminClient();
-
-  const { data: invoice, error } = await admin
-    .from("invoices")
-    .select(
-      `id, number, status, currency, subtotal, tax_total, total, due_date, issue_date, notes,
-       client_id, organization_id, deleted_at, paid_at,
-       show_logo, banner_url, late_fee_enabled, late_fee_percent,
-       tax_enabled, tax_rate, prices_include_tax, show_tax_id, tax_id,
-       show_shipping_address, shipping_address, show_reference, reference_number`
-    )
-    .eq("payment_token", token)
-    .maybeSingle();
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+function createAnonClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anonKey) {
+    throw new Error("Supabase public env vars are not configured.");
   }
-  if (!invoice || invoice.deleted_at) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-
-  const [{ data: org }, { data: client }, { data: lines }] = await Promise.all([
-    admin
-      .from("organizations")
-      .select(
-        "name, logo_url, legal_name, address, tax_id, stripe_charges_enabled"
-      )
-      .eq("id", invoice.organization_id)
-      .maybeSingle(),
-    admin
-      .from("clients")
-      .select("name, company, email")
-      .eq("id", invoice.client_id)
-      .maybeSingle(),
-    admin
-      .from("invoice_line_items")
-      .select("description, quantity, unit_price, amount, position")
-      .eq("invoice_id", invoice.id)
-      .order("position", { ascending: true }),
-  ]);
-
-  const mappedLines = (lines || []).map((line) => ({
-    description: line.description,
-    quantity: line.quantity,
-    unitPrice: line.unit_price,
-    amount:
-      line.amount ??
-      lineAmount(line.quantity, line.unit_price),
-  }));
-
-  return NextResponse.json({
-    invoice: {
-      number: invoice.number,
-      status: invoice.status,
-      currency: invoice.currency,
-      subtotal: invoice.subtotal,
-      taxTotal: invoice.tax_total,
-      total: invoice.total,
-      totalFormatted: formatInvoiceMoney(invoice.total, invoice.currency),
-      dueDate: invoice.due_date,
-      issueDate: invoice.issue_date,
-      notes: invoice.notes,
-      paidAt: invoice.paid_at,
-      payable:
-        ["sent", "viewed", "overdue"].includes(invoice.status) &&
-        Boolean(org?.stripe_charges_enabled),
-      showLogo: invoice.show_logo,
-      bannerUrl: publicAssetUrl(invoice.banner_url),
-      lateFeeEnabled: invoice.late_fee_enabled,
-      lateFeePercent: Number(invoice.late_fee_percent || 0),
-      taxEnabled: invoice.tax_enabled,
-      taxRate: Number(invoice.tax_rate || 0),
-      pricesIncludeTax: Boolean(invoice.prices_include_tax),
-      showTaxId: invoice.show_tax_id,
-      taxId: invoice.tax_id || org?.tax_id || null,
-      showShippingAddress: invoice.show_shipping_address,
-      shippingAddress: invoice.shipping_address,
-      showReference: invoice.show_reference,
-      referenceNumber: invoice.reference_number,
-    },
-    business: {
-      name: org?.legal_name || org?.name || "Business",
-      logoUrl: publicAssetUrl(org?.logo_url),
-      address: org?.address || null,
-    },
-    client: {
-      name: client?.name || null,
-      company: client?.company || null,
-      email: client?.email || null,
-    },
-    lines: mappedLines,
+  return createClient<Database>(url, anonKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
   });
+}
+
+type PublicInvoicePayload = {
+  invoice: {
+    id: string;
+    number: string | null;
+    status: string;
+    currency: string;
+    subtotal: number;
+    tax_total: number;
+    total: number;
+    due_date: string | null;
+    issue_date: string | null;
+    notes: string | null;
+    paid_at: string | null;
+    show_logo: boolean | null;
+    banner_url: string | null;
+    late_fee_enabled: boolean | null;
+    late_fee_percent: number | null;
+    tax_enabled: boolean | null;
+    tax_rate: number | null;
+    prices_include_tax: boolean | null;
+    show_tax_id: boolean | null;
+    tax_id: string | null;
+    show_shipping_address: boolean | null;
+    shipping_address: string | null;
+    show_reference: boolean | null;
+    reference_number: string | null;
+  };
+  organization: {
+    name: string | null;
+    legal_name: string | null;
+    logo_url: string | null;
+    address: string | null;
+    tax_id: string | null;
+    stripe_charges_enabled: boolean | null;
+  } | null;
+  client: {
+    name: string | null;
+    company: string | null;
+    email: string | null;
+  } | null;
+  lines: Array<{
+    description: string;
+    quantity: number;
+    unit_price: number;
+    amount: number | null;
+    position: number;
+  }>;
+};
+
+export async function GET(_request: Request, context: RouteContext) {
+  try {
+    const { token } = await context.params;
+    if (!token?.trim()) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    const supabase = createAnonClient();
+    const { data, error } = await supabase.rpc("get_public_invoice", {
+      p_token: token.trim(),
+    });
+
+    if (error || !data) {
+      const message = error?.message || "Not found";
+      const status = /not found/i.test(message) ? 404 : 500;
+      return NextResponse.json({ error: message }, { status });
+    }
+
+    const payload = data as unknown as PublicInvoicePayload;
+    const invoice = payload.invoice;
+    const org = payload.organization;
+    const client = payload.client;
+
+    const mappedLines = (payload.lines || []).map((line) => ({
+      description: line.description,
+      quantity: line.quantity,
+      unitPrice: line.unit_price,
+      amount: line.amount ?? lineAmount(line.quantity, line.unit_price),
+    }));
+
+    return NextResponse.json({
+      invoice: {
+        number: invoice.number,
+        status: invoice.status,
+        currency: invoice.currency,
+        subtotal: invoice.subtotal,
+        taxTotal: invoice.tax_total,
+        total: invoice.total,
+        totalFormatted: formatInvoiceMoney(invoice.total, invoice.currency),
+        dueDate: invoice.due_date,
+        issueDate: invoice.issue_date,
+        notes: invoice.notes,
+        paidAt: invoice.paid_at,
+        payable:
+          ["sent", "viewed", "overdue"].includes(invoice.status) &&
+          Boolean(org?.stripe_charges_enabled),
+        showLogo: invoice.show_logo ?? true,
+        bannerUrl: publicAssetUrl(invoice.banner_url),
+        lateFeeEnabled: Boolean(invoice.late_fee_enabled),
+        lateFeePercent: Number(invoice.late_fee_percent || 0),
+        taxEnabled: Boolean(invoice.tax_enabled),
+        taxRate: Number(invoice.tax_rate || 0),
+        pricesIncludeTax: Boolean(invoice.prices_include_tax),
+        showTaxId: Boolean(invoice.show_tax_id),
+        taxId: invoice.tax_id || org?.tax_id || null,
+        showShippingAddress: Boolean(invoice.show_shipping_address),
+        shippingAddress: invoice.shipping_address,
+        showReference: Boolean(invoice.show_reference),
+        referenceNumber: invoice.reference_number,
+      },
+      business: {
+        name: org?.legal_name || org?.name || "Business",
+        logoUrl: publicAssetUrl(org?.logo_url),
+        address: org?.address || null,
+      },
+      client: {
+        name: client?.name || null,
+        company: client?.company || null,
+        email: client?.email || null,
+      },
+      lines: mappedLines,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to load invoice";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }

@@ -321,6 +321,7 @@ export type Database = {
           tax_total: number
           total: number
           updated_at: string
+          viewed_at: string | null
         }
         Insert: {
           banner_url?: string | null
@@ -360,6 +361,7 @@ export type Database = {
           tax_total?: number
           total?: number
           updated_at?: string
+          viewed_at?: string | null
         }
         Update: {
           banner_url?: string | null
@@ -399,6 +401,7 @@ export type Database = {
           tax_total?: number
           total?: number
           updated_at?: string
+          viewed_at?: string | null
         }
         Relationships: [
           {
@@ -1674,7 +1677,12 @@ export type Database = {
         }
         Returns: Json
       }
+      get_public_invoice: { Args: { p_token: string }; Returns: Json }
       get_public_proposal: { Args: { p_token: string }; Returns: Json }
+      record_public_invoice_view: {
+        Args: { p_ip?: string; p_token: string; p_user_agent?: string }
+        Returns: Json
+      }
       is_org_admin: { Args: { p_org_id: string }; Returns: boolean }
       is_org_member: { Args: { p_org_id: string }; Returns: boolean }
       is_org_owner: { Args: { p_org_id: string }; Returns: boolean }
@@ -1682,6 +1690,14 @@ export type Database = {
       record_public_proposal_view: {
         Args: { p_ip?: string; p_token: string; p_user_agent?: string }
         Returns: Json
+      }
+      set_public_invoice_checkout: {
+        Args: {
+          p_payment_status?: string
+          p_session_id: string
+          p_token: string
+        }
+        Returns: undefined
       }
       resolve_share_link: {
         Args: { p_token: string }

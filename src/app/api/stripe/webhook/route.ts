@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { fulfillInvoiceCheckoutPaid } from "@/lib/invoices/fulfill-paid";
 import {
   getStripe,
   getStripeWebhookSecret,
@@ -26,26 +27,6 @@ async function markProcessed(event: Stripe.Event) {
     type: event.type,
     payload: JSON.parse(JSON.stringify(event)),
   });
-}
-
-async function markInvoicePaid(options: {
-  invoiceId: string;
-  sessionId?: string | null;
-  paymentIntentId?: string | null;
-  paymentStatus?: string | null;
-}) {
-  const admin = createAdminClient();
-  await admin
-    .from("invoices")
-    .update({
-      status: "paid",
-      paid_at: new Date().toISOString(),
-      stripe_checkout_session_id: options.sessionId || undefined,
-      stripe_payment_intent_id: options.paymentIntentId || undefined,
-      stripe_payment_status: options.paymentStatus || "paid",
-    })
-    .eq("id", options.invoiceId)
-    .neq("status", "paid");
 }
 
 async function syncSubscriptionFromSession(session: Stripe.Checkout.Session) {
@@ -164,23 +145,15 @@ export async function POST(request: Request) {
 
   try {
     switch (event.type) {
-      case "checkout.session.completed": {
+      case "checkout.session.completed":
+      case "checkout.session.async_payment_succeeded": {
         const session = event.data.object as Stripe.Checkout.Session;
         if (session.mode === "payment") {
-          const invoiceId = session.metadata?.rebban_invoice_id;
-          if (invoiceId && session.payment_status === "paid") {
-            const paymentIntentId =
-              typeof session.payment_intent === "string"
-                ? session.payment_intent
-                : session.payment_intent?.id || null;
-            await markInvoicePaid({
-              invoiceId,
-              sessionId: session.id,
-              paymentIntentId,
-              paymentStatus: session.payment_status,
-            });
-          }
-        } else if (session.mode === "subscription") {
+          await fulfillInvoiceCheckoutPaid(session);
+        } else if (
+          event.type === "checkout.session.completed" &&
+          session.mode === "subscription"
+        ) {
           await syncSubscriptionFromSession(session);
         }
         break;
