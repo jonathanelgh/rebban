@@ -12,21 +12,27 @@ export const runtime = "nodejs";
 
 async function alreadyProcessed(eventId: string) {
   const admin = createAdminClient();
-  const { data } = await admin
+  const { data, error } = await admin
     .from("stripe_webhook_events")
     .select("id")
     .eq("id", eventId)
     .maybeSingle();
+  if (error) {
+    throw new Error(`stripe_webhook_events read failed: ${error.message}`);
+  }
   return Boolean(data);
 }
 
 async function markProcessed(event: Stripe.Event) {
   const admin = createAdminClient();
-  await admin.from("stripe_webhook_events").upsert({
+  const { error } = await admin.from("stripe_webhook_events").upsert({
     id: event.id,
     type: event.type,
     payload: JSON.parse(JSON.stringify(event)),
   });
+  if (error) {
+    throw new Error(`stripe_webhook_events write failed: ${error.message}`);
+  }
 }
 
 async function syncSubscriptionFromSession(session: Stripe.Checkout.Session) {
@@ -112,38 +118,41 @@ async function syncConnectAccount(account: Stripe.Account) {
 }
 
 export async function POST(request: Request) {
-  if (!isStripeConfigured()) {
-    return NextResponse.json({ error: "Stripe not configured" }, { status: 503 });
-  }
-
-  const secret = getStripeWebhookSecret();
-  if (!secret) {
-    return NextResponse.json(
-      { error: "STRIPE_WEBHOOK_SECRET is not set" },
-      { status: 503 }
-    );
-  }
-
-  const stripe = getStripe();
-  const signature = request.headers.get("stripe-signature");
-  if (!signature) {
-    return NextResponse.json({ error: "Missing signature" }, { status: 400 });
-  }
-
-  const rawBody = await request.text();
-  let event: Stripe.Event;
   try {
-    event = stripe.webhooks.constructEvent(rawBody, signature, secret);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Invalid signature";
-    return NextResponse.json({ error: message }, { status: 400 });
-  }
+    if (!isStripeConfigured()) {
+      return NextResponse.json(
+        { error: "Stripe not configured" },
+        { status: 503 }
+      );
+    }
 
-  if (await alreadyProcessed(event.id)) {
-    return NextResponse.json({ received: true, duplicate: true });
-  }
+    const secret = getStripeWebhookSecret();
+    if (!secret || secret === "whsec_...") {
+      return NextResponse.json(
+        { error: "STRIPE_WEBHOOK_SECRET is not set" },
+        { status: 503 }
+      );
+    }
 
-  try {
+    const stripe = getStripe();
+    const signature = request.headers.get("stripe-signature");
+    if (!signature) {
+      return NextResponse.json({ error: "Missing signature" }, { status: 400 });
+    }
+
+    const rawBody = await request.text();
+    let event: Stripe.Event;
+    try {
+      event = stripe.webhooks.constructEvent(rawBody, signature, secret);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Invalid signature";
+      return NextResponse.json({ error: message }, { status: 400 });
+    }
+
+    if (await alreadyProcessed(event.id)) {
+      return NextResponse.json({ received: true, duplicate: true });
+    }
+
     switch (event.type) {
       case "checkout.session.completed":
       case "checkout.session.async_payment_succeeded": {
@@ -173,11 +182,11 @@ export async function POST(request: Request) {
     }
 
     await markProcessed(event);
+    return NextResponse.json({ received: true });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Webhook handler failed";
-    console.error("[stripe webhook]", event.type, message);
+    const message =
+      err instanceof Error ? err.message : "Webhook handler failed";
+    console.error("[stripe webhook]", message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
-
-  return NextResponse.json({ received: true });
 }

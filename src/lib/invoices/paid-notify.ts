@@ -4,7 +4,6 @@ import {
   sendInvoicePaidClientEmail,
   sendInvoicePaidFreelancerEmail,
 } from "@/lib/email/resend";
-import { buildInvoicePdf } from "@/lib/invoices/pdf";
 import { formatInvoiceMoney, lineAmount } from "@/lib/invoices/totals";
 
 function formatPaidAt(iso: string) {
@@ -110,6 +109,7 @@ export async function notifyInvoicePaid(options: {
 
   let pdf: Buffer | null = null;
   try {
+    const { buildInvoicePdf } = await import("@/lib/invoices/pdf");
     pdf = await buildInvoicePdf({
       number: invoice.number,
       issueDate: invoice.issue_date,

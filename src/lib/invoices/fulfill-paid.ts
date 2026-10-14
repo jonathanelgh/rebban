@@ -1,6 +1,5 @@
 import type Stripe from "stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { notifyInvoicePaid } from "@/lib/invoices/paid-notify";
 
 /** Returns true when this call transitioned the invoice to paid. */
 export async function markInvoicePaid(options: {
@@ -10,7 +9,7 @@ export async function markInvoicePaid(options: {
   paymentStatus?: string | null;
 }): Promise<boolean> {
   const admin = createAdminClient();
-  const { data } = await admin
+  const { data, error } = await admin
     .from("invoices")
     .update({
       status: "paid",
@@ -23,12 +22,17 @@ export async function markInvoicePaid(options: {
     .neq("status", "paid")
     .select("id")
     .maybeSingle();
+
+  if (error) {
+    throw new Error(`markInvoicePaid failed: ${error.message}`);
+  }
   return Boolean(data);
 }
 
 /**
  * Mark invoice paid + send emails/alerts. Safe to call more than once —
  * emails/alerts only run on the first transition to paid.
+ * Notify is dynamically imported so the Stripe webhook bundle does not load pdfkit.
  */
 export async function fulfillInvoiceCheckoutPaid(
   session: Stripe.Checkout.Session
@@ -56,6 +60,7 @@ export async function fulfillInvoiceCheckoutPaid(
   const payerName = session.customer_details?.name || null;
 
   try {
+    const { notifyInvoicePaid } = await import("@/lib/invoices/paid-notify");
     await notifyInvoicePaid({
       invoiceId,
       payerEmail,
