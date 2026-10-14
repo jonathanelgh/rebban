@@ -3,6 +3,7 @@ import {
   getGmailConnectionStatus,
   sendEmailViaGmail,
 } from "@/lib/email/gmail";
+import { DEFAULT_INVOICE_SEND_MESSAGE } from "@/lib/invoices/send";
 
 export function getResend() {
   const key = process.env.RESEND_API_KEY;
@@ -150,6 +151,103 @@ export async function sendProposalInviteEmail(options: {
   return sendHtmlEmail({
     to: options.to,
     subject: `Proposal: ${options.proposalTitle}`,
+    html,
+    fromUserId: options.fromUserId,
+    fromName: options.senderName,
+  });
+}
+
+export async function sendInvoiceInviteEmail(options: {
+  to: string;
+  recipientName?: string | null;
+  senderName?: string | null;
+  organizationName: string;
+  invoiceNumber?: string | null;
+  invoiceUrl: string;
+  amountLabel?: string | null;
+  message?: string | null;
+  fromUserId?: string | null;
+}) {
+  const recipientFirst = firstName(options.recipientName);
+  const senderFirst = firstName(options.senderName);
+  const invoiceLabel = options.invoiceNumber?.trim()
+    ? `Invoice ${options.invoiceNumber.trim()}`
+    : "your invoice";
+
+  const gmail = options.fromUserId
+    ? await getGmailConnectionStatus(options.fromUserId)
+    : null;
+  const fromGmail = Boolean(gmail?.canSend);
+
+  if (fromGmail) {
+    const greeting = recipientFirst ? `Hi ${recipientFirst},` : "Hi,";
+    const note = options.message?.trim() || DEFAULT_INVOICE_SEND_MESSAGE;
+    const signOff = senderFirst || options.senderName?.trim() || "Thanks";
+    const subject = recipientFirst
+      ? `${recipientFirst}, here's ${invoiceLabel}`
+      : `Here's ${invoiceLabel}`;
+
+    const html = `
+  <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.55;color:#111827;max-width:540px;margin:0 auto;padding:8px 0;">
+    <p style="margin:0 0 16px;">${escapeHtml(greeting)}</p>
+    <p style="margin:0 0 16px;white-space:pre-wrap;">${escapeHtml(note)}</p>
+    ${
+      options.amountLabel
+        ? `<p style="margin:0 0 16px;">Amount due: <strong>${escapeHtml(options.amountLabel)}</strong></p>`
+        : ""
+    }
+    <p style="margin:24px 0;">
+      <a href="${options.invoiceUrl}" style="color:#1d4ed8;font-weight:600;">
+        View &amp; pay invoice →
+      </a>
+    </p>
+    <p style="margin:28px 0 0;">
+      Best,<br/>
+      ${escapeHtml(signOff)}
+    </p>
+  </div>`;
+
+    return sendHtmlEmail({
+      to: options.to,
+      subject,
+      html,
+      fromUserId: options.fromUserId,
+      fromName: options.senderName,
+    });
+  }
+
+  const greeting = recipientFirst ? `Hi ${recipientFirst},` : "Hi,";
+  const fromLine = options.senderName?.trim()
+    ? `${options.senderName.trim()} at ${options.organizationName}`
+    : options.organizationName;
+
+  const html = `
+  <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.5;color:#111827;max-width:560px;margin:0 auto;padding:24px;">
+    <p style="margin:0 0 16px;">${escapeHtml(greeting)}</p>
+    <p style="margin:0 0 16px;">${escapeHtml(fromLine)} sent you ${escapeHtml(invoiceLabel)}.</p>
+    ${
+      options.amountLabel
+        ? `<p style="margin:0 0 16px;">Amount due: <strong>${escapeHtml(options.amountLabel)}</strong></p>`
+        : ""
+    }
+    ${
+      options.message
+        ? `<p style="margin:0 0 16px;padding:12px 14px;background:#F9FAFB;border-radius:12px;white-space:pre-wrap;">${escapeHtml(options.message)}</p>`
+        : ""
+    }
+    <p style="margin:24px 0;">
+      <a href="${options.invoiceUrl}" style="display:inline-block;background:#2563EB;color:#fff;text-decoration:none;padding:12px 18px;border-radius:999px;font-weight:600;">
+        View &amp; pay invoice
+      </a>
+    </p>
+    <p style="margin:24px 0 0;font-size:13px;color:#6B7280;">
+      Or open this link: <a href="${options.invoiceUrl}" style="color:#2563EB;">${options.invoiceUrl}</a>
+    </p>
+  </div>`;
+
+  return sendHtmlEmail({
+    to: options.to,
+    subject: invoiceLabel,
     html,
     fromUserId: options.fromUserId,
     fromName: options.senderName,

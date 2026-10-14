@@ -80,6 +80,7 @@ function formatAlertTime(iso: string) {
 function alertIconForType(type: string): LucideIcon {
   switch (type) {
     case "proposal_sent":
+    case "invoice_sent":
       return Send;
     case "proposal_opened":
       return Eye;

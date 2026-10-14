@@ -15,6 +15,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "@/components/ProfileContext";
 import { MenuSelect } from "@/components/MenuSelect";
+import { nanoid } from "nanoid";
 import { nextInvoiceNumber } from "@/lib/invoices/numbering";
 import {
   addDaysISO,
@@ -462,6 +463,18 @@ function CreateInvoiceModal({
     const days = Math.max(0, Number(dueInDays) || 0);
     const number = await nextInvoiceNumber(supabase, organizationId);
 
+    const { data: orgTax } = await supabase
+      .from("organizations")
+      .select(
+        "default_tax_enabled, default_tax_rate, default_prices_include_tax, tax_id"
+      )
+      .eq("id", organizationId)
+      .maybeSingle();
+
+    const taxEnabled = Boolean(orgTax?.default_tax_enabled);
+    const taxRate = Number(orgTax?.default_tax_rate || 0);
+    const pricesIncludeTax = Boolean(orgTax?.default_prices_include_tax);
+
     const { data, error } = await supabase
       .from("invoices")
       .insert({
@@ -476,6 +489,14 @@ function CreateInvoiceModal({
         subtotal: 0,
         tax_total: 0,
         total: 0,
+        payment_token: nanoid(24),
+        // When org tax is on, enable all tax-related invoice options by default.
+        tax_enabled: taxEnabled,
+        tax_rate: taxEnabled ? taxRate : 0,
+        prices_include_tax: taxEnabled ? pricesIncludeTax : false,
+        show_tax_id: taxEnabled,
+        tax_id: taxEnabled ? orgTax?.tax_id || null : null,
+        show_logo: true,
       })
       .select("id")
       .single();

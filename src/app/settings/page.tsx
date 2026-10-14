@@ -13,7 +13,9 @@ import {
   Check,
   Sparkles,
   ImageIcon,
+  Percent,
 } from "lucide-react";
+import { TAX_RATE_PRESETS } from "@/lib/invoices/totals";
 import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "@/components/ProfileContext";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -24,6 +26,7 @@ type SectionId =
   | "branding"
   | "notifications"
   | "billing"
+  | "tax"
   | "preferences"
   | "integrations";
 
@@ -106,6 +109,12 @@ function SettingsPageInner() {
       icon: CreditCard,
     },
     {
+      id: "tax",
+      label: "Tax",
+      description: "Default invoice tax rate",
+      icon: Percent,
+    },
+    {
       id: "preferences",
       label: "Preferences",
       description: "Defaults for time and currency",
@@ -121,7 +130,16 @@ function SettingsPageInner() {
 
   const initialSection = (searchParams.get("section") as SectionId | null) || "profile";
   const [section, setSection] = useState<SectionId>(
-    ["profile", "business", "branding", "notifications", "billing", "preferences", "integrations"].includes(initialSection)
+    [
+      "profile",
+      "business",
+      "branding",
+      "notifications",
+      "billing",
+      "tax",
+      "preferences",
+      "integrations",
+    ].includes(initialSection)
       ? initialSection
       : "profile"
   );
@@ -179,6 +197,14 @@ function SettingsPageInner() {
     theme: "Light",
   });
 
+  const [taxSettings, setTaxSettings] = useState({
+    enabled: false,
+    rate: 25,
+    pricesIncludeTax: false,
+    customRates: [] as number[],
+    customDraft: "",
+  });
+
   useEffect(() => {
     if (profileLoading) return;
     setProfile((prev) => ({
@@ -188,6 +214,40 @@ function SettingsPageInner() {
     }));
     setBranding({ description: organizationDescription ?? "" });
   }, [profileLoading, fullName, email, organizationDescription]);
+
+  useEffect(() => {
+    if (!organizationId || profileLoading) return;
+    let cancelled = false;
+    async function loadTax() {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("organizations")
+        .select(
+          "name, legal_name, address, default_tax_rate, default_tax_enabled, default_prices_include_tax, custom_tax_rates, tax_id, currency"
+        )
+        .eq("id", organizationId!)
+        .maybeSingle();
+      if (cancelled || !data) return;
+      setTaxSettings((prev) => ({
+        ...prev,
+        enabled: Boolean(data.default_tax_enabled),
+        rate: Number(data.default_tax_rate || 0) || 25,
+        pricesIncludeTax: Boolean(data.default_prices_include_tax),
+        customRates: (data.custom_tax_rates || []).map((n) => Number(n)),
+      }));
+      setBusiness((prev) => ({
+        ...prev,
+        company: data.legal_name || data.name || prev.company,
+        address: data.address || prev.address,
+        taxId: data.tax_id || prev.taxId,
+        currency: data.currency || prev.currency,
+      }));
+    }
+    void loadTax();
+    return () => {
+      cancelled = true;
+    };
+  }, [organizationId, profileLoading]);
 
   useEffect(() => {
     if (section === "business" && isSolo) setSection("branding");
@@ -508,6 +568,24 @@ function SettingsPageInner() {
       }
 
       await refresh();
+    } else if (section === "tax" && organizationId) {
+      const rate = Math.max(0, Number(taxSettings.rate) || 0);
+      const { error: updateError } = await supabase
+        .from("organizations")
+        .update({
+          default_tax_enabled: taxSettings.enabled,
+          default_tax_rate: rate,
+          default_prices_include_tax: taxSettings.pricesIncludeTax,
+          custom_tax_rates: taxSettings.customRates,
+          tax_id: business.taxId.trim() || null,
+        })
+        .eq("id", organizationId);
+
+      if (updateError) {
+        setError(updateError.message);
+        setSaving(false);
+        return;
+      }
     }
 
     setSaving(false);
@@ -809,6 +887,159 @@ function SettingsPageInner() {
                       setNotifications({ ...notifications, weeklyDigest: v })
                     }
                   />
+                </div>
+              </Section>
+            )}
+
+            {section === "tax" && (
+              <Section
+                title="Tax"
+                subtitle="Tell Rebban whether you charge tax or VAT. When enabled, new invoices turn tax options on by default."
+              >
+                <div className="space-y-5">
+                  <ToggleRow
+                    label="I charge tax / VAT"
+                    description="Turn this on if your invoices need tax. Off hides tax on new invoices."
+                    active={taxSettings.enabled}
+                    onChange={(v) =>
+                      setTaxSettings((prev) => ({
+                        ...prev,
+                        enabled: v,
+                        rate: v && !prev.rate ? 25 : prev.rate,
+                      }))
+                    }
+                  />
+
+                  {!taxSettings.enabled ? (
+                    <div className="rounded-2xl border border-line bg-[#FAFBFC] px-4 py-3.5 text-[13px] text-gray-500 leading-relaxed">
+                      Tax is off. Invoices won’t add tax or show a VAT number in
+                      the footer unless you enable it per invoice.
+                    </div>
+                  ) : (
+                    <>
+                      <ToggleRow
+                        label="Prices include tax by default"
+                        description="Line item rates are tax-inclusive on new invoices"
+                        active={taxSettings.pricesIncludeTax}
+                        onChange={(v) =>
+                          setTaxSettings((prev) => ({
+                            ...prev,
+                            pricesIncludeTax: v,
+                          }))
+                        }
+                      />
+                      <div>
+                        <div className="text-[13px] font-medium text-gray-700 mb-2">
+                          Default rate
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {TAX_RATE_PRESETS.filter((r) => r > 0).map((rate) => (
+                            <button
+                              key={rate}
+                              type="button"
+                              onClick={() =>
+                                setTaxSettings((prev) => ({ ...prev, rate }))
+                              }
+                              className={`px-3.5 py-2 rounded-full text-sm font-medium border transition-colors ${
+                                taxSettings.rate === rate
+                                  ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB]"
+                                  : "border-line bg-white text-gray-700 hover:bg-gray-50"
+                              }`}
+                            >
+                              {rate}%
+                            </button>
+                          ))}
+                          {taxSettings.customRates.map((rate) => (
+                            <button
+                              key={`custom-${rate}`}
+                              type="button"
+                              onClick={() =>
+                                setTaxSettings((prev) => ({ ...prev, rate }))
+                              }
+                              className={`px-3.5 py-2 rounded-full text-sm font-medium border transition-colors ${
+                                taxSettings.rate === rate
+                                  ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB]"
+                                  : "border-line bg-white text-gray-700 hover:bg-gray-50"
+                              }`}
+                            >
+                              {rate}%
+                            </button>
+                          ))}
+                        </div>
+                        <p className="mt-2 text-[13px] text-gray-500">
+                          Selected default:{" "}
+                          <span className="font-medium text-gray-800">
+                            {taxSettings.rate}%
+                          </span>
+                        </p>
+                      </div>
+                      <Field label="Add custom rate (%)">
+                        <div className="flex gap-2">
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            step={0.01}
+                            value={taxSettings.customDraft}
+                            onChange={(e) =>
+                              setTaxSettings((prev) => ({
+                                ...prev,
+                                customDraft: e.target.value,
+                              }))
+                            }
+                            placeholder="e.g. 12.5"
+                            className={inputClass}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const value = Number(taxSettings.customDraft);
+                              if (
+                                !Number.isFinite(value) ||
+                                value < 0 ||
+                                value > 100
+                              ) {
+                                setError("Enter a tax rate between 0 and 100.");
+                                return;
+                              }
+                              const rounded = Math.round(value * 100) / 100;
+                              setTaxSettings((prev) => ({
+                                ...prev,
+                                rate: rounded,
+                                customRates: prev.customRates.includes(rounded)
+                                  ? prev.customRates
+                                  : [...prev.customRates, rounded].sort(
+                                      (a, b) => b - a
+                                    ),
+                                customDraft: "",
+                              }));
+                              setError(null);
+                            }}
+                            className="shrink-0 px-4 py-2.5 rounded-xl text-sm font-medium border border-line bg-white hover:bg-gray-50"
+                          >
+                            Add & use
+                          </button>
+                        </div>
+                      </Field>
+                      <Field label="Tax / VAT number">
+                        <input
+                          value={business.taxId}
+                          onChange={(e) =>
+                            setBusiness({ ...business, taxId: e.target.value })
+                          }
+                          placeholder="TAX-123456"
+                          className={inputClass}
+                        />
+                        <p className="mt-1.5 text-[12px] text-gray-400">
+                          Shown in the invoice footer when tax is active.
+                        </p>
+                      </Field>
+                      <div className="rounded-2xl border border-line bg-[#FAFBFC] px-4 py-3.5 text-[13px] text-gray-500 leading-relaxed">
+                        New invoices will enable Apply tax, Display Tax / VAT ID,
+                        and your default rate automatically.
+                      </div>
+                    </>
+                  )}
                 </div>
               </Section>
             )}

@@ -164,6 +164,63 @@ export type Database = {
           },
         ]
       }
+      invoice_events: {
+        Row: {
+          actor_email: string | null
+          actor_name: string | null
+          actor_type: string
+          created_at: string
+          event_type: string
+          id: string
+          invoice_id: string
+          ip_address: string | null
+          metadata: Json
+          organization_id: string
+          user_agent: string | null
+        }
+        Insert: {
+          actor_email?: string | null
+          actor_name?: string | null
+          actor_type?: string
+          created_at?: string
+          event_type: string
+          id?: string
+          invoice_id: string
+          ip_address?: string | null
+          metadata?: Json
+          organization_id: string
+          user_agent?: string | null
+        }
+        Update: {
+          actor_email?: string | null
+          actor_name?: string | null
+          actor_type?: string
+          created_at?: string
+          event_type?: string
+          id?: string
+          invoice_id?: string
+          ip_address?: string | null
+          metadata?: Json
+          organization_id?: string
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoice_events_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       invoice_line_items: {
         Row: {
           amount: number
@@ -227,6 +284,7 @@ export type Database = {
       }
       invoices: {
         Row: {
+          banner_url: string | null
           client_id: string
           created_at: string
           created_by: string | null
@@ -235,23 +293,37 @@ export type Database = {
           due_date: string | null
           id: string
           issue_date: string | null
+          late_fee_enabled: boolean
+          late_fee_percent: number
           notes: string | null
           number: string | null
           organization_id: string
           paid_at: string | null
           payment_token: string | null
+          prices_include_tax: boolean
+          project_id: string | null
           proposal_id: string | null
+          reference_number: string | null
           sent_at: string | null
+          shipping_address: string | null
+          show_logo: boolean
+          show_reference: boolean
+          show_shipping_address: boolean
+          show_tax_id: boolean
           status: Database["public"]["Enums"]["invoice_status"]
           stripe_checkout_session_id: string | null
           stripe_payment_intent_id: string | null
           stripe_payment_status: string | null
           subtotal: number
+          tax_enabled: boolean
+          tax_id: string | null
+          tax_rate: number
           tax_total: number
           total: number
           updated_at: string
         }
         Insert: {
+          banner_url?: string | null
           client_id: string
           created_at?: string
           created_by?: string | null
@@ -260,23 +332,37 @@ export type Database = {
           due_date?: string | null
           id?: string
           issue_date?: string | null
+          late_fee_enabled?: boolean
+          late_fee_percent?: number
           notes?: string | null
           number?: string | null
           organization_id: string
           paid_at?: string | null
           payment_token?: string | null
+          prices_include_tax?: boolean
+          project_id?: string | null
           proposal_id?: string | null
+          reference_number?: string | null
           sent_at?: string | null
+          shipping_address?: string | null
+          show_logo?: boolean
+          show_reference?: boolean
+          show_shipping_address?: boolean
+          show_tax_id?: boolean
           status?: Database["public"]["Enums"]["invoice_status"]
           stripe_checkout_session_id?: string | null
           stripe_payment_intent_id?: string | null
           stripe_payment_status?: string | null
           subtotal?: number
+          tax_enabled?: boolean
+          tax_id?: string | null
+          tax_rate?: number
           tax_total?: number
           total?: number
           updated_at?: string
         }
         Update: {
+          banner_url?: string | null
           client_id?: string
           created_at?: string
           created_by?: string | null
@@ -285,18 +371,31 @@ export type Database = {
           due_date?: string | null
           id?: string
           issue_date?: string | null
+          late_fee_enabled?: boolean
+          late_fee_percent?: number
           notes?: string | null
           number?: string | null
           organization_id?: string
           paid_at?: string | null
           payment_token?: string | null
+          prices_include_tax?: boolean
+          project_id?: string | null
           proposal_id?: string | null
+          reference_number?: string | null
           sent_at?: string | null
+          shipping_address?: string | null
+          show_logo?: boolean
+          show_reference?: boolean
+          show_shipping_address?: boolean
+          show_tax_id?: boolean
           status?: Database["public"]["Enums"]["invoice_status"]
           stripe_checkout_session_id?: string | null
           stripe_payment_intent_id?: string | null
           stripe_payment_status?: string | null
           subtotal?: number
+          tax_enabled?: boolean
+          tax_id?: string | null
+          tax_rate?: number
           tax_total?: number
           total?: number
           updated_at?: string
@@ -314,6 +413,13 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoices_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
           {
@@ -469,6 +575,10 @@ export type Database = {
           created_at: string
           created_by: string | null
           currency: string
+          custom_tax_rates: number[]
+          default_prices_include_tax: boolean
+          default_tax_enabled: boolean
+          default_tax_rate: number
           deleted_at: string | null
           description: string | null
           id: string
@@ -494,6 +604,10 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           currency?: string
+          custom_tax_rates?: number[]
+          default_prices_include_tax?: boolean
+          default_tax_enabled?: boolean
+          default_tax_rate?: number
           deleted_at?: string | null
           description?: string | null
           id?: string
@@ -519,6 +633,10 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           currency?: string
+          custom_tax_rates?: number[]
+          default_prices_include_tax?: boolean
+          default_tax_enabled?: boolean
+          default_tax_rate?: number
           deleted_at?: string | null
           description?: string | null
           id?: string
@@ -1351,6 +1469,7 @@ export type Database = {
           ended_at: string | null
           hourly_rate: number | null
           id: string
+          invoice_id: string | null
           organization_id: string
           project_id: string | null
           started_at: string
@@ -1368,6 +1487,7 @@ export type Database = {
           ended_at?: string | null
           hourly_rate?: number | null
           id?: string
+          invoice_id?: string | null
           organization_id: string
           project_id?: string | null
           started_at: string
@@ -1385,6 +1505,7 @@ export type Database = {
           ended_at?: string | null
           hourly_rate?: number | null
           id?: string
+          invoice_id?: string | null
           organization_id?: string
           project_id?: string | null
           started_at?: string
@@ -1398,6 +1519,13 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "time_entries_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
             referencedColumns: ["id"]
           },
           {
@@ -1491,6 +1619,10 @@ export type Database = {
           created_at: string
           created_by: string | null
           currency: string
+          custom_tax_rates: number[]
+          default_prices_include_tax: boolean
+          default_tax_enabled: boolean
+          default_tax_rate: number
           deleted_at: string | null
           description: string | null
           id: string
