@@ -76,6 +76,7 @@ export function computeEntitlement(options: {
 export function isBillingExemptPath(pathname: string) {
   if (pathname === "/settings" || pathname.startsWith("/settings/")) return true;
   if (pathname.startsWith("/login") || pathname.startsWith("/signup")) return true;
+  if (pathname.startsWith("/onboarding")) return true;
   if (pathname.startsWith("/auth/")) return true;
   if (pathname.startsWith("/p/") || pathname.startsWith("/pay/")) return true;
   // Home stays reachable so the upgrade prompt can show.

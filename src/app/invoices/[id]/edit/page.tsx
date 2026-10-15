@@ -170,6 +170,9 @@ export default function InvoiceEditorPage() {
   const [unbilledBusy, setUnbilledBusy] = useState(false);
   const [sendModalOpen, setSendModalOpen] = useState(false);
   const [activityRefreshKey, setActivityRefreshKey] = useState(0);
+  const [defaultReminderSequence, setDefaultReminderSequence] = useState<
+    "none" | "gentle" | "standard" | "persistent" | null
+  >(null);
 
   const totals = useMemo(
     () =>
@@ -231,7 +234,7 @@ export default function InvoiceEditorPage() {
         supabase
           .from("organizations")
           .select(
-            "name, legal_name, address, tax_id, default_tax_rate, default_tax_enabled, default_prices_include_tax, custom_tax_rates"
+            "name, legal_name, address, tax_id, default_tax_rate, default_tax_enabled, default_prices_include_tax, custom_tax_rates, default_reminder_sequence"
           )
           .eq("id", organizationId)
           .maybeSingle(),
@@ -310,6 +313,17 @@ export default function InvoiceEditorPage() {
     setOrgAddress(orgRes.data?.address || null);
     setOrgTaxId(orgRes.data?.tax_id || null);
     setCustomTaxRates((orgRes.data?.custom_tax_rates || []).map((n) => Number(n)));
+    {
+      const seq = orgRes.data?.default_reminder_sequence;
+      setDefaultReminderSequence(
+        seq === "none" ||
+          seq === "gentle" ||
+          seq === "standard" ||
+          seq === "persistent"
+          ? seq
+          : "standard"
+      );
+    }
     setLoading(false);
   }, [organizationId, invoiceId, organizationCurrency]);
 
@@ -341,6 +355,15 @@ export default function InvoiceEditorPage() {
   useEffect(() => {
     void refreshUnbilled();
   }, [refreshUnbilled]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("addUnbilled") !== "1") return;
+    if (!client?.id || loading) return;
+    setUnbilledModalOpen(true);
+    router.replace(`/invoices/${invoiceId}/edit`, { scroll: false });
+  }, [client?.id, loading, invoiceId, router]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1583,6 +1606,7 @@ export default function InvoiceEditorPage() {
           dueDate={dueDate}
           defaultEmail={client?.email}
           defaultName={client?.company || client?.name}
+          defaultReminderSequence={defaultReminderSequence}
           onClose={() => setSendModalOpen(false)}
           onSent={handleInvoiceSent}
         />

@@ -10,6 +10,7 @@ import {
   MoreHorizontal,
   Building2,
   Plus,
+  Receipt,
   Trash2,
 } from "lucide-react";
 import { TimerStartForm } from "@/components/TimerStartForm";
@@ -18,7 +19,6 @@ import { useTimeTracking } from "@/components/TimeTrackingContext";
 import { useProfile } from "@/components/ProfileContext";
 import { createClient } from "@/lib/supabase/client";
 import {
-  DEFAULT_HOURLY_RATE,
   clientDisplayName,
   dayLabelForDate,
   endOfWeek,
@@ -34,6 +34,7 @@ import { formatInvoiceMoney } from "@/lib/invoices/totals";
 type TimeEntryRow = {
   id: string;
   description: string;
+  clientId: string | null;
   clientName: string;
   projectName: string;
   startedAt: string;
@@ -53,10 +54,12 @@ export default function TimeTrackingPage() {
     entriesVersion,
     clients,
     projects,
+    defaultHourlyRate,
   } = useTimeTracking();
   const {
     organizationId,
     organizationCurrency,
+    userId,
     loading: profileLoading,
   } = useProfile();
 
@@ -67,6 +70,7 @@ export default function TimeTrackingPage() {
   const [weekAnchor, setWeekAnchor] = useState(() => new Date());
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [invoiceBusy, setInvoiceBusy] = useState(false);
 
   const weekStart = useMemo(() => startOfWeek(weekAnchor), [weekAnchor]);
   const weekEnd = useMemo(() => endOfWeek(weekAnchor), [weekAnchor]);
@@ -156,20 +160,21 @@ export default function TimeTrackingPage() {
           return {
             id: row.id,
             description: row.description?.trim() || "Untitled",
+            clientId: clientRel?.id ?? null,
             clientName: clientRel ? clientDisplayName(clientRel) : "No client",
-            projectName: projectRel?.name || "—",
+            projectName: projectRel?.name || "-",
             startedAt: row.started_at,
             endedAt: row.ended_at,
             durationMinutes: Math.max(0, minutes),
             billable: Boolean(row.billable),
-            hourlyRate: Number(row.hourly_rate || DEFAULT_HOURLY_RATE),
+            hourlyRate: Number(row.hourly_rate || defaultHourlyRate),
             date,
             dayLabel: dayLabelForDate(date),
           };
         })
     );
     setLoading(false);
-  }, [organizationId, weekStart, weekEnd]);
+  }, [organizationId, weekStart, weekEnd, defaultHourlyRate]);
 
   useEffect(() => {
     if (profileLoading) return;
@@ -200,9 +205,95 @@ export default function TimeTrackingPage() {
   const billableTotal = entries
     .filter((e) => e.billable)
     .reduce((sum, e) => sum + e.durationMinutes, 0);
-  const unbilledAmount = entries
-    .filter((e) => e.billable && !billedIds.has(e.id))
-    .reduce((sum, e) => sum + (e.durationMinutes / 60) * e.hourlyRate, 0);
+  const unbilledEntries = useMemo(
+    () => entries.filter((e) => e.billable && !billedIds.has(e.id) && e.clientId),
+    [entries, billedIds]
+  );
+  const unbilledAmount = unbilledEntries.reduce(
+    (sum, e) => sum + (e.durationMinutes / 60) * e.hourlyRate,
+    0
+  );
+
+  const topUnbilledClientId = useMemo(() => {
+    const byClient = new Map<string, number>();
+    for (const entry of unbilledEntries) {
+      if (!entry.clientId) continue;
+      byClient.set(
+        entry.clientId,
+        (byClient.get(entry.clientId) || 0) + entry.durationMinutes
+      );
+    }
+    let best: string | null = null;
+    let bestMinutes = 0;
+    for (const [id, minutes] of byClient) {
+      if (minutes > bestMinutes) {
+        best = id;
+        bestMinutes = minutes;
+      }
+    }
+    return best;
+  }, [unbilledEntries]);
+
+  async function createInvoiceFromUnbilled() {
+    if (!organizationId || !userId || !topUnbilledClientId) return;
+    setInvoiceBusy(true);
+    setError(null);
+    try {
+      const { nanoid } = await import("nanoid");
+      const { nextInvoiceNumber } = await import("@/lib/invoices/numbering");
+      const { addDaysISO, todayISODate } = await import("@/lib/invoices/totals");
+      const supabase = createClient();
+      const issueDate = todayISODate();
+      const number = await nextInvoiceNumber(supabase, organizationId);
+      const { data: orgTax } = await supabase
+        .from("organizations")
+        .select(
+          "default_tax_enabled, default_tax_rate, default_prices_include_tax, tax_id, currency"
+        )
+        .eq("id", organizationId)
+        .maybeSingle();
+
+      const taxEnabled = Boolean(orgTax?.default_tax_enabled);
+      const taxRate = Number(orgTax?.default_tax_rate || 0);
+      const pricesIncludeTax = Boolean(orgTax?.default_prices_include_tax);
+
+      const { data, error: insertError } = await supabase
+        .from("invoices")
+        .insert({
+          organization_id: organizationId,
+          client_id: topUnbilledClientId,
+          number,
+          status: "draft",
+          currency: orgTax?.currency || currency,
+          issue_date: issueDate,
+          due_date: addDaysISO(issueDate, 14),
+          created_by: userId,
+          subtotal: 0,
+          tax_total: 0,
+          total: 0,
+          payment_token: nanoid(24),
+          tax_enabled: taxEnabled,
+          tax_rate: taxEnabled ? taxRate : 0,
+          prices_include_tax: taxEnabled ? pricesIncludeTax : false,
+          show_tax_id: taxEnabled,
+          tax_id: taxEnabled ? orgTax?.tax_id || null : null,
+          show_logo: true,
+        })
+        .select("id")
+        .single();
+
+      if (insertError || !data) {
+        setError(insertError?.message || "Could not create invoice.");
+        return;
+      }
+
+      window.location.assign(`/invoices/${data.id}/edit?addUnbilled=1`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create invoice.");
+    } finally {
+      setInvoiceBusy(false);
+    }
+  }
 
   async function softDelete(id: string) {
     if (!organizationId) return;
@@ -273,6 +364,17 @@ export default function TimeTrackingPage() {
               </button>
             )}
           </div>
+          {unbilledAmount > 0 && topUnbilledClientId && (
+            <button
+              type="button"
+              disabled={invoiceBusy}
+              onClick={() => void createInvoiceFromUnbilled()}
+              className="px-4 py-2.5 rounded-full text-sm font-medium border border-line bg-white text-gray-800 hover:bg-[#FAFBFC] flex items-center gap-2 disabled:opacity-50"
+            >
+              <Receipt className="w-4 h-4" />
+              {invoiceBusy ? "Creating…" : "Invoice unbilled"}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setShowAddModal(true)}
@@ -322,7 +424,11 @@ export default function TimeTrackingPage() {
         <StatCard
           label="Unbilled"
           value={loading ? "—" : formatInvoiceMoney(unbilledAmount, currency)}
-          hint={`At $${DEFAULT_HOURLY_RATE}/hr`}
+          hint={
+            unbilledAmount > 0
+              ? "Ready to invoice"
+              : `Default ${defaultHourlyRate}/hr`
+          }
         />
         <StatCard
           label="Days logged"

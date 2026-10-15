@@ -11,6 +11,7 @@ import {
   type FollowUpSequenceKey,
   type FollowUpStepTemplate,
 } from "@/lib/proposals/followups";
+import { requireOrgEntitlement } from "@/lib/billing/require-entitlement";
 
 export async function POST(
   request: Request,
@@ -35,6 +36,9 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const entitlement = await requireOrgEntitlement(supabase, user.id);
+    if ("response" in entitlement) return entitlement.response;
+
     const { data: proposal, error: proposalError } = await supabase
       .from("proposals")
       .select(
@@ -49,6 +53,10 @@ export async function POST(
         { error: proposalError?.message || "Proposal not found" },
         { status: 404 }
       );
+    }
+
+    if (proposal.organization_id !== entitlement.organizationId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     if (proposal.status === "accepted") {

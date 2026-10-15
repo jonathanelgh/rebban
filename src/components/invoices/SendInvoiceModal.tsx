@@ -34,6 +34,7 @@ export function SendInvoiceModal({
   dueDate,
   defaultEmail,
   defaultName,
+  defaultReminderSequence,
   onClose,
   onSent,
 }: {
@@ -42,6 +43,7 @@ export function SendInvoiceModal({
   dueDate?: string | null;
   defaultEmail?: string | null;
   defaultName?: string | null;
+  defaultReminderSequence?: ReminderSequenceKey | null;
   onClose: () => void;
   onSent: (result: {
     url: string;
@@ -54,9 +56,18 @@ export function SendInvoiceModal({
   const [stepIndex, setStepIndex] = useState(0);
   const [email, setEmail] = useState(defaultEmail || "");
   const [name, setName] = useState(defaultName || "");
-  const [sequenceKey, setSequenceKey] = useState<ReminderSequenceKey>(() =>
-    dueDate?.trim() ? "standard" : "none"
-  );
+  const [sequenceKey, setSequenceKey] = useState<ReminderSequenceKey>(() => {
+    if (!dueDate?.trim()) return "none";
+    if (
+      defaultReminderSequence === "none" ||
+      defaultReminderSequence === "gentle" ||
+      defaultReminderSequence === "standard" ||
+      defaultReminderSequence === "persistent"
+    ) {
+      return defaultReminderSequence;
+    }
+    return "standard";
+  });
   const [customSteps, setCustomSteps] = useState<ReminderStepTemplate[] | null>(
     null
   );

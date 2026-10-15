@@ -76,10 +76,32 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (user && isAuthRoute) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("onboarding_completed_at")
+      .eq("id", user.id)
+      .maybeSingle();
     const url = request.nextUrl.clone();
-    url.pathname = "/";
+    url.pathname = profile?.onboarding_completed_at ? "/" : "/onboarding";
     url.search = "";
     return NextResponse.redirect(url);
+  }
+
+  const isOnboardingRoute = path === "/onboarding" || path.startsWith("/onboarding/");
+  const isApiRoute = path.startsWith("/api/");
+
+  if (user && !isOnboardingRoute && !isApiRoute && !isAuthRoute) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("onboarding_completed_at")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (!profile?.onboarding_completed_at) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/onboarding";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
   }
 
   return supabaseResponse;

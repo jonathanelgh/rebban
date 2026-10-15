@@ -46,6 +46,7 @@ type TimeTrackingContextValue = {
   busy: boolean;
   error: string | null;
   entriesVersion: number;
+  defaultHourlyRate: number;
   refreshClients: () => Promise<void>;
 };
 
@@ -73,6 +74,7 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [entriesVersion, setEntriesVersion] = useState(0);
+  const [defaultHourlyRate, setDefaultHourlyRate] = useState(DEFAULT_HOURLY_RATE);
   const [hydrated, setHydrated] = useState(false);
   const actionLock = useRef(false);
 
@@ -82,11 +84,12 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
     if (!organizationId) {
       setClients([]);
       setProjects([]);
+      setDefaultHourlyRate(DEFAULT_HOURLY_RATE);
       return;
     }
 
     const supabase = createClient();
-    const [clientsRes, projectsRes] = await Promise.all([
+    const [clientsRes, projectsRes, orgRes] = await Promise.all([
       supabase
         .from("clients")
         .select("id, name, company")
@@ -99,6 +102,11 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
         .eq("organization_id", organizationId)
         .is("deleted_at", null)
         .order("name"),
+      supabase
+        .from("organizations")
+        .select("default_hourly_rate")
+        .eq("id", organizationId)
+        .maybeSingle(),
     ]);
 
     if (!clientsRes.error) {
@@ -119,6 +127,10 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
         }))
       );
     }
+    const rate = Number(orgRes.data?.default_hourly_rate);
+    setDefaultHourlyRate(
+      Number.isFinite(rate) && rate >= 0 ? rate : DEFAULT_HOURLY_RATE
+    );
   }, [organizationId]);
 
   const resumeRunning = useCallback(async () => {
@@ -288,7 +300,7 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
           started_at: nowIso,
           ended_at: null,
           billable: true,
-          hourly_rate: DEFAULT_HOURLY_RATE,
+          hourly_rate: defaultHourlyRate,
         })
         .select("id, started_at")
         .single();
@@ -314,6 +326,7 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
     selectedClient,
     selectedProject,
     workDescription,
+    defaultHourlyRate,
   ]);
 
   const stopTimer = useCallback(async () => {
@@ -398,6 +411,7 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
       busy,
       error,
       entriesVersion,
+      defaultHourlyRate,
       refreshClients,
     }),
     [
@@ -415,6 +429,7 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
       busy,
       error,
       entriesVersion,
+      defaultHourlyRate,
       refreshClients,
     ]
   );

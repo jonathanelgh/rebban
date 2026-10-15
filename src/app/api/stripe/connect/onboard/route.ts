@@ -11,6 +11,15 @@ import {
   getOrganizationStripeState,
 } from "@/lib/stripe/org";
 
+function isSafeAppPath(path: unknown): path is string {
+  return (
+    typeof path === "string" &&
+    path.startsWith("/") &&
+    !path.startsWith("//") &&
+    !path.includes("://")
+  );
+}
+
 function stripeErrorResponse(err: unknown) {
   if (err instanceof Stripe.errors.StripeError) {
     return NextResponse.json(
@@ -110,10 +119,26 @@ export async function POST(request: Request) {
       );
     }
 
+    let returnPath = "/settings?section=integrations&stripe=return";
+    let refreshPath = "/settings?section=integrations&stripe=refresh";
+    const contentType = request.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      try {
+        const body = (await request.json()) as {
+          returnPath?: string;
+          refreshPath?: string;
+        };
+        if (isSafeAppPath(body.returnPath)) returnPath = body.returnPath;
+        if (isSafeAppPath(body.refreshPath)) refreshPath = body.refreshPath;
+      } catch {
+        // Ignore empty/invalid JSON and keep settings defaults.
+      }
+    }
+
     const accountLink = await stripe.accountLinks.create({
       account: accountId,
-      refresh_url: `${origin}/settings?section=integrations&stripe=refresh`,
-      return_url: `${origin}/settings?section=integrations&stripe=return`,
+      refresh_url: `${origin}${refreshPath}`,
+      return_url: `${origin}${returnPath}`,
       type: "account_onboarding",
     });
 

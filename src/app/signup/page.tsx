@@ -50,7 +50,7 @@ export default function SignupPage() {
     }
 
     // Full navigation so middleware + session cookies are applied cleanly.
-    window.location.assign("/");
+    window.location.assign("/onboarding");
   }
 
   return (
@@ -123,6 +123,7 @@ export default function SignupPage() {
 
           <GoogleAuthButton
             label="Sign up with Google"
+            next="/onboarding"
             organizationType={organizationType}
             organizationName={organizationName}
             marketingConsent={marketingConsent}

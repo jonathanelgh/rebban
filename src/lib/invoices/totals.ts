@@ -3,7 +3,7 @@ export type InvoiceLineInput = {
   unitPrice: number | string;
 };
 
-export const TAX_RATE_PRESETS = [25, 21, 20, 15, 10, 5, 0] as const;
+export const TAX_RATE_PRESETS = [25, 23, 21, 20, 19, 15, 10, 5, 0] as const;
 
 export type TaxDisplayMode = "exclusive" | "inclusive";
 

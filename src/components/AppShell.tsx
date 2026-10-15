@@ -25,7 +25,9 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
     pathname.startsWith("/p/") ||
     pathname.startsWith("/pay/");
   const isAuthLayout =
-    pathname.startsWith("/login") || pathname.startsWith("/signup");
+    pathname.startsWith("/login") ||
+    pathname.startsWith("/signup") ||
+    pathname.startsWith("/onboarding");
   // Pages that already have a primary create CTA in the page header.
   const hideCreateMenu =
     pathname === "/proposals" ||
@@ -51,12 +53,15 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   }, [pathname, billingLoading, entitled, openUpgradeModal]);
 
   if (isFocusedLayout || isAuthLayout) {
+    const isOnboarding = pathname.startsWith("/onboarding");
     return (
       <div
         className={`h-full w-full min-h-0 ${
           pathname.startsWith("/p/") || pathname.startsWith("/pay/")
             ? "overflow-y-auto bg-[#F3F4F6]"
-            : "overflow-hidden bg-white"
+            : isOnboarding
+              ? "overflow-y-auto bg-[#F0F1F3]"
+              : "overflow-hidden bg-white"
         }`}
       >
         {children}

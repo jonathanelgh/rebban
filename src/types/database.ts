@@ -650,11 +650,14 @@ export type Database = {
       organizations: {
         Row: {
           address: string | null
+          country: string | null
           created_at: string
           created_by: string | null
           currency: string
           custom_tax_rates: number[]
           default_prices_include_tax: boolean
+          default_reminder_sequence: string
+          default_hourly_rate: number
           default_tax_enabled: boolean
           default_tax_rate: number
           deleted_at: string | null
@@ -677,14 +680,18 @@ export type Database = {
           trial_ends_at: string | null
           type: Database["public"]["Enums"]["organization_type"]
           updated_at: string
+          website: string | null
         }
         Insert: {
           address?: string | null
+          country?: string | null
           created_at?: string
           created_by?: string | null
           currency?: string
           custom_tax_rates?: number[]
+          default_hourly_rate?: number
           default_prices_include_tax?: boolean
+          default_reminder_sequence?: string
           default_tax_enabled?: boolean
           default_tax_rate?: number
           deleted_at?: string | null
@@ -707,14 +714,18 @@ export type Database = {
           trial_ends_at?: string | null
           type?: Database["public"]["Enums"]["organization_type"]
           updated_at?: string
+          website?: string | null
         }
         Update: {
           address?: string | null
+          country?: string | null
           created_at?: string
           created_by?: string | null
           currency?: string
           custom_tax_rates?: number[]
+          default_hourly_rate?: number
           default_prices_include_tax?: boolean
+          default_reminder_sequence?: string
           default_tax_enabled?: boolean
           default_tax_rate?: number
           deleted_at?: string | null
@@ -737,6 +748,7 @@ export type Database = {
           trial_ends_at?: string | null
           type?: Database["public"]["Enums"]["organization_type"]
           updated_at?: string
+          website?: string | null
         }
         Relationships: []
       }
@@ -773,11 +785,14 @@ export type Database = {
           email: string | null
           full_name: string | null
           id: string
+          industry: string | null
           locale: string
           marketing_consent: boolean
           marketing_consent_at: string | null
+          notification_prefs: Json
           onboarding_completed_at: string | null
           timezone: string
+          title: string | null
           updated_at: string
         }
         Insert: {
@@ -788,11 +803,14 @@ export type Database = {
           email?: string | null
           full_name?: string | null
           id: string
+          industry?: string | null
           locale?: string
           marketing_consent?: boolean
           marketing_consent_at?: string | null
+          notification_prefs?: Json
           onboarding_completed_at?: string | null
           timezone?: string
+          title?: string | null
           updated_at?: string
         }
         Update: {
@@ -803,11 +821,14 @@ export type Database = {
           email?: string | null
           full_name?: string | null
           id?: string
+          industry?: string | null
           locale?: string
           marketing_consent?: boolean
           marketing_consent_at?: string | null
+          notification_prefs?: Json
           onboarding_completed_at?: string | null
           timezone?: string
+          title?: string | null
           updated_at?: string
         }
         Relationships: [

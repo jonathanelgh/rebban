@@ -2,13 +2,23 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import type { Enums } from "@/types/database";
 
+function safeNextPath(next: string) {
+  if (next.startsWith("/") && !next.startsWith("//") && !next.includes("://")) {
+    return next;
+  }
+  return "/";
+}
+
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/";
   const organizationType = searchParams.get("organization_type");
   const organizationName = searchParams.get("organization_name");
   const marketingConsent = searchParams.get("marketing_consent") === "1";
+  const isSignupIntent = Boolean(
+    organizationType || organizationName || marketingConsent
+  );
+  const next = searchParams.get("next") ?? (isSignupIntent ? "/onboarding" : "/");
 
   if (code) {
     const supabase = await createClient();
@@ -19,7 +29,8 @@ export async function GET(request: Request) {
         organizationName,
         marketingConsent,
       });
-      return NextResponse.redirect(new URL(next, origin));
+      const destination = safeNextPath(next);
+      return NextResponse.redirect(new URL(destination, origin));
     }
   }
 

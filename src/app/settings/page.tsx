@@ -20,6 +20,13 @@ import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "@/components/ProfileContext";
 import { useBilling } from "@/components/BillingContext";
 import { UserAvatar } from "@/components/UserAvatar";
+import {
+  COUNTRY_OPTIONS,
+  CURRENCY_OPTIONS,
+  INDUSTRY_OPTIONS,
+  normalizeWebsite,
+} from "@/lib/onboarding";
+import { FancySelect } from "@/components/onboarding/FancySelect";
 
 type SectionId =
   | "profile"
@@ -85,19 +92,20 @@ function SettingsPageInner() {
       description: "Your name and contact details",
       icon: User,
     },
-    isSolo
-      ? {
-          id: "branding",
-          label: "Branding",
-          description: "Your bio and logo",
-          icon: Sparkles,
-        }
-      : {
-          id: "business",
-          label: "Business",
-          description: "Company info on invoices",
-          icon: Building2,
-        },
+    {
+      id: "branding",
+      label: "Branding",
+      description: "Your bio, logo, and website",
+      icon: Sparkles,
+    },
+    {
+      id: "business",
+      label: "Business",
+      description: isSolo
+        ? "Address, country, and currency"
+        : "Company info on invoices",
+      icon: Building2,
+    },
     {
       id: "notifications",
       label: "Notifications",
@@ -119,7 +127,7 @@ function SettingsPageInner() {
     {
       id: "preferences",
       label: "Preferences",
-      description: "Defaults for time and currency",
+      description: "Defaults for time tracking",
       icon: Palette,
     },
     {
@@ -171,16 +179,19 @@ function SettingsPageInner() {
     name: "",
     email: "",
     title: "",
+    industry: "",
   });
 
   const [branding, setBranding] = useState({
     description: "",
+    website: "",
   });
 
   const [business, setBusiness] = useState({
     company: "",
     orgNumber: "",
     address: "",
+    country: "SE",
     currency: "USD",
     taxId: "",
   });
@@ -194,9 +205,6 @@ function SettingsPageInner() {
 
   const [preferences, setPreferences] = useState({
     defaultHourlyRate: "95",
-    weekStartsOn: "Monday",
-    timeRounding: "15 minutes",
-    theme: "Light",
   });
 
   const [taxSettings, setTaxSettings] = useState({
@@ -214,18 +222,51 @@ function SettingsPageInner() {
       name: fullName ?? "",
       email: email ?? "",
     }));
-    setBranding({ description: organizationDescription ?? "" });
+    setBranding((prev) => ({
+      ...prev,
+      description: organizationDescription ?? "",
+    }));
   }, [profileLoading, fullName, email, organizationDescription]);
+
+  useEffect(() => {
+    if (!userId || profileLoading) return;
+    let cancelled = false;
+    async function loadProfileExtras() {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("profiles")
+        .select("title, industry, notification_prefs")
+        .eq("id", userId!)
+        .maybeSingle();
+      if (cancelled || !data) return;
+      setProfile((prev) => ({
+        ...prev,
+        title: data.title || "",
+        industry: data.industry || "",
+      }));
+      const prefs = (data.notification_prefs || {}) as Record<string, unknown>;
+      setNotifications({
+        invoiceOverdue: prefs.invoice_overdue !== false,
+        proposalViewed: prefs.proposal_viewed !== false,
+        paymentReceived: prefs.payment_received !== false,
+        weeklyDigest: prefs.weekly_digest === true,
+      });
+    }
+    void loadProfileExtras();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, profileLoading]);
 
   useEffect(() => {
     if (!organizationId || profileLoading) return;
     let cancelled = false;
-    async function loadTax() {
+    async function loadOrgSettings() {
       const supabase = createClient();
       const { data } = await supabase
         .from("organizations")
         .select(
-          "name, legal_name, address, default_tax_rate, default_tax_enabled, default_prices_include_tax, custom_tax_rates, tax_id, currency"
+          "name, legal_name, address, country, website, org_number, default_tax_rate, default_tax_enabled, default_prices_include_tax, custom_tax_rates, tax_id, currency, default_hourly_rate"
         )
         .eq("id", organizationId!)
         .maybeSingle();
@@ -240,21 +281,25 @@ function SettingsPageInner() {
       setBusiness((prev) => ({
         ...prev,
         company: data.legal_name || data.name || prev.company,
+        orgNumber: data.org_number || "",
         address: data.address || prev.address,
+        country: data.country || "SE",
         taxId: data.tax_id || prev.taxId,
         currency: data.currency || prev.currency,
       }));
+      setBranding((prev) => ({
+        ...prev,
+        website: data.website || "",
+      }));
+      setPreferences({
+        defaultHourlyRate: String(Number(data.default_hourly_rate || 95)),
+      });
     }
-    void loadTax();
+    void loadOrgSettings();
     return () => {
       cancelled = true;
     };
   }, [organizationId, profileLoading]);
-
-  useEffect(() => {
-    if (section === "business" && isSolo) setSection("branding");
-    if (section === "branding" && !isSolo) setSection("business");
-  }, [isSolo, section]);
 
   useEffect(() => {
     const gmail = searchParams.get("gmail");
@@ -535,7 +580,11 @@ function SettingsPageInner() {
     if (section === "profile" && userId) {
       const { error: updateError } = await supabase
         .from("profiles")
-        .update({ full_name: profile.name.trim() || null })
+        .update({
+          full_name: profile.name.trim() || null,
+          title: profile.title.trim() || null,
+          industry: profile.industry || null,
+        })
         .eq("id", userId);
 
       if (updateError) {
@@ -548,7 +597,11 @@ function SettingsPageInner() {
     } else if (section === "branding" && organizationId) {
       const { error: updateError } = await supabase
         .from("organizations")
-        .update({ description: branding.description.trim() || null })
+        .update({
+          description: branding.description.trim() || null,
+          website: normalizeWebsite(branding.website),
+          updated_at: new Date().toISOString(),
+        })
         .eq("id", organizationId);
 
       if (updateError) {
@@ -558,6 +611,72 @@ function SettingsPageInner() {
       }
 
       await refresh();
+    } else if (section === "business" && organizationId) {
+      const { error: updateError } = await supabase
+        .from("organizations")
+        .update({
+          address: business.address.trim() || null,
+          country: business.country || null,
+          currency: business.currency || "USD",
+          tax_id: business.taxId.trim() || null,
+          updated_at: new Date().toISOString(),
+          ...(!isSolo
+            ? {
+                legal_name: business.company.trim() || null,
+                org_number: business.orgNumber.trim() || null,
+                ...(business.company.trim()
+                  ? { name: business.company.trim() }
+                  : {}),
+              }
+            : {}),
+        })
+        .eq("id", organizationId);
+
+      if (updateError) {
+        setError(updateError.message);
+        setSaving(false);
+        return;
+      }
+
+      await refresh();
+    } else if (section === "notifications" && userId) {
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({
+          notification_prefs: {
+            invoice_overdue: notifications.invoiceOverdue,
+            proposal_viewed: notifications.proposalViewed,
+            payment_received: notifications.paymentReceived,
+            weekly_digest: notifications.weeklyDigest,
+          },
+        })
+        .eq("id", userId);
+
+      if (updateError) {
+        setError(updateError.message);
+        setSaving(false);
+        return;
+      }
+    } else if (section === "preferences" && organizationId) {
+      const rate = Number(preferences.defaultHourlyRate);
+      if (!Number.isFinite(rate) || rate < 0) {
+        setError("Enter a valid hourly rate.");
+        setSaving(false);
+        return;
+      }
+      const { error: updateError } = await supabase
+        .from("organizations")
+        .update({
+          default_hourly_rate: Math.round(rate * 100) / 100,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", organizationId);
+
+      if (updateError) {
+        setError(updateError.message);
+        setSaving(false);
+        return;
+      }
     } else if (section === "tax" && organizationId) {
       const rate = Math.max(0, Number(taxSettings.rate) || 0);
       const { error: updateError } = await supabase
@@ -715,14 +834,33 @@ function SettingsPageInner() {
                       className={`${inputClass} bg-[#FAFBFC] text-gray-500`}
                     />
                   </Field>
-                  <Field label="Title">
-                    <input
-                      value={profile.title}
-                      onChange={(e) => setProfile({ ...profile, title: e.target.value })}
-                      className={inputClass}
-                      placeholder="e.g. Independent designer"
-                    />
-                  </Field>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <Field label="Title">
+                      <input
+                        value={profile.title}
+                        onChange={(e) =>
+                          setProfile({ ...profile, title: e.target.value })
+                        }
+                        className={inputClass}
+                        placeholder="e.g. Independent designer"
+                      />
+                    </Field>
+                    <Field label="Industry">
+                      <FancySelect
+                        value={profile.industry}
+                        onChange={(value) =>
+                          setProfile({ ...profile, industry: value })
+                        }
+                        options={INDUSTRY_OPTIONS.map((option) => ({
+                          value: option.value,
+                          label: option.label,
+                        }))}
+                        placeholder="Select industry"
+                        searchable
+                        searchPlaceholder="Search industries…"
+                      />
+                    </Field>
+                  </div>
                 </div>
               </Section>
             )}
@@ -770,17 +908,30 @@ function SettingsPageInner() {
                 {error && section === "branding" && (
                   <p className="mb-4 text-[13px] text-red-600">{error}</p>
                 )}
-                <Field label="About you">
-                  <textarea
-                    value={branding.description}
-                    onChange={(e) =>
-                      setBranding({ description: e.target.value })
-                    }
-                    rows={5}
-                    placeholder="A short description clients see on your proposals…"
-                    className={`${inputClass} resize-none`}
-                  />
-                </Field>
+                <div className="space-y-4">
+                  <Field label="Website">
+                    <input
+                      type="url"
+                      value={branding.website}
+                      onChange={(e) =>
+                        setBranding({ ...branding, website: e.target.value })
+                      }
+                      placeholder="https://yourstudio.com"
+                      className={inputClass}
+                    />
+                  </Field>
+                  <Field label="About you">
+                    <textarea
+                      value={branding.description}
+                      onChange={(e) =>
+                        setBranding({ ...branding, description: e.target.value })
+                      }
+                      rows={5}
+                      placeholder="A short description clients see on your proposals…"
+                      className={`${inputClass} resize-none`}
+                    />
+                  </Field>
+                </div>
               </Section>
             )}
 
@@ -790,51 +941,94 @@ function SettingsPageInner() {
                 subtitle="Used on invoices, proposals, and tax documents."
               >
                 <div className="space-y-4">
-                  <Field label="Company name">
-                    <input
-                      value={business.company}
-                      onChange={(e) => setBusiness({ ...business, company: e.target.value })}
-                      className={inputClass}
-                    />
-                  </Field>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <Field label="Org number">
-                      <input
-                        value={business.orgNumber}
-                        onChange={(e) =>
-                          setBusiness({ ...business, orgNumber: e.target.value })
-                        }
-                        className={inputClass}
-                      />
-                    </Field>
+                  {!isSolo && (
+                    <>
+                      <Field label="Company name">
+                        <input
+                          value={business.company}
+                          onChange={(e) =>
+                            setBusiness({ ...business, company: e.target.value })
+                          }
+                          className={inputClass}
+                        />
+                      </Field>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <Field label="Org number">
+                          <input
+                            value={business.orgNumber}
+                            onChange={(e) =>
+                              setBusiness({
+                                ...business,
+                                orgNumber: e.target.value,
+                              })
+                            }
+                            className={inputClass}
+                          />
+                        </Field>
+                        <Field label="Tax ID / VAT">
+                          <input
+                            value={business.taxId}
+                            onChange={(e) =>
+                              setBusiness({ ...business, taxId: e.target.value })
+                            }
+                            className={inputClass}
+                          />
+                        </Field>
+                      </div>
+                    </>
+                  )}
+                  {isSolo && (
                     <Field label="Tax ID / VAT">
                       <input
                         value={business.taxId}
-                        onChange={(e) => setBusiness({ ...business, taxId: e.target.value })}
+                        onChange={(e) =>
+                          setBusiness({ ...business, taxId: e.target.value })
+                        }
                         className={inputClass}
+                        placeholder="Optional"
                       />
                     </Field>
-                  </div>
+                  )}
                   <Field label="Address">
                     <textarea
                       value={business.address}
-                      onChange={(e) => setBusiness({ ...business, address: e.target.value })}
+                      onChange={(e) =>
+                        setBusiness({ ...business, address: e.target.value })
+                      }
                       rows={2}
                       className={`${inputClass} resize-none`}
                     />
                   </Field>
-                  <Field label="Default currency">
-                    <select
-                      value={business.currency}
-                      onChange={(e) => setBusiness({ ...business, currency: e.target.value })}
-                      className={inputClass}
-                    >
-                      <option value="USD">USD — US Dollar</option>
-                      <option value="EUR">EUR — Euro</option>
-                      <option value="SEK">SEK — Swedish Krona</option>
-                      <option value="GBP">GBP — British Pound</option>
-                    </select>
-                  </Field>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <Field label="Country">
+                      <FancySelect
+                        value={business.country}
+                        onChange={(value) =>
+                          setBusiness({ ...business, country: value })
+                        }
+                        options={COUNTRY_OPTIONS.map((option) => ({
+                          value: option.code,
+                          label: option.label,
+                        }))}
+                        placeholder="Select country"
+                        searchable
+                        searchPlaceholder="Search countries…"
+                      />
+                    </Field>
+                    <Field label="Default currency">
+                      <FancySelect
+                        value={business.currency}
+                        onChange={(value) =>
+                          setBusiness({ ...business, currency: value })
+                        }
+                        options={CURRENCY_OPTIONS.map((code) => ({
+                          value: code,
+                          label: code,
+                        }))}
+                        placeholder="Select currency"
+                      />
+                    </Field>
+                  </div>
                 </div>
               </Section>
             )}
@@ -1116,59 +1310,24 @@ function SettingsPageInner() {
                   <Field label="Default hourly rate">
                     <div className="relative">
                       <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-gray-400">
-                        $
+                        {business.currency || "USD"}
                       </span>
                       <input
+                        type="number"
+                        min={0}
+                        step={0.01}
                         value={preferences.defaultHourlyRate}
                         onChange={(e) =>
                           setPreferences({
-                            ...preferences,
                             defaultHourlyRate: e.target.value,
                           })
                         }
-                        className={`${inputClass} pl-7`}
+                        className={`${inputClass} pl-14`}
                       />
                     </div>
-                  </Field>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <Field label="Week starts on">
-                      <select
-                        value={preferences.weekStartsOn}
-                        onChange={(e) =>
-                          setPreferences({ ...preferences, weekStartsOn: e.target.value })
-                        }
-                        className={inputClass}
-                      >
-                        <option>Monday</option>
-                        <option>Sunday</option>
-                      </select>
-                    </Field>
-                    <Field label="Time rounding">
-                      <select
-                        value={preferences.timeRounding}
-                        onChange={(e) =>
-                          setPreferences({ ...preferences, timeRounding: e.target.value })
-                        }
-                        className={inputClass}
-                      >
-                        <option>None</option>
-                        <option>6 minutes</option>
-                        <option>15 minutes</option>
-                        <option>30 minutes</option>
-                      </select>
-                    </Field>
-                  </div>
-                  <Field label="Theme">
-                    <select
-                      value={preferences.theme}
-                      onChange={(e) =>
-                        setPreferences({ ...preferences, theme: e.target.value })
-                      }
-                      className={inputClass}
-                    >
-                      <option>Light</option>
-                      <option>System</option>
-                    </select>
+                    <p className="text-[12px] text-gray-400 mt-1.5">
+                      Used when you start a timer or add time without a custom rate.
+                    </p>
                   </Field>
                 </div>
               </Section>

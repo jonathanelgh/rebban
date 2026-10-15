@@ -20,23 +20,36 @@ export async function GET(request: Request) {
   const state = url.searchParams.get("state");
   const oauthError = url.searchParams.get("error");
 
+  const cookieStore = await cookies();
+  const returnToCookie = cookieStore.get("gmail_oauth_return")?.value;
+  const returnTo =
+    returnToCookie &&
+    returnToCookie.startsWith("/") &&
+    !returnToCookie.startsWith("//") &&
+    !returnToCookie.includes("://")
+      ? returnToCookie
+      : "/settings?section=integrations&gmail=connected";
+  const errorBase = returnTo.includes("/onboarding")
+    ? "/onboarding?step=email&gmail=error"
+    : "/settings?section=integrations&gmail=error";
+
   if (oauthError) {
     return NextResponse.redirect(
-      `${appUrl}/settings?section=integrations&gmail=error&reason=${encodeURIComponent(oauthError)}`
+      `${appUrl}${errorBase}&reason=${encodeURIComponent(oauthError)}`
     );
   }
 
-  const cookieStore = await cookies();
   const expectedState = cookieStore.get("gmail_oauth_state")?.value;
   const redirectUri =
     cookieStore.get("gmail_oauth_redirect")?.value ||
     `${appUrl}/api/gmail/callback`;
   cookieStore.delete("gmail_oauth_state");
   cookieStore.delete("gmail_oauth_redirect");
+  cookieStore.delete("gmail_oauth_return");
 
   if (!code || !state || !expectedState || state !== expectedState) {
     return NextResponse.redirect(
-      `${appUrl}/settings?section=integrations&gmail=error&reason=invalid_state`
+      `${appUrl}${errorBase}&reason=invalid_state`
     );
   }
 
@@ -62,14 +75,12 @@ export async function GET(request: Request) {
       code,
       redirectUri,
     });
-    return NextResponse.redirect(
-      `${appUrl}/settings?section=integrations&gmail=connected`
-    );
+    return NextResponse.redirect(`${appUrl}${returnTo}`);
   } catch (error) {
     const reason =
       error instanceof Error ? error.message : "connection_failed";
     return NextResponse.redirect(
-      `${appUrl}/settings?section=integrations&gmail=error&reason=${encodeURIComponent(reason)}`
+      `${appUrl}${errorBase}&reason=${encodeURIComponent(reason)}`
     );
   }
 }

@@ -9,6 +9,7 @@ import {
   type ReminderSequenceKey,
   type ReminderStepTemplate,
 } from "@/lib/invoices/reminders";
+import { requireOrgEntitlement } from "@/lib/billing/require-entitlement";
 
 export async function POST(
   request: Request,
@@ -33,6 +34,9 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const entitlement = await requireOrgEntitlement(supabase, user.id);
+    if ("response" in entitlement) return entitlement.response;
+
     const { data: invoice, error: invoiceError } = await supabase
       .from("invoices")
       .select(
@@ -48,6 +52,10 @@ export async function POST(
         { error: invoiceError?.message || "Invoice not found" },
         { status: 404 }
       );
+    }
+
+    if (invoice.organization_id !== entitlement.organizationId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     if (invoice.status === "void") {

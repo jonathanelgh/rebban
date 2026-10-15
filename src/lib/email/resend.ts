@@ -274,6 +274,20 @@ export async function sendInvoiceInviteEmail(options: {
   });
 }
 
+function formatEmailTimestamp(iso: string) {
+  try {
+    return new Date(iso).toLocaleString("en-GB", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
 export async function sendProposalAcceptedEmail(options: {
   to: string;
   freelancerName?: string | null;
@@ -286,41 +300,49 @@ export async function sendProposalAcceptedEmail(options: {
   documentHash: string;
   proposalUrl: string;
 }) {
-  const resend = getResend();
-  const greeting = options.freelancerName?.trim()
-    ? `Hi ${options.freelancerName.trim()},`
-    : "Hi,";
+  const esc = brandEscapeHtml;
+  const freelancerFirst = firstName(options.freelancerName);
+  const greeting = freelancerFirst ? `Hi ${freelancerFirst},` : "Hi,";
+  const title = options.proposalTitle?.trim() || "your proposal";
+  const signerLabel = options.signerName?.trim() || "Your client";
+  const signedAtLabel = formatEmailTimestamp(options.signedAt);
 
-  const html = `
-  <div style="font-family:Inter,system-ui,sans-serif;line-height:1.5;color:#111827;max-width:560px;margin:0 auto;padding:24px;">
-    <p style="margin:0 0 16px;">${greeting}</p>
-    <p style="margin:0 0 16px;">
-      <strong>${escapeHtml(options.signerName)}</strong> (${escapeHtml(options.signerEmail)})
-      accepted and e-signed <strong>${escapeHtml(options.proposalTitle)}</strong>.
-    </p>
-    ${
-      options.amountLabel
-        ? `<p style="margin:0 0 16px;">Amount: <strong>${escapeHtml(options.amountLabel)}</strong></p>`
-        : ""
-    }
-    <p style="margin:0 0 8px;font-size:13px;color:#6B7280;">Signed at: ${escapeHtml(options.signedAt)}</p>
-    <p style="margin:0 0 16px;font-size:13px;color:#6B7280;">Document hash: ${escapeHtml(options.documentHash)}</p>
-    <p style="margin:24px 0;">
-      <a href="${options.proposalUrl}" style="display:inline-block;background:#059669;color:#fff;text-decoration:none;padding:12px 18px;border-radius:999px;font-weight:600;">
-        Open proposal
-      </a>
-    </p>
-  </div>`;
+  const detailRows = [
+    { label: "Client", value: signerLabel },
+    { label: "Email", value: options.signerEmail },
+    { label: "Signed", value: signedAtLabel },
+  ];
+  if (options.amountLabel?.trim()) {
+    detailRows.splice(2, 0, {
+      label: "Amount",
+      value: options.amountLabel.trim(),
+    });
+  }
 
-  const { data, error } = await resend.emails.send({
-    from: getFromEmail(),
-    to: options.to,
-    subject: `Signed: ${options.proposalTitle}`,
-    html,
+  const bodyHtml = `
+    <p style="margin:0 0 12px;">${esc(greeting)}</p>
+    <p style="margin:0;">
+      Great news. <strong>${esc(signerLabel)}</strong> accepted and signed
+      <strong>${esc(title)}</strong>.
+    </p>
+    ${emailDetailCard(detailRows)}
+    <p style="margin:20px 0 0;font-size:14px;color:#6B7280;">
+      You can open the proposal in Rebban to follow up or create an invoice.
+    </p>`;
+
+  const html = rebbanEmailLayout({
+    preheader: `${signerLabel} accepted ${title}`,
+    title: "Proposal accepted",
+    bodyHtml,
+    cta: { label: "Open proposal", url: options.proposalUrl },
+    footerNote: null,
   });
 
-  if (error) throw new Error(error.message);
-  return data;
+  return sendHtmlEmail({
+    to: options.to,
+    subject: `Accepted: ${title}`,
+    html,
+  });
 }
 
 export async function sendInvoicePaidFreelancerEmail(options: {
@@ -527,39 +549,44 @@ export async function sendProposalDeclinedEmail(options: {
   reason?: string | null;
   proposalUrl: string;
 }) {
-  const resend = getResend();
-  const greeting = options.freelancerName?.trim()
-    ? `Hi ${options.freelancerName.trim()},`
-    : "Hi,";
+  const esc = brandEscapeHtml;
+  const freelancerFirst = firstName(options.freelancerName);
+  const greeting = freelancerFirst ? `Hi ${freelancerFirst},` : "Hi,";
+  const title = options.proposalTitle?.trim() || "your proposal";
+  const actorLabel = options.actorName?.trim() || "A client";
 
-  const html = `
-  <div style="font-family:Inter,system-ui,sans-serif;line-height:1.5;color:#111827;max-width:560px;margin:0 auto;padding:24px;">
-    <p style="margin:0 0 16px;">${greeting}</p>
-    <p style="margin:0 0 16px;">
-      ${options.actorName ? `<strong>${escapeHtml(options.actorName)}</strong> declined` : "A client declined"}
-      <strong>${escapeHtml(options.proposalTitle)}</strong>.
-    </p>
-    ${
-      options.reason
-        ? `<p style="margin:0 0 16px;padding:12px 14px;background:#FEF2F2;border-radius:12px;">Reason: ${escapeHtml(options.reason)}</p>`
-        : ""
-    }
-    <p style="margin:24px 0;">
-      <a href="${options.proposalUrl}" style="display:inline-block;background:#2563EB;color:#fff;text-decoration:none;padding:12px 18px;border-radius:999px;font-weight:600;">
-        Open proposal
-      </a>
-    </p>
-  </div>`;
+  const detailRows = [
+    { label: "Client", value: actorLabel },
+    { label: "Proposal", value: title },
+  ];
+  if (options.reason?.trim()) {
+    detailRows.push({ label: "Reason", value: options.reason.trim() });
+  }
 
-  const { data, error } = await resend.emails.send({
-    from: getFromEmail(),
-    to: options.to,
-    subject: `Declined: ${options.proposalTitle}`,
-    html,
+  const bodyHtml = `
+    <p style="margin:0 0 12px;">${esc(greeting)}</p>
+    <p style="margin:0;">
+      <strong>${esc(actorLabel)}</strong> declined
+      <strong>${esc(title)}</strong>.
+    </p>
+    ${emailDetailCard(detailRows)}
+    <p style="margin:20px 0 0;font-size:14px;color:#6B7280;">
+      Open the proposal in Rebban if you want to revise and send again.
+    </p>`;
+
+  const html = rebbanEmailLayout({
+    preheader: `${actorLabel} declined ${title}`,
+    title: "Proposal declined",
+    bodyHtml,
+    cta: { label: "Open proposal", url: options.proposalUrl },
+    footerNote: null,
   });
 
-  if (error) throw new Error(error.message);
-  return data;
+  return sendHtmlEmail({
+    to: options.to,
+    subject: `Declined: ${title}`,
+    html,
+  });
 }
 
 function escapeHtml(value: string) {

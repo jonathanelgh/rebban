@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   AlertCircle,
   CheckCircle2,
@@ -12,6 +13,7 @@ import {
   ArrowRight,
   Receipt,
   FileText,
+  type LucideIcon,
 } from "lucide-react";
 import { TimerStartForm } from "@/components/TimerStartForm";
 import { useTimeTracking } from "@/components/TimeTrackingContext";
@@ -19,6 +21,7 @@ import { useProfile } from "@/components/ProfileContext";
 import { useBilling } from "@/components/BillingContext";
 import { createClient } from "@/lib/supabase/client";
 import { PAID_PLAN, formatPlanMoney } from "@/lib/billing/plan";
+import { formatDurationMinutes } from "@/lib/time-entries";
 
 function greetingForHour(hour: number) {
   if (hour < 12) return "Good morning";
@@ -64,6 +67,31 @@ type DashboardStats = {
   collected: number;
 };
 
+type AttentionRow = {
+  id: string;
+  text: string;
+  action: string;
+  href: string;
+  icon: LucideIcon;
+};
+
+type WorkRow = {
+  id: string;
+  client: string;
+  project: string;
+  progress: string;
+  href: string;
+};
+
+type ActivityRow = {
+  id: string;
+  title: string;
+  body: string;
+  time: string;
+  href: string | null;
+  icon: LucideIcon;
+};
+
 const EMPTY_STATS: DashboardStats = {
   outstanding: 0,
   outstandingCount: 0,
@@ -74,9 +102,42 @@ const EMPTY_STATS: DashboardStats = {
   collected: 0,
 };
 
+function relativeTime(iso: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const diffMs = Date.now() - date.getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days}d ago`;
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function daysOverdue(dueDate: string | null) {
+  if (!dueDate) return 0;
+  const due = new Date(`${dueDate}T12:00:00`);
+  if (Number.isNaN(due.getTime())) return 0;
+  const today = new Date();
+  today.setHours(12, 0, 0, 0);
+  return Math.max(0, Math.floor((today.getTime() - due.getTime()) / 86400000));
+}
+
+function activityIcon(type: string): LucideIcon {
+  if (type.includes("paid") || type.includes("payment")) return CheckCircle2;
+  if (type.includes("view") || type.includes("opened")) return Eye;
+  if (type.includes("remind") || type.includes("followup")) return Send;
+  if (type.includes("sent")) return Send;
+  return FileText;
+}
+
 export default function Dashboard() {
   const { isTracking, selectedClient, workDescription } = useTimeTracking();
   const {
+    userId,
     fullName,
     email,
     organizationId,
@@ -95,6 +156,9 @@ export default function Dashboard() {
   const [greeting, setGreeting] = useState("Good morning");
   const [stats, setStats] = useState<DashboardStats>(EMPTY_STATS);
   const [statsLoading, setStatsLoading] = useState(true);
+  const [attention, setAttention] = useState<AttentionRow[]>([]);
+  const [activeWork, setActiveWork] = useState<WorkRow[]>([]);
+  const [activity, setActivity] = useState<ActivityRow[]>([]);
 
   const firstName =
     firstNameFrom(fullName) || firstNameFrom(email?.split("@")[0] ?? null);
@@ -109,6 +173,9 @@ export default function Dashboard() {
 
     if (!organizationId) {
       setStats(EMPTY_STATS);
+      setAttention([]);
+      setActiveWork([]);
+      setActivity([]);
       setStatsLoading(false);
       return;
     }
@@ -116,33 +183,44 @@ export default function Dashboard() {
     const supabase = createClient();
     let cancelled = false;
 
-    async function loadStats() {
+    async function loadDashboard() {
       setStatsLoading(true);
 
       const monthStart = new Date();
       monthStart.setDate(1);
       monthStart.setHours(0, 0, 0, 0);
 
+      const weekStart = new Date();
+      weekStart.setHours(0, 0, 0, 0);
+      const day = weekStart.getDay();
+      weekStart.setDate(weekStart.getDate() + (day === 0 ? -6 : 1 - day));
+
       const [
         invoicesRes,
         proposalsRes,
         timeEntriesRes,
         billedLinesRes,
+        notificationsRes,
+        projectsRes,
       ] = await Promise.all([
         supabase
           .from("invoices")
-          .select("total, status, paid_at")
+          .select(
+            "id, number, total, status, paid_at, due_date, clients(name, company)"
+          )
           .eq("organization_id", organizationId!)
           .is("deleted_at", null),
         supabase
           .from("proposals")
-          .select("amount, status")
+          .select("id, title, amount, status, clients(name, company)")
           .eq("organization_id", organizationId!)
           .is("deleted_at", null)
           .in("status", ["sent", "viewed"]),
         supabase
           .from("time_entries")
-          .select("id, duration_minutes, hourly_rate, billable, ended_at")
+          .select(
+            "id, duration_minutes, hourly_rate, billable, ended_at, started_at, client_id, project_id, clients(name, company), projects(id, name)"
+          )
           .eq("organization_id", organizationId!)
           .is("deleted_at", null)
           .eq("billable", true)
@@ -152,6 +230,21 @@ export default function Dashboard() {
           .select("time_entry_id")
           .eq("organization_id", organizationId!)
           .not("time_entry_id", "is", null),
+        userId
+          ? supabase
+              .from("notifications")
+              .select("id, title, body, type, link, created_at")
+              .eq("organization_id", organizationId!)
+              .eq("user_id", userId)
+              .order("created_at", { ascending: false })
+              .limit(8)
+          : Promise.resolve({ data: [] as never[] }),
+        supabase
+          .from("projects")
+          .select("id, name, clients(name, company)")
+          .eq("organization_id", organizationId!)
+          .is("deleted_at", null)
+          .limit(20),
       ]);
 
       if (cancelled) return;
@@ -188,13 +281,159 @@ export default function Dashboard() {
 
       let unbilledMinutes = 0;
       let unbilled = 0;
+      const unbilledByClient = new Map<
+        string,
+        { name: string; minutes: number; amount: number }
+      >();
+
       for (const entry of timeEntriesRes.data ?? []) {
         if (billedEntryIds.has(entry.id)) continue;
         const minutes = Number(entry.duration_minutes || 0);
         unbilledMinutes += minutes;
         const rate = Number(entry.hourly_rate || 0);
-        unbilled += (minutes / 60) * rate;
+        const amount = (minutes / 60) * rate;
+        unbilled += amount;
+
+        const clientRel = entry.clients as
+          | { name: string; company: string | null }
+          | null
+          | undefined;
+        const key = entry.client_id || "none";
+        const name =
+          clientRel?.company || clientRel?.name || "No client";
+        const current = unbilledByClient.get(key) || {
+          name,
+          minutes: 0,
+          amount: 0,
+        };
+        current.minutes += minutes;
+        current.amount += amount;
+        unbilledByClient.set(key, current);
       }
+
+      const attentionItems: AttentionRow[] = [];
+
+      for (const inv of outstandingInvoices) {
+        const overdueDays =
+          inv.status === "overdue"
+            ? daysOverdue(inv.due_date)
+            : inv.due_date && daysOverdue(inv.due_date) > 0
+              ? daysOverdue(inv.due_date)
+              : 0;
+        if (inv.status !== "overdue" && overdueDays <= 0) continue;
+        const clientRel = inv.clients as
+          | { name: string; company: string | null }
+          | null
+          | undefined;
+        const clientName =
+          clientRel?.company || clientRel?.name || "Client";
+        const label = inv.number || "Invoice";
+        attentionItems.push({
+          id: `inv-${inv.id}`,
+          text:
+            overdueDays > 0
+              ? `${clientName} · ${label} · ${overdueDays} day${overdueDays === 1 ? "" : "s"} overdue`
+              : `${clientName} · ${label} is overdue`,
+          action: "Open invoice",
+          href: `/invoices/${inv.id}/edit`,
+          icon: AlertCircle,
+        });
+      }
+
+      const topUnbilled = Array.from(unbilledByClient.entries())
+        .filter(([, row]) => row.minutes >= 30)
+        .sort((a, b) => b[1].minutes - a[1].minutes)
+        .slice(0, 3);
+      for (const [clientId, row] of topUnbilled) {
+        attentionItems.push({
+          id: `unbilled-${clientId}`,
+          text: `${formatDurationMinutes(row.minutes)} unbilled for ${row.name}`,
+          action: "Create invoice",
+          href:
+            clientId === "none"
+              ? "/invoices?new=1"
+              : `/invoices?new=1&clientId=${clientId}`,
+          icon: Clock,
+        });
+      }
+
+      for (const proposal of proposals.filter((p) => p.status === "viewed").slice(0, 3)) {
+        const clientRel = proposal.clients as
+          | { name: string; company: string | null }
+          | null
+          | undefined;
+        const clientName =
+          clientRel?.company || clientRel?.name || "Client";
+        attentionItems.push({
+          id: `prop-${proposal.id}`,
+          text: `${clientName} viewed “${proposal.title || "your proposal"}”`,
+          action: "View proposal",
+          href: `/proposals/${proposal.id}/edit`,
+          icon: Eye,
+        });
+      }
+
+      const weekMinutesByProject = new Map<
+        string,
+        { name: string; client: string; minutes: number }
+      >();
+      for (const entry of timeEntriesRes.data ?? []) {
+        if (!entry.started_at || new Date(entry.started_at) < weekStart) continue;
+        const projectRel = entry.projects as
+          | { id: string; name: string }
+          | null
+          | undefined;
+        const clientRel = entry.clients as
+          | { name: string; company: string | null }
+          | null
+          | undefined;
+        if (!projectRel?.id) continue;
+        const current = weekMinutesByProject.get(projectRel.id) || {
+          name: projectRel.name,
+          client: clientRel?.company || clientRel?.name || "Client",
+          minutes: 0,
+        };
+        current.minutes += Number(entry.duration_minutes || 0);
+        weekMinutesByProject.set(projectRel.id, current);
+      }
+
+      let workRows: WorkRow[] = Array.from(weekMinutesByProject.entries())
+        .sort((a, b) => b[1].minutes - a[1].minutes)
+        .slice(0, 5)
+        .map(([id, row]) => ({
+          id,
+          client: row.client,
+          project: row.name,
+          progress: `${formatDurationMinutes(row.minutes)} this week`,
+          href: `/clients`,
+        }));
+
+      if (workRows.length === 0) {
+        workRows = (projectsRes.data ?? []).slice(0, 5).map((project) => {
+          const clientRel = project.clients as
+            | { name: string; company: string | null }
+            | null
+            | undefined;
+          return {
+            id: project.id,
+            client: clientRel?.company || clientRel?.name || "Client",
+            project: project.name,
+            progress: "No time this week",
+            href: `/clients`,
+          };
+        });
+      }
+
+      const activityRows: ActivityRow[] = (notificationsRes.data ?? []).map(
+        (row) => ({
+          id: row.id,
+          title: row.title,
+          body: row.body,
+          time: relativeTime(row.created_at),
+          href: row.link,
+          icon: activityIcon(row.type),
+        })
+      );
 
       setStats({
         outstanding,
@@ -205,14 +444,17 @@ export default function Dashboard() {
         openProposalCount: proposals.length,
         collected,
       });
+      setAttention(attentionItems.slice(0, 6));
+      setActiveWork(workRows);
+      setActivity(activityRows);
       setStatsLoading(false);
     }
 
-    void loadStats();
+    void loadDashboard();
     return () => {
       cancelled = true;
     };
-  }, [organizationId, profileLoading]);
+  }, [organizationId, profileLoading, userId]);
 
   const outstandingValue = statsLoading
     ? "—"
@@ -265,7 +507,7 @@ export default function Dashboard() {
                   {trialExpired
                     ? `Upgrade to ${PAID_PLAN.name} to keep proposals, invoices, and automated reminders running${
                         pricing?.monthly
-                          ? ` — from ${formatPlanMoney(
+                          ? ` from ${formatPlanMoney(
                               pricing.monthly.amount,
                               pricing.monthly.currency
                             )}/month`
@@ -309,35 +551,57 @@ export default function Dashboard() {
                 Needs your attention
               </h2>
               <div className="space-y-2">
-                <AttentionItem
-                  icon={<AlertCircle className="w-4 h-4 text-gray-900" />}
-                  text="Acme invoice 11 days overdue"
-                  action="Send reminder"
-                />
-                <AttentionItem
-                  icon={<Clock className="w-4 h-4 text-gray-900" />}
-                  text="22h unbilled for Globex"
-                  action="Create invoice"
-                />
-                <AttentionItem
-                  icon={<Eye className="w-4 h-4 text-gray-900" />}
-                  text="Globex viewed your proposal"
-                  action="View proposal"
-                />
+                {statsLoading ? (
+                  <EmptyFeed text="Loading…" />
+                ) : attention.length === 0 ? (
+                  <EmptyFeed text="You're all caught up. Nothing needs attention right now." />
+                ) : (
+                  attention.map((item) => (
+                    <AttentionItem
+                      key={item.id}
+                      icon={<item.icon className="w-4 h-4 text-gray-900" />}
+                      text={item.text}
+                      action={item.action}
+                      href={item.href}
+                    />
+                  ))
+                )}
               </div>
             </div>
 
             <div>
               <h2 className="text-sm font-semibold text-gray-900 tracking-tight mb-4 flex items-center justify-between">
                 Active work
-                <button className="text-gray-400 hover:text-gray-900 transition-colors">
+                <Link
+                  href="/clients"
+                  className="text-gray-400 hover:text-gray-900 transition-colors"
+                  aria-label="Add client or project"
+                >
                   <Plus className="w-4 h-4" />
-                </button>
+                </Link>
               </h2>
               <div className="rounded-2xl border border-line divide-y divide-line bg-white">
-                <WorkItem client="Acme" project="Website redesign" progress="24/40h" />
-                <WorkItem client="Globex" project="Branding" progress="Milestone 2" />
-                <WorkItem client="Stark" project="Consulting" progress="7.5h this week" />
+                {statsLoading ? (
+                  <div className="p-4 text-sm text-gray-400">Loading…</div>
+                ) : activeWork.length === 0 ? (
+                  <div className="p-4 text-sm text-gray-500">
+                    No active projects yet.{" "}
+                    <Link href="/clients" className="text-[#2563EB] font-medium">
+                      Add a client
+                    </Link>{" "}
+                    to get started.
+                  </div>
+                ) : (
+                  activeWork.map((item) => (
+                    <WorkItem
+                      key={item.id}
+                      client={item.client}
+                      project={item.project}
+                      progress={item.progress}
+                      href={item.href}
+                    />
+                  ))
+                )}
               </div>
             </div>
           </div>
@@ -396,25 +660,25 @@ export default function Dashboard() {
               Recent activity
             </h2>
             <div className="rounded-2xl border border-line bg-white">
-              <ActivityItem
-                icon={<CheckCircle2 className="w-4 h-4" />}
-                title="Payment received"
-                body="Stark Industries paid $5,000.00 for INV-1041. Funds are on the way to your Stripe account."
-                time="2 hours ago"
-              />
-              <ActivityItem
-                icon={<Eye className="w-4 h-4" />}
-                title="Proposal viewed"
-                body="Globex Inc viewed the Brand Identity proposal."
-                time="Yesterday"
-              />
-              <ActivityItem
-                icon={<Send className="w-4 h-4" />}
-                title="Reminder sent"
-                body="Automated reminder sent to Wayne Enterprises for INV-1044."
-                time="Oct 10"
-                last
-              />
+              {statsLoading ? (
+                <div className="p-4 text-sm text-gray-400">Loading…</div>
+              ) : activity.length === 0 ? (
+                <div className="p-4 text-sm text-gray-500">
+                  Activity from proposals, invoices, and payments will show up here.
+                </div>
+              ) : (
+                activity.map((item, index) => (
+                  <ActivityItem
+                    key={item.id}
+                    icon={<item.icon className="w-4 h-4" />}
+                    title={item.title}
+                    body={item.body}
+                    time={item.time}
+                    href={item.href}
+                    last={index === activity.length - 1}
+                  />
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -476,14 +740,24 @@ function StatCard({
   );
 }
 
+function EmptyFeed({ text }: { text: string }) {
+  return (
+    <div className="p-3.5 rounded-2xl border border-dashed border-line bg-white text-[14px] text-gray-500">
+      {text}
+    </div>
+  );
+}
+
 function AttentionItem({
   icon,
   text,
   action,
+  href,
 }: {
   icon: React.ReactNode;
   text: string;
   action: string;
+  href: string;
 }) {
   return (
     <div className="p-3.5 rounded-2xl border border-line bg-white flex items-center justify-between gap-4 hover:border-gray-300 transition-colors">
@@ -493,9 +767,12 @@ function AttentionItem({
         </div>
         <span className="font-medium text-[14px] text-gray-900 truncate">{text}</span>
       </div>
-      <button className="shrink-0 text-sm font-medium text-[#2563EB] hover:text-[#1d4ed8] flex items-center gap-1 transition-colors">
+      <Link
+        href={href}
+        className="shrink-0 text-sm font-medium text-[#2563EB] hover:text-[#1d4ed8] flex items-center gap-1 transition-colors"
+      >
         {action} <ArrowRight className="w-3.5 h-3.5" />
-      </button>
+      </Link>
     </div>
   );
 }
@@ -504,13 +781,18 @@ function WorkItem({
   client,
   project,
   progress,
+  href,
 }: {
   client: string;
   project: string;
   progress: string;
+  href: string;
 }) {
   return (
-    <div className="p-4 flex justify-between items-center hover:bg-gray-50/80 transition-colors cursor-pointer group">
+    <Link
+      href={href}
+      className="p-4 flex justify-between items-center hover:bg-gray-50/80 transition-colors group"
+    >
       <div>
         <div className="font-medium text-[15px] text-gray-900 group-hover:text-gray-700 transition-colors">
           {client}
@@ -518,7 +800,7 @@ function WorkItem({
         <div className="text-[13px] text-gray-500">{project}</div>
       </div>
       <div className="text-[14px] font-medium text-gray-600">{progress}</div>
-    </div>
+    </Link>
   );
 }
 
@@ -561,18 +843,18 @@ function ActivityItem({
   title,
   body,
   time,
+  href,
   last = false,
 }: {
   icon: React.ReactNode;
   title: string;
   body: string;
   time: string;
+  href?: string | null;
   last?: boolean;
 }) {
-  return (
-    <div
-      className={`p-4 flex items-start gap-4 ${last ? "" : "border-b border-line"}`}
-    >
+  const content = (
+    <>
       <div className="w-8 h-8 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center shrink-0 mt-0.5">
         {icon}
       </div>
@@ -581,6 +863,20 @@ function ActivityItem({
         <p className="text-sm text-gray-500 mt-0.5">{body}</p>
         <p className="text-xs text-gray-400 mt-1.5">{time}</p>
       </div>
-    </div>
+    </>
   );
+
+  const className = `p-4 flex items-start gap-4 ${last ? "" : "border-b border-line"} ${
+    href ? "hover:bg-gray-50/80 transition-colors" : ""
+  }`;
+
+  if (href) {
+    return (
+      <Link href={href} className={className}>
+        {content}
+      </Link>
+    );
+  }
+
+  return <div className={className}>{content}</div>;
 }

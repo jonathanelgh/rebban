@@ -108,9 +108,13 @@ function InvoicesPageInner() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | InvoiceStatus>("all");
   const [modalOpen, setModalOpen] = useState(false);
+  const [preselectClientId, setPreselectClientId] = useState<string | null>(
+    null
+  );
 
   useEffect(() => {
     if (searchParams.get("new") === "1") {
+      setPreselectClientId(searchParams.get("clientId"));
       setModalOpen(true);
       router.replace("/invoices", { scroll: false });
     }
@@ -392,10 +396,17 @@ function InvoicesPageInner() {
           defaultCurrency={organizationCurrency || "USD"}
           organizationId={organizationId}
           userId={userId}
-          onClose={() => setModalOpen(false)}
+          initialClientId={preselectClientId}
+          onClose={() => {
+            setModalOpen(false);
+            setPreselectClientId(null);
+          }}
           onCreated={(id) => {
             setModalOpen(false);
-            router.push(`/invoices/${id}/edit`);
+            setPreselectClientId(null);
+            router.push(
+              `/invoices/${id}/edit${preselectClientId ? "?addUnbilled=1" : ""}`
+            );
           }}
           onClientsChanged={() => void load()}
         />
@@ -431,6 +442,7 @@ function CreateInvoiceModal({
   defaultCurrency,
   organizationId,
   userId,
+  initialClientId,
   onClose,
   onCreated,
   onClientsChanged,
@@ -439,11 +451,17 @@ function CreateInvoiceModal({
   defaultCurrency: string;
   organizationId: string | null;
   userId: string | null;
+  initialClientId?: string | null;
   onClose: () => void;
   onCreated: (id: string) => void;
   onClientsChanged: () => void;
 }) {
-  const [selectedClient, setSelectedClient] = useState<ClientOption | null>(null);
+  const [selectedClient, setSelectedClient] = useState<ClientOption | null>(
+    () =>
+      (initialClientId &&
+        clients.find((client) => client.id === initialClientId)) ||
+      null
+  );
   const [currency, setCurrency] = useState(defaultCurrency);
   const [dueInDays, setDueInDays] = useState("14");
   const [creatingClient, setCreatingClient] = useState(false);

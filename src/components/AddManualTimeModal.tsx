@@ -16,13 +16,11 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "@/components/ProfileContext";
 import {
+  useTimeTracking,
   type TimerClient,
   type TimerProject,
 } from "@/components/TimeTrackingContext";
-import {
-  DEFAULT_HOURLY_RATE,
-  toISODateLocal,
-} from "@/lib/time-entries";
+import { toISODateLocal } from "@/lib/time-entries";
 
 const inputClass =
   "w-full rounded-xl border border-line bg-[#FAFBFC] px-3.5 py-2.5 text-sm text-gray-900 outline-none placeholder:text-gray-400 focus:border-gray-300 focus:bg-white";
@@ -500,6 +498,7 @@ export function AddManualTimeModal({
   onSaved: (startedDate: string) => void;
 }) {
   const { organizationId, userId } = useProfile();
+  const { defaultHourlyRate } = useTimeTracking();
   const now = new Date();
   const [description, setDescription] = useState("");
   const [date, setDate] = useState(() => toISODateLocal(now));
@@ -559,7 +558,7 @@ export function AddManualTimeModal({
       started_at: startedAt,
       ended_at: endedAt,
       billable,
-      hourly_rate: DEFAULT_HOURLY_RATE,
+      hourly_rate: defaultHourlyRate,
     });
     setSaving(false);
 

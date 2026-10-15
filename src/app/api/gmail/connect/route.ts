@@ -31,6 +31,16 @@ export async function GET(request: Request) {
   const origin = requestOrigin(request);
   const redirectUri = getGmailRedirectUri(origin);
   const state = nanoid(32);
+  const requestUrl = new URL(request.url);
+  const returnToRaw = requestUrl.searchParams.get("returnTo");
+  const returnTo =
+    returnToRaw &&
+    returnToRaw.startsWith("/") &&
+    !returnToRaw.startsWith("//") &&
+    !returnToRaw.includes("://")
+      ? returnToRaw
+      : "/settings?section=integrations&gmail=connected";
+
   const url = buildGmailAuthUrl(state, redirectUri);
   const response = NextResponse.redirect(url);
   const cookieBase = {
@@ -43,5 +53,6 @@ export async function GET(request: Request) {
   response.cookies.set("gmail_oauth_state", state, cookieBase);
   // Token exchange must use the exact same redirect_uri as the auth request.
   response.cookies.set("gmail_oauth_redirect", redirectUri, cookieBase);
+  response.cookies.set("gmail_oauth_return", returnTo, cookieBase);
   return response;
 }
