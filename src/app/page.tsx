@@ -476,8 +476,8 @@ export default function Dashboard() {
     : formatMoney(stats.collected, currency);
 
   return (
-    <main className="h-full min-h-0 w-full flex justify-center gap-8 px-8">
-      <div className="w-full max-w-6xl min-w-0 min-h-0 overflow-y-auto no-scrollbar">
+    <main className="h-full min-h-0 w-full flex justify-center gap-8 px-4 sm:px-8 overflow-x-hidden">
+      <div className="w-full max-w-6xl min-w-0 min-h-0 overflow-y-auto overflow-x-hidden no-scrollbar">
         <div className="pt-10 pb-10">
           <div className="mb-10 pr-28">
             <h1 className="text-3xl font-semibold text-gray-900 tracking-tight">
@@ -606,12 +606,51 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="mb-10">
+          <div className="mb-10 min-w-0">
             <h2 className="text-sm font-semibold text-gray-900 tracking-tight mb-4">
               Your money flow
             </h2>
-            <div className="rounded-2xl border border-line bg-white p-6">
-              <div className="flex items-center justify-between gap-2">
+            <div className="rounded-2xl border border-line bg-white p-4 sm:p-6 min-w-0 overflow-hidden">
+              {/* Mobile: two rows so steps never push the page sideways */}
+              <div className="grid grid-cols-2 gap-x-3 gap-y-6 sm:hidden">
+                <FlowStep
+                  icon={FileText}
+                  label="Proposals"
+                  amount={proposalsValue}
+                  count={
+                    statsLoading
+                      ? "—"
+                      : `${stats.openProposalCount} active`
+                  }
+                  tone="violet"
+                />
+                <FlowStep
+                  icon={Clock}
+                  label="Unbilled"
+                  amount={unbilledValue}
+                  count={unbilledHint ?? "—"}
+                  tone="amber"
+                />
+                <FlowStep
+                  icon={Receipt}
+                  label="Outstanding"
+                  amount={outstandingValue}
+                  count={
+                    statsLoading
+                      ? "—"
+                      : `${stats.outstandingCount} invoice${stats.outstandingCount === 1 ? "" : "s"}`
+                  }
+                  tone="blue"
+                />
+                <FlowStep
+                  icon={CheckCircle2}
+                  label="Paid"
+                  amount={collectedValue}
+                  count="This month"
+                  tone="emerald"
+                />
+              </div>
+              <div className="hidden sm:flex items-center justify-between gap-2 min-w-0">
                 <FlowStep
                   icon={FileText}
                   label="Proposals"
@@ -825,15 +864,17 @@ function FlowStep({
   tone: keyof typeof FLOW_TONES;
 }) {
   return (
-    <div className="flex flex-col items-center flex-1 text-center group cursor-pointer">
+    <div className="flex flex-col items-center flex-1 min-w-0 w-full text-center group cursor-pointer">
       <div
         className={`w-11 h-11 rounded-full flex items-center justify-center mb-3 transition-transform group-hover:scale-105 ${FLOW_TONES[tone]}`}
       >
         <Icon className="w-5 h-5" strokeWidth={1.75} />
       </div>
       <div className="text-[11px] font-medium text-gray-400 tracking-wide mb-1">{label}</div>
-      <div className="text-[17px] font-semibold tracking-tight text-gray-900">{amount}</div>
-      <div className="text-[12px] text-gray-400 mt-0.5">{count}</div>
+      <div className="text-[15px] sm:text-[17px] font-semibold tracking-tight text-gray-900 truncate max-w-full px-1">
+        {amount}
+      </div>
+      <div className="text-[12px] text-gray-400 mt-0.5 truncate max-w-full px-1">{count}</div>
     </div>
   );
 }

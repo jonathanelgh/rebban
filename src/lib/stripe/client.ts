@@ -23,7 +23,7 @@ export function getStripe() {
       typescript: true,
       appInfo: {
         name: "Rebban",
-        url: "https://rebban.com",
+        url: "https://app.rebban.com",
       },
     });
   }

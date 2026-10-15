@@ -18,26 +18,26 @@ Schema is applied via Supabase MCP migrations. Regenerate TypeScript types with 
 UI: **Continue with Google** on `/login` and **Sign up with Google** on `/signup`.
 
 1. [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → your OAuth **Web** client  
-   - Authorized JavaScript origins: `http://localhost:3001`, `https://rebban.com`  
+   - Authorized JavaScript origins: `http://localhost:3001`, `https://app.rebban.com`  
    - Authorized redirect URIs must include:  
      `https://cvqcanrdvtzovbmfhiwz.supabase.co/auth/v1/callback`  
      (keep your Gmail-send redirect `…/api/gmail/callback` on the same client if you use it)
 2. Supabase Dashboard → **Authentication → Providers → Google** → enable  
    - paste the same `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`
 3. Supabase → **Authentication → URL configuration** (this is what controls the post-Google redirect):  
-   - **Site URL:** `https://rebban.com`  
+   - **Site URL:** `https://app.rebban.com`  
      (If this is still `http://localhost:…`, Google auth will send users to localhost.)  
    - **Redirect URLs** allow list — add all of these:  
-     `https://rebban.com/auth/callback`  
-     `https://rebban.com/**`  
+     `https://app.rebban.com/auth/callback`  
+     `https://app.rebban.com/**`  
      `http://localhost:3001/auth/callback`  
      `http://localhost:3001/**`  
 
-4. Vercel / `.env`: `NEXT_PUBLIC_APP_URL=https://rebban.com`  
+4. Vercel / `.env`: `NEXT_PUBLIC_APP_URL=https://app.rebban.com`  
    The Google button uses this for `redirectTo`.
 
 5. Google Cloud OAuth client → Authorized JavaScript origins / redirect URIs:  
-   - Origin: `https://rebban.com`  
+   - Origin: `https://app.rebban.com`  
    - Redirect (Supabase): `https://cvqcanrdvtzovbmfhiwz.supabase.co/auth/v1/callback`
 
 Signup with Google respects freelancer/agency + workspace name chosen on the signup screen (applied right after the first OAuth session).
@@ -103,11 +103,11 @@ Google Cloud setup:
 
 1. Create an OAuth client (Web application)
 2. **Google Cloud → Credentials → OAuth client → Authorized redirect URIs** must include exactly:
-   - `https://rebban.com/api/gmail/callback`
+   - `https://app.rebban.com/api/gmail/callback`
    - `http://localhost:3001/api/gmail/callback` (local only)
    Changing a value in Vercel does **not** register it with Google. `redirect_uri_mismatch` means this list is wrong/missing.
 3. Enable Gmail API
-4. Vercel env: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXT_PUBLIC_APP_URL=https://rebban.com`
+4. Vercel env: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXT_PUBLIC_APP_URL=https://app.rebban.com`
 5. Leave `GOOGLE_GMAIL_REDIRECT_URI` unset in Vercel (prod uses `NEXT_PUBLIC_APP_URL`)
 
 ## Outlook / Microsoft 365 sending
@@ -119,7 +119,7 @@ Azure App Registration setup:
 1. [Azure Portal](https://portal.azure.com/) → Microsoft Entra ID → App registrations → New registration
 2. Supported account types: **Accounts in any organizational directory and personal Microsoft accounts**
 3. Redirect URIs (Web):
-   - `https://rebban.com/api/outlook/callback`
+   - `https://app.rebban.com/api/outlook/callback`
    - `http://localhost:3001/api/outlook/callback` (local only)
 4. Certificates & secrets → New client secret
 5. API permissions → Microsoft Graph (delegated): `Mail.Send`, `User.Read`, `offline_access` → Grant admin consent if required

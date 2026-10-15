@@ -24,7 +24,7 @@ export function GoogleAuthButton({
     setLoading(true);
 
     const supabase = createClient();
-    // Prefer the public app URL so Google auth returns to rebban.com, not a
+    // Prefer the public app URL so Google auth returns to app.rebban.com, not a
     // stale Supabase Site URL / localhost fallback.
     const origin = (
       process.env.NEXT_PUBLIC_APP_URL ||

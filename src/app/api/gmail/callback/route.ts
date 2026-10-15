@@ -5,7 +5,7 @@ import { getAppUrl } from "@/lib/email/resend";
 import { requestOrigin, saveGmailConnection } from "@/lib/email/gmail";
 
 function callbackAppUrl(request: Request) {
-  // Always return to the host that handled the callback (rebban.com or local).
+  // Always return to the host that handled the callback (app.rebban.com or local).
   try {
     return requestOrigin(request);
   } catch {
