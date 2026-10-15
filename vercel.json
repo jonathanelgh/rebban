@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/proposal-followups",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/invoice-reminders",
+      "schedule": "0 * * * *"
     }
   ]
 }

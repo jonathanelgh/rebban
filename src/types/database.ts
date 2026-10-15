@@ -282,6 +282,81 @@ export type Database = {
           },
         ]
       }
+      invoice_reminders: {
+        Row: {
+          body: string
+          created_at: string
+          created_by: string | null
+          error: string | null
+          id: string
+          invoice_id: string
+          offset_days: number
+          organization_id: string
+          recipient_email: string
+          recipient_name: string | null
+          scheduled_for: string
+          sent_at: string | null
+          sequence_key: string
+          status: string
+          step_index: number
+          subject: string
+          updated_at: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          created_by?: string | null
+          error?: string | null
+          id?: string
+          invoice_id: string
+          offset_days?: number
+          organization_id: string
+          recipient_email: string
+          recipient_name?: string | null
+          scheduled_for: string
+          sent_at?: string | null
+          sequence_key: string
+          status?: string
+          step_index?: number
+          subject: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          created_by?: string | null
+          error?: string | null
+          id?: string
+          invoice_id?: string
+          offset_days?: number
+          organization_id?: string
+          recipient_email?: string
+          recipient_name?: string | null
+          scheduled_for?: string
+          sent_at?: string | null
+          sequence_key?: string
+          status?: string
+          step_index?: number
+          subject?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoice_reminders_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_reminders_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       invoices: {
         Row: {
           banner_url: string | null
@@ -599,6 +674,7 @@ export type Database = {
           stripe_subscription_id: string | null
           stripe_subscription_status: string | null
           tax_id: string | null
+          trial_ends_at: string | null
           type: Database["public"]["Enums"]["organization_type"]
           updated_at: string
         }
@@ -628,6 +704,7 @@ export type Database = {
           stripe_subscription_id?: string | null
           stripe_subscription_status?: string | null
           tax_id?: string | null
+          trial_ends_at?: string | null
           type?: Database["public"]["Enums"]["organization_type"]
           updated_at?: string
         }
@@ -657,6 +734,7 @@ export type Database = {
           stripe_subscription_id?: string | null
           stripe_subscription_status?: string | null
           tax_id?: string | null
+          trial_ends_at?: string | null
           type?: Database["public"]["Enums"]["organization_type"]
           updated_at?: string
         }
@@ -1486,7 +1564,6 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           description?: string | null
-          duration_minutes?: number | null
           ended_at?: string | null
           hourly_rate?: number | null
           id?: string
@@ -1504,7 +1581,6 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           description?: string | null
-          duration_minutes?: number | null
           ended_at?: string | null
           hourly_rate?: number | null
           id?: string
@@ -1579,9 +1655,41 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      cancel_invoice_reminders: {
+        Args: { p_invoice_id: string }
+        Returns: number
+      }
       cancel_proposal_followups: {
         Args: { p_proposal_id: string }
         Returns: number
+      }
+      claim_due_invoice_reminders: {
+        Args: { p_limit?: number }
+        Returns: {
+          body: string
+          created_at: string
+          created_by: string | null
+          error: string | null
+          id: string
+          invoice_id: string
+          offset_days: number
+          organization_id: string
+          recipient_email: string
+          recipient_name: string | null
+          scheduled_for: string
+          sent_at: string | null
+          sequence_key: string
+          status: string
+          step_index: number
+          subject: string
+          updated_at: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "invoice_reminders"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
       claim_due_proposal_followups: {
         Args: { p_limit?: number }
@@ -1643,6 +1751,7 @@ export type Database = {
           stripe_subscription_id: string | null
           stripe_subscription_status: string | null
           tax_id: string | null
+          trial_ends_at: string | null
           type: Database["public"]["Enums"]["organization_type"]
           updated_at: string
         }

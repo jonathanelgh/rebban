@@ -71,7 +71,7 @@ Env vars:
 - `RESEND_API_KEY` — Resend API key
 - `RESEND_FROM_EMAIL` — verified sender
 - `SUPABASE_SERVICE_ROLE_KEY` — used by the follow-up cron job
-- `CRON_SECRET` — shared secret for `/api/cron/proposal-followups`
+- `CRON_SECRET` — shared secret for `/api/cron/proposal-followups` and `/api/cron/invoice-reminders`
 
 Flow:
 
@@ -81,10 +81,18 @@ Flow:
 4. Accept/decline cancels pending follow-ups automatically
 5. Client open/sign/decline updates status + alerts + activity log
 
+Invoice payment reminders:
+
+1. Freelancer sends via a 3-step modal (recipient → reminder sequence → email message)
+2. Reminders are scheduled relative to `due_date` in `invoice_reminders`
+3. Hourly cron hits `/api/cron/invoice-reminders`
+4. Paid / void cancels pending reminders automatically
+
 Manual cron test:
 
 ```bash
 curl -H "Authorization: Bearer $CRON_SECRET" "$NEXT_PUBLIC_APP_URL/api/cron/proposal-followups"
+curl -H "Authorization: Bearer $CRON_SECRET" "$NEXT_PUBLIC_APP_URL/api/cron/invoice-reminders"
 ```
 
 ## Gmail sending

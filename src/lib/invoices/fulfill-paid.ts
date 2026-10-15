@@ -26,6 +26,20 @@ export async function markInvoicePaid(options: {
   if (error) {
     throw new Error(`markInvoicePaid failed: ${error.message}`);
   }
+
+  if (data) {
+    try {
+      await admin.rpc("cancel_invoice_reminders", {
+        p_invoice_id: options.invoiceId,
+      });
+    } catch (err) {
+      console.error(
+        "[invoice fulfill] cancel reminders failed",
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
+
   return Boolean(data);
 }
 

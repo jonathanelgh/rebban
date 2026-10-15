@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getPlatformPriceId, isStripeConfigured } from "@/lib/stripe/client";
+import {
+  getPlatformPriceId,
+  getPlatformYearlyPriceId,
+  isStripeConfigured,
+} from "@/lib/stripe/client";
 import {
   getActiveOrganizationId,
   getOrganizationStripeState,
 } from "@/lib/stripe/org";
+import { computeEntitlement } from "@/lib/billing/plan";
+import { fetchPlatformPricing } from "@/lib/stripe/prices";
 
 export async function GET() {
   const supabase = await createClient();
@@ -23,16 +29,26 @@ export async function GET() {
 
   const org = await getOrganizationStripeState(supabase, organizationId);
   const status = org?.stripe_subscription_status || null;
-  const active =
-    status === "active" || status === "trialing" || status === "past_due";
+  const entitlement = computeEntitlement({
+    subscriptionStatus: status,
+    trialEndsAt: org?.trial_ends_at,
+  });
+  const pricing = await fetchPlatformPricing();
 
   return NextResponse.json({
     configured: isStripeConfigured() && Boolean(getPlatformPriceId()),
+    yearlyConfigured: Boolean(getPlatformYearlyPriceId() && pricing.yearly),
     hasCustomer: Boolean(org?.stripe_customer_id),
     subscriptionId: org?.stripe_subscription_id ?? null,
     status,
     priceId: org?.stripe_price_id ?? null,
-    active,
-    planLabel: active ? "Pro" : "Free",
+    trialEndsAt: org?.trial_ends_at ?? null,
+    trialDaysLeft: entitlement.trialDaysLeft,
+    trialActive: entitlement.trialActive,
+    trialExpired: entitlement.trialExpired,
+    entitled: entitlement.entitled,
+    active: entitlement.paid,
+    planLabel: entitlement.planLabel,
+    pricing,
   });
 }

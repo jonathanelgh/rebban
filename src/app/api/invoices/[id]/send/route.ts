@@ -4,6 +4,11 @@ import { createClient } from "@/lib/supabase/server";
 import { getAppUrl, sendInvoiceInviteEmail } from "@/lib/email/resend";
 import { DEFAULT_INVOICE_SEND_MESSAGE } from "@/lib/invoices/send";
 import { formatInvoiceMoney } from "@/lib/invoices/totals";
+import {
+  buildScheduledReminders,
+  type ReminderSequenceKey,
+  type ReminderStepTemplate,
+} from "@/lib/invoices/reminders";
 
 export async function POST(
   request: Request,
@@ -15,6 +20,8 @@ export async function POST(
       recipientEmail?: string;
       recipientName?: string;
       message?: string;
+      sequenceKey?: ReminderSequenceKey;
+      reminderSteps?: ReminderStepTemplate[];
     };
 
     const supabase = await createClient();
@@ -30,7 +37,7 @@ export async function POST(
       .from("invoices")
       .select(
         `id, number, status, currency, total, organization_id, client_id,
-         created_by, sent_at, payment_token`
+         created_by, sent_at, payment_token, due_date`
       )
       .eq("id", invoiceId)
       .is("deleted_at", null)
@@ -91,6 +98,19 @@ export async function POST(
       .eq("id", user.id)
       .maybeSingle();
 
+    const sequenceKey = body.sequenceKey || "none";
+    if (sequenceKey !== "none" && !invoice.due_date) {
+      return NextResponse.json(
+        { error: "Set a due date before enabling payment reminders." },
+        { status: 400 }
+      );
+    }
+
+    // Cancel any leftover pending reminders from earlier sends
+    await supabase.rpc("cancel_invoice_reminders", {
+      p_invoice_id: invoice.id,
+    });
+
     let paymentToken = invoice.payment_token;
     if (!paymentToken) {
       paymentToken = nanoid(24);
@@ -139,6 +159,47 @@ export async function POST(
       );
     }
 
+    const scheduled =
+      sequenceKey === "none" || !invoice.due_date
+        ? []
+        : buildScheduledReminders({
+            sequenceKey,
+            steps: body.reminderSteps,
+            dueDate: invoice.due_date,
+          });
+
+    if (scheduled.length > 0) {
+      const { error: reminderError } = await supabase
+        .from("invoice_reminders")
+        .insert(
+          scheduled.map((step) => ({
+            organization_id: invoice.organization_id,
+            invoice_id: invoice.id,
+            sequence_key: sequenceKey,
+            step_index: step.stepIndex,
+            offset_days: step.offsetDays,
+            recipient_email: recipientEmail,
+            recipient_name: recipientName || null,
+            subject: step.subject,
+            body: step.body,
+            status: "pending" as const,
+            scheduled_for: step.scheduledFor,
+            created_by: user.id,
+          }))
+        );
+
+      if (reminderError) {
+        return NextResponse.json(
+          {
+            error:
+              reminderError.message ||
+              "Invoice sent, but reminders could not be scheduled.",
+          },
+          { status: 500 }
+        );
+      }
+    }
+
     await supabase.from("invoice_events").insert({
       organization_id: invoice.organization_id,
       invoice_id: invoice.id,
@@ -150,6 +211,8 @@ export async function POST(
         recipient_email: recipientEmail,
         recipient_name: recipientName,
         invoice_url: invoiceUrl,
+        sequence_key: sequenceKey,
+        reminder_count: scheduled.length,
         provider:
           emailResult && "provider" in emailResult
             ? emailResult.provider
@@ -178,6 +241,7 @@ export async function POST(
       paymentToken,
       recipientEmail,
       status: nextStatus,
+      remindersScheduled: scheduled.length,
       provider:
         emailResult && "provider" in emailResult ? emailResult.provider : null,
     });

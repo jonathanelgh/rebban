@@ -13,6 +13,7 @@ export type OrgStripeRow = {
   stripe_subscription_id: string | null;
   stripe_subscription_status: string | null;
   stripe_price_id: string | null;
+  trial_ends_at: string | null;
 };
 
 export async function getActiveOrganizationId(
@@ -46,7 +47,7 @@ export async function getOrganizationStripeState(
   const { data, error } = await supabase
     .from("organizations")
     .select(
-      "id, name, currency, stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled, stripe_details_submitted, stripe_customer_id, stripe_subscription_id, stripe_subscription_status, stripe_price_id"
+      "id, name, currency, stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled, stripe_details_submitted, stripe_customer_id, stripe_subscription_id, stripe_subscription_status, stripe_price_id, trial_ends_at"
     )
     .eq("id", organizationId)
     .is("deleted_at", null)

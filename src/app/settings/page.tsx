@@ -18,6 +18,7 @@ import {
 import { TAX_RATE_PRESETS } from "@/lib/invoices/totals";
 import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "@/components/ProfileContext";
+import { useBilling } from "@/components/BillingContext";
 import { UserAvatar } from "@/components/UserAvatar";
 
 type SectionId =
@@ -71,6 +72,7 @@ function SettingsPageInner() {
     loading: profileLoading,
     refresh,
   } = useProfile();
+  const { openUpgradeModal, refreshBilling } = useBilling();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
@@ -294,6 +296,7 @@ function SettingsPageInner() {
     if (billing === "success") {
       setSection("billing");
       setBillingNotice("Subscription updated. It can take a moment to sync.");
+      void refreshBilling();
     } else if (billing === "cancelled") {
       setSection("billing");
       setBillingNotice("Checkout cancelled.");
@@ -301,7 +304,7 @@ function SettingsPageInner() {
 
     const nextSection = billing ? "billing" : "integrations";
     router.replace(`/settings?section=${nextSection}`, { scroll: false });
-  }, [searchParams, router]);
+  }, [searchParams, router, refreshBilling]);
 
   useEffect(() => {
     if (section !== "integrations") return;
@@ -413,19 +416,6 @@ function SettingsPageInner() {
       return;
     }
     window.open(json.url as string, "_blank", "noopener,noreferrer");
-  }
-
-  async function handleBillingCheckout() {
-    setBillingBusy(true);
-    setBillingNotice(null);
-    const res = await fetch("/api/stripe/billing/checkout", { method: "POST" });
-    const json = await res.json();
-    setBillingBusy(false);
-    if (!res.ok || !json.url) {
-      setBillingNotice(json.error || "Could not start checkout.");
-      return;
-    }
-    window.location.href = json.url as string;
   }
 
   async function handleBillingPortal() {
@@ -1064,16 +1054,18 @@ function SettingsPageInner() {
                       <p className="text-[13px] text-gray-500 mt-1">
                         {billingActive
                           ? `Status: ${billingStatus || "active"}`
-                          : "Free forever for getting started. Upgrade when you need more."}
+                          : "7-day free trial, then upgrade to Pro to keep full access."}
                       </p>
                     </div>
                     <button
                       type="button"
-                      disabled={billingBusy || !billingConfigured}
+                      disabled={billingBusy || (!billingActive && !billingConfigured)}
                       onClick={() => {
-                        void (billingActive
-                          ? handleBillingPortal()
-                          : handleBillingCheckout());
+                        if (billingActive) {
+                          void handleBillingPortal();
+                          return;
+                        }
+                        openUpgradeModal();
                       }}
                       className="btn-primary w-full sm:w-auto px-4 py-2.5 rounded-full text-sm disabled:opacity-50"
                     >

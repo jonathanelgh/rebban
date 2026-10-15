@@ -16,12 +16,7 @@ import {
   User,
   Building2,
   ArrowRight,
-  X,
-  Gauge,
-  Sun,
   LogOut,
-  MoreHorizontal,
-  IdCard,
   Eye,
   CheckCircle2,
   Send,
@@ -30,8 +25,10 @@ import {
 } from "lucide-react";
 import { useTimeTracking, formatElapsed } from "@/components/TimeTrackingContext";
 import { useProfile } from "@/components/ProfileContext";
+import { useBilling } from "@/components/BillingContext";
 import { UserAvatar } from "@/components/UserAvatar";
 import { createClient } from "@/lib/supabase/client";
+import { isBillingExemptPath } from "@/lib/billing/plan";
 
 type SidebarMenu = "profile" | "alerts" | null;
 
@@ -216,10 +213,21 @@ function NavItem({
   badgeLive?: boolean;
   onNavigate?: () => void;
 }) {
+  const { entitled, loading, openUpgradeModal } = useBilling();
+  const gated = !loading && !entitled && !isBillingExemptPath(href);
+
   return (
     <Link
-      href={href}
-      onClick={() => onNavigate?.()}
+      href={gated ? "#" : href}
+      onClick={(e) => {
+        if (gated) {
+          e.preventDefault();
+          openUpgradeModal();
+          onNavigate?.();
+          return;
+        }
+        onNavigate?.();
+      }}
       className={`group relative flex flex-col items-center justify-center gap-1 py-2.5 px-1 transition-colors ${
         badgeLive && !active
           ? "text-emerald-700"
@@ -260,6 +268,8 @@ function ProfileMenu({
   onNavigate?: () => void;
 }) {
   const { avatarUrl, fullName } = useProfile();
+  const { planLabel, openUpgradeModal, paid, trialActive, trialDaysLeft } =
+    useBilling();
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -313,44 +323,40 @@ function ProfileMenu({
               <Building2 className="w-5 h-5 text-gray-500" strokeWidth={1.5} />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-[15px] font-semibold text-gray-900 truncate">Nordic Elk AB</div>
-              <div className="text-[13px] text-gray-500">Basic</div>
+              <div className="text-[15px] font-semibold text-gray-900 truncate">
+                {fullName || "Your workspace"}
+              </div>
+              <div className="text-[13px] text-gray-500">{planLabel}</div>
             </div>
-          </div>
-
-          <div className="px-4 py-2 flex items-center justify-between hover:bg-gray-50 cursor-pointer">
-            <span className="text-[15px] text-gray-900">Online for messages</span>
-            <Toggle active={true} />
           </div>
 
           <div className="h-px bg-gray-200 my-2 mx-4" />
 
           <MenuLink icon={User} label="My profile" href="/settings" onNavigate={onNavigate} />
-          <MenuLink icon={Users} label="Teams" />
-
-          <div className="mx-4 my-2 p-3 border border-[#a8dfaa] bg-[#fcfdfa] rounded-xl relative group/promo">
-            <button type="button" className="absolute top-2 right-2 text-gray-400 hover:text-gray-600">
-              <X className="w-4 h-4" />
-            </button>
-            <div className="flex items-center gap-1 font-semibold text-[14px] text-gray-900 mb-0.5">
-              Try Business Plus <ArrowRight className="w-4 h-4 ml-0.5" />
-            </div>
-            <p className="text-[13px] text-gray-600 leading-snug pr-4">
-              Upgrade for quicker access to the top 1% of freelancers. No upfront costs.
-            </p>
-          </div>
-
-          <MenuLink icon={IdCard} label="Membership" />
-          <MenuLink icon={Gauge} label="Account health" />
-          <MenuLink icon={Sun} label="Theme: Light" />
           <MenuLink icon={Settings} label="Settings" href="/settings" onNavigate={onNavigate} />
 
-          <div className="h-px bg-gray-200 my-2 mx-4" />
+          {!paid && (
+            <button
+              type="button"
+              onClick={() => {
+                onOpenChange(false);
+                openUpgradeModal();
+              }}
+              className="mx-4 my-2 p-3 border border-[#BFDBFE] bg-[#EFF6FF] rounded-xl text-left hover:bg-[#DBEAFE] transition-colors"
+            >
+              <div className="flex items-center gap-1 font-semibold text-[14px] text-gray-900 mb-0.5">
+                {trialActive
+                  ? `Upgrade · ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`
+                  : "Upgrade to Pro"}{" "}
+                <ArrowRight className="w-4 h-4 ml-0.5" />
+              </div>
+              <p className="text-[13px] text-gray-600 leading-snug">
+                Unlock unlimited proposals, invoices, and automated reminders.
+              </p>
+            </button>
+          )}
 
-          <div className="px-4 py-2 flex items-center justify-between hover:bg-gray-50 cursor-pointer">
-            <span className="text-[15px] text-gray-900">New main menu</span>
-            <Toggle active={true} />
-          </div>
+          <div className="h-px bg-gray-200 my-2 mx-4" />
 
           <button
             type="button"
@@ -360,7 +366,6 @@ function ProfileMenu({
             <LogOut className="w-5 h-5 text-gray-600" strokeWidth={1.5} />
             <span className="text-[15px]">Log out</span>
           </button>
-          <MenuLink icon={MoreHorizontal} label="More" />
         </div>
       </div>
     </div>
@@ -379,9 +384,19 @@ function AlertsMenu({
   onNavigate?: () => void;
 }) {
   const router = useRouter();
+  const { entitled, loading: billingLoading, openUpgradeModal } = useBilling();
   const rootRef = useRef<HTMLDivElement>(null);
   const [alerts, setAlerts] = useState<NotificationRow[]>([]);
   const [loading, setLoading] = useState(true);
+
+  function tryOpenAlerts(next: boolean) {
+    if (next && !billingLoading && !entitled) {
+      openUpgradeModal();
+      onNavigate?.();
+      return;
+    }
+    onOpenChange(next);
+  }
 
   async function loadAlerts() {
     const supabase = createClient();
@@ -468,7 +483,7 @@ function AlertsMenu({
       className="relative flex flex-col items-center"
       onMouseEnter={() => {
         if (canHover()) {
-          onOpenChange(true);
+          tryOpenAlerts(true);
           void loadAlerts();
         }
       }}
@@ -481,7 +496,7 @@ function AlertsMenu({
         aria-expanded={open}
         aria-haspopup="menu"
         onClick={() => {
-          if (!canHover()) onOpenChange(!open);
+          if (!canHover()) tryOpenAlerts(!open);
         }}
         className={`relative flex flex-col items-center justify-center gap-1 py-2.5 px-1 w-full transition-colors ${
           active || open ? "text-gray-900" : "text-gray-500 hover:text-gray-800"
@@ -598,14 +613,6 @@ function AlertsMenu({
           </Link>
         </div>
       </div>
-    </div>
-  );
-}
-
-function Toggle({ active }: { active: boolean }) {
-  return (
-    <div className={`w-11 h-6 rounded-full flex items-center p-0.5 transition-colors ${active ? "bg-[#343434]" : "bg-gray-300"}`}>
-      <div className={`w-5 h-5 bg-white rounded-full shadow-sm transform transition-transform ${active ? "translate-x-5" : "translate-x-0"}`} />
     </div>
   );
 }

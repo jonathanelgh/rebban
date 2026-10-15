@@ -16,7 +16,9 @@ import {
 import { TimerStartForm } from "@/components/TimerStartForm";
 import { useTimeTracking } from "@/components/TimeTrackingContext";
 import { useProfile } from "@/components/ProfileContext";
+import { useBilling } from "@/components/BillingContext";
 import { createClient } from "@/lib/supabase/client";
+import { PAID_PLAN, formatPlanMoney } from "@/lib/billing/plan";
 
 function greetingForHour(hour: number) {
   if (hour < 12) return "Good morning";
@@ -81,6 +83,15 @@ export default function Dashboard() {
     organizationCurrency,
     loading: profileLoading,
   } = useProfile();
+  const {
+    trialExpired,
+    trialActive,
+    trialDaysLeft,
+    paid,
+    openUpgradeModal,
+    loading: billingLoading,
+    pricing,
+  } = useBilling();
   const [greeting, setGreeting] = useState("Good morning");
   const [stats, setStats] = useState<DashboardStats>(EMPTY_STATS);
   const [statsLoading, setStatsLoading] = useState(true);
@@ -235,6 +246,43 @@ export default function Dashboard() {
               Here&apos;s what needs your attention today.
             </p>
           </div>
+
+          {!billingLoading && (trialExpired || trialActive) && !paid && (
+            <div
+              className={`mb-8 rounded-2xl border p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center gap-4 ${
+                trialExpired
+                  ? "border-[#BFDBFE] bg-gradient-to-br from-[#EFF6FF] to-white"
+                  : "border-line bg-[#FAFBFC]"
+              }`}
+            >
+              <div className="min-w-0 flex-1">
+                <div className="text-[15px] font-semibold text-gray-900 tracking-tight">
+                  {trialExpired
+                    ? "Your free trial has ended"
+                    : `${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left in your free trial`}
+                </div>
+                <p className="text-[14px] text-gray-500 mt-1 leading-relaxed">
+                  {trialExpired
+                    ? `Upgrade to ${PAID_PLAN.name} to keep proposals, invoices, and automated reminders running${
+                        pricing?.monthly
+                          ? ` — from ${formatPlanMoney(
+                              pricing.monthly.amount,
+                              pricing.monthly.currency
+                            )}/month`
+                          : ""
+                      }.`
+                    : `Enjoy full access while you explore. After the trial, upgrade to ${PAID_PLAN.name} to keep everything unlocked.`}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => openUpgradeModal()}
+                className="btn-primary shrink-0 px-5 py-2.5 rounded-full text-sm"
+              >
+                {trialExpired ? "Upgrade to Pro" : "View plans"}
+              </button>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-10">
             <StatCard label="Outstanding" value={outstandingValue} />

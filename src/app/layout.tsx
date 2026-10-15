@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 import { Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AppShell } from "@/components/AppShell";
+import { BillingProvider } from "@/components/BillingContext";
 import { ProfileProvider } from "@/components/ProfileContext";
 import { TimeTrackingProvider } from "@/components/TimeTrackingContext";
 
@@ -57,9 +58,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     >
       <body className={`${satoshi.className} h-screen bg-[#F0F1F3] text-gray-900 overflow-hidden selection:bg-blue-100`}>
         <ProfileProvider>
-          <TimeTrackingProvider>
-            <AppShell>{children}</AppShell>
-          </TimeTrackingProvider>
+          <BillingProvider>
+            <TimeTrackingProvider>
+              <AppShell>{children}</AppShell>
+            </TimeTrackingProvider>
+          </BillingProvider>
         </ProfileProvider>
       </body>
     </html>

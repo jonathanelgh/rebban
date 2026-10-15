@@ -5,10 +5,20 @@ import { usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { Sidebar } from "@/components/Sidebar";
 import { CreateMenu } from "@/components/CreateMenu";
+import { UpgradeModal } from "@/components/UpgradeModal";
+import { useBilling } from "@/components/BillingContext";
+import { isBillingExemptPath } from "@/lib/billing/plan";
 
 function AppShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const {
+    entitled,
+    loading: billingLoading,
+    upgradeModalOpen,
+    openUpgradeModal,
+    closeUpgradeModal,
+  } = useBilling();
   const isFocusedLayout =
     pathname.includes("/edit") ||
     pathname.includes("/template") ||
@@ -25,11 +35,20 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
     pathname === "/tasks" ||
     pathname.startsWith("/tasks/") ||
     pathname === "/invoices" ||
-    pathname.startsWith("/invoices/");
+    pathname.startsWith("/invoices/") ||
+    pathname === "/time-tracking" ||
+    pathname.startsWith("/time-tracking/");
 
   useEffect(() => {
     setMobileNavOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    if (billingLoading || entitled) return;
+    if (!isBillingExemptPath(pathname)) {
+      openUpgradeModal();
+    }
+  }, [pathname, billingLoading, entitled, openUpgradeModal]);
 
   if (isFocusedLayout || isAuthLayout) {
     return (
@@ -105,6 +124,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </div>
+      <UpgradeModal open={upgradeModalOpen} onClose={closeUpgradeModal} />
     </div>
   );
 }

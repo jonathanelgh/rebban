@@ -10,6 +10,7 @@ import {
   FileSpreadsheet,
   ListTodo,
 } from "lucide-react";
+import { useBilling } from "@/components/BillingContext";
 
 const CREATE_ITEMS = [
   {
@@ -47,6 +48,7 @@ const CREATE_ITEMS = [
 export function CreateMenu() {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const { entitled, loading, openUpgradeModal } = useBilling();
 
   useEffect(() => {
     if (!open) return;
@@ -73,7 +75,13 @@ export function CreateMenu() {
     <div ref={rootRef} className="relative">
       <button
         type="button"
-        onClick={() => setOpen((prev) => !prev)}
+        onClick={() => {
+          if (!loading && !entitled) {
+            openUpgradeModal();
+            return;
+          }
+          setOpen((prev) => !prev);
+        }}
         aria-expanded={open}
         aria-haspopup="menu"
         className={`group inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium text-white transition-all duration-200 ease-out ${

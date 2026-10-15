@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
+import { nanoid } from "nanoid";
 import { createClient } from "@/lib/supabase/server";
 import {
   appOriginFromRequest,
-  getPlatformPriceId,
+  getPlatformPriceIdForInterval,
   getStripe,
+  getStripePublishableKey,
   isStripeConfigured,
 } from "@/lib/stripe/client";
 import {
@@ -16,12 +18,30 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Stripe not configured" }, { status: 503 });
   }
 
-  const priceId = getPlatformPriceId();
+  const publishableKey = getStripePublishableKey();
+  if (!publishableKey) {
+    return NextResponse.json(
+      { error: "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY is not set." },
+      { status: 503 }
+    );
+  }
+
+  let interval: "month" | "year" = "month";
+  try {
+    const body = (await request.json()) as { interval?: string };
+    if (body?.interval === "year") interval = "year";
+  } catch {
+    // empty body is fine — default monthly
+  }
+
+  const priceId = getPlatformPriceIdForInterval(interval);
   if (!priceId) {
     return NextResponse.json(
       {
         error:
-          "STRIPE_PRICE_ID is not set. Create a Product/Price in the Stripe Dashboard and add it to .env.local.",
+          interval === "year"
+            ? "Yearly plan is not configured. Add STRIPE_PRICE_ID_YEARLY or choose monthly."
+            : "STRIPE_PRICE_ID is not set. Create a Product/Price in the Stripe Dashboard and add it to .env.local.",
       },
       { status: 503 }
     );
@@ -66,28 +86,53 @@ export async function POST(request: Request) {
   }
 
   const origin = appOriginFromRequest(request);
-  const session = await stripe.checkout.sessions.create({
-    mode: "subscription",
-    customer: customerId,
-    line_items: [{ price: priceId, quantity: 1 }],
-    success_url: `${origin}/settings?section=billing&billing=success`,
-    cancel_url: `${origin}/settings?section=billing&billing=cancelled`,
-    client_reference_id: organizationId,
-    metadata: {
-      organization_id: organizationId,
-    },
-    subscription_data: {
+  const returnUrl = `${origin}/settings?section=billing&billing=success`;
+
+  try {
+    const session = await stripe.checkout.sessions.create({
+      ui_mode: "elements",
+      mode: "subscription",
+      customer: customerId,
+      line_items: [{ price: priceId, quantity: 1 }],
+      return_url: returnUrl,
+      integration_identifier: `rebban_billing_${nanoid(8)}`,
+      client_reference_id: organizationId,
       metadata: {
         organization_id: organizationId,
+        billing_interval: interval,
       },
-    },
-    ...(process.env.STRIPE_TAX_ENABLED === "true"
-      ? {
-          automatic_tax: { enabled: true },
-          customer_update: { address: "auto" as const },
-        }
-      : {}),
-  });
+      subscription_data: {
+        metadata: {
+          organization_id: organizationId,
+          billing_interval: interval,
+        },
+      },
+      ...(process.env.STRIPE_TAX_ENABLED === "true"
+        ? {
+            automatic_tax: { enabled: true },
+            customer_update: { address: "auto" as const },
+          }
+        : {}),
+    });
 
-  return NextResponse.json({ url: session.url });
+    if (!session.client_secret) {
+      return NextResponse.json(
+        { error: "Checkout Session is missing a client secret." },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      clientSecret: session.client_secret,
+      publishableKey,
+      sessionId: session.id,
+      returnUrl,
+      interval,
+      customerEmail: user.email || null,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Could not start checkout";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }

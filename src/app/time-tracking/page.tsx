@@ -4,12 +4,16 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Calendar,
+  ChevronLeft,
+  ChevronRight,
   DollarSign,
   MoreHorizontal,
   Building2,
+  Plus,
   Trash2,
 } from "lucide-react";
 import { TimerStartForm } from "@/components/TimerStartForm";
+import { AddManualTimeModal } from "@/components/AddManualTimeModal";
 import { useTimeTracking } from "@/components/TimeTrackingContext";
 import { useProfile } from "@/components/ProfileContext";
 import { createClient } from "@/lib/supabase/client";
@@ -47,6 +51,8 @@ export default function TimeTrackingPage() {
     selectedClient,
     workDescription,
     entriesVersion,
+    clients,
+    projects,
   } = useTimeTracking();
   const {
     organizationId,
@@ -58,12 +64,28 @@ export default function TimeTrackingPage() {
   const [billedIds, setBilledIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [weekAnchor] = useState(() => new Date());
+  const [weekAnchor, setWeekAnchor] = useState(() => new Date());
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
 
   const weekStart = useMemo(() => startOfWeek(weekAnchor), [weekAnchor]);
   const weekEnd = useMemo(() => endOfWeek(weekAnchor), [weekAnchor]);
   const currency = organizationCurrency || "USD";
+  const isCurrentWeek = useMemo(() => {
+    const now = new Date();
+    return (
+      startOfWeek(now).getTime() === weekStart.getTime() &&
+      endOfWeek(now).getTime() === weekEnd.getTime()
+    );
+  }, [weekStart, weekEnd]);
+
+  function shiftWeek(delta: number) {
+    setWeekAnchor((prev) => {
+      const next = new Date(prev);
+      next.setDate(next.getDate() + delta * 7);
+      return next;
+    });
+  }
 
   const loadEntries = useCallback(async () => {
     if (!organizationId) {
@@ -217,9 +239,48 @@ export default function TimeTrackingPage() {
             Track billable hours and turn them into invoices.
           </p>
         </div>
-        <div className="flex items-center gap-2 text-sm text-gray-500 bg-white border border-line rounded-full px-4 py-2 shrink-0 self-start">
-          <Calendar className="w-4 h-4 text-gray-400" />
-          {formatWeekRange(weekStart, weekEnd)}
+        <div className="flex items-center gap-2 shrink-0 self-start">
+          <div className="flex items-center gap-1 bg-white border border-line rounded-full pl-1.5 pr-1.5 py-1">
+            <button
+              type="button"
+              onClick={() => shiftWeek(-1)}
+              className="p-1.5 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-50"
+              aria-label="Previous week"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <div className="flex items-center gap-2 text-sm text-gray-600 px-1 min-w-[9.5rem] justify-center">
+              <Calendar className="w-4 h-4 text-gray-400 shrink-0" />
+              <span className="tabular-nums whitespace-nowrap">
+                {formatWeekRange(weekStart, weekEnd)}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => shiftWeek(1)}
+              className="p-1.5 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-50"
+              aria-label="Next week"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            {!isCurrentWeek && (
+              <button
+                type="button"
+                onClick={() => setWeekAnchor(new Date())}
+                className="ml-0.5 px-2.5 py-1 rounded-full text-[12px] font-medium text-[#2563EB] hover:bg-[#EFF6FF]"
+              >
+                Today
+              </button>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowAddModal(true)}
+            className="btn-primary px-5 py-2.5 rounded-full text-sm flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            Add time
+          </button>
         </div>
       </div>
 
@@ -281,7 +342,15 @@ export default function TimeTrackingPage() {
           <div className="rounded-2xl border border-dashed border-line bg-white px-5 py-16 text-center">
             <p className="text-sm font-medium text-gray-700">No time logged this week</p>
             <p className="text-[13px] text-gray-400 mt-1">
-              Start the timer above, or{" "}
+              Start the timer above,{" "}
+              <button
+                type="button"
+                onClick={() => setShowAddModal(true)}
+                className="text-[#2563EB] font-medium"
+              >
+                add worked time
+              </button>
+              , or{" "}
               <Link href="/clients" className="text-[#2563EB] font-medium">
                 add a client
               </Link>{" "}
@@ -398,6 +467,25 @@ export default function TimeTrackingPage() {
             </section>
           ))}
       </div>
+
+      {showAddModal && (
+        <AddManualTimeModal
+          clients={clients}
+          projects={projects}
+          onClose={() => setShowAddModal(false)}
+          onSaved={(startedDate) => {
+            setShowAddModal(false);
+            // Jump the week view so the new entry is visible (list is week-scoped).
+            // loadEntries runs via useEffect when weekStart/weekEnd update.
+            const [y, m, d] = startedDate.split("-").map(Number);
+            if (y && m && d) {
+              setWeekAnchor(new Date(y, m - 1, d, 12, 0, 0, 0));
+            } else {
+              void loadEntries();
+            }
+          }}
+        />
+      )}
     </main>
   );
 }

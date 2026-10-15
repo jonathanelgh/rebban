@@ -17,6 +17,7 @@ const LABELS: Record<string, string> = {
   sent: "Sent to client",
   opened: "Opened by client",
   viewed: "Viewed again",
+  reminder_sent: "Payment reminder sent",
   paid: "Paid by client",
   voided: "Voided",
 };
@@ -66,6 +67,12 @@ function ActivityList({
             typeof event.metadata?.recipient_email === "string" && (
               <p className="text-[12px] text-gray-500 mt-2">
                 To {event.metadata.recipient_email}
+                {typeof event.metadata?.reminder_count === "number" &&
+                event.metadata.reminder_count > 0
+                  ? ` · ${event.metadata.reminder_count} reminder${
+                      event.metadata.reminder_count === 1 ? "" : "s"
+                    } scheduled`
+                  : ""}
               </p>
             )}
         </li>

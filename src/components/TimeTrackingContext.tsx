@@ -14,7 +14,6 @@ import { useProfile } from "@/components/ProfileContext";
 import {
   DEFAULT_HOURLY_RATE,
   clientDisplayName,
-  durationMinutesBetween,
 } from "@/lib/time-entries";
 
 export type TimerClient = {
@@ -255,9 +254,10 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
       const nowIso = new Date().toISOString();
 
       // Close any leftover running timers for this user.
+      // duration_minutes is GENERATED ALWAYS from started_at/ended_at
       const { data: openRows } = await supabase
         .from("time_entries")
-        .select("id, started_at")
+        .select("id")
         .eq("organization_id", organizationId)
         .eq("user_id", userId)
         .is("ended_at", null)
@@ -266,10 +266,7 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
       for (const row of openRows ?? []) {
         await supabase
           .from("time_entries")
-          .update({
-            ended_at: nowIso,
-            duration_minutes: durationMinutesBetween(row.started_at, nowIso),
-          })
+          .update({ ended_at: nowIso })
           .eq("id", row.id);
       }
 
@@ -290,7 +287,6 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
           description: workDescription.trim(),
           started_at: nowIso,
           ended_at: null,
-          duration_minutes: null,
           billable: true,
           hourly_rate: DEFAULT_HOURLY_RATE,
         })
@@ -334,13 +330,12 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
     try {
       const supabase = createClient();
       const endedAt = new Date().toISOString();
-      const startedAt = new Date(startedAtMs).toISOString();
 
       const { error: updateError } = await supabase
         .from("time_entries")
         .update({
+          // duration_minutes is GENERATED ALWAYS from started_at/ended_at
           ended_at: endedAt,
-          duration_minutes: durationMinutesBetween(startedAt, endedAt),
           description: workDescription.trim() || null,
           client_id: selectedClient?.id ?? null,
           project_id:

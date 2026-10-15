@@ -470,6 +470,55 @@ export async function sendProposalFollowUpEmail(options: {
   });
 }
 
+export async function sendInvoiceReminderEmail(options: {
+  to: string;
+  recipientName?: string | null;
+  senderName?: string | null;
+  organizationName: string;
+  invoiceNumber?: string | null;
+  invoiceUrl: string;
+  amountLabel?: string | null;
+  subject: string;
+  body: string;
+  fromUserId?: string | null;
+  useAdmin?: boolean;
+}) {
+  const recipientFirst = firstName(options.recipientName);
+  const greeting = recipientFirst ? `Hi ${recipientFirst},` : "Hi,";
+  const signOff =
+    firstName(options.senderName) ||
+    options.senderName?.trim() ||
+    options.organizationName;
+
+  const html = `
+  <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.5;color:#111827;max-width:560px;margin:0 auto;padding:8px 0;">
+    <p style="margin:0 0 16px;">${escapeHtml(greeting)}</p>
+    <p style="margin:0 0 16px;white-space:pre-wrap;">${escapeHtml(options.body)}</p>
+    ${
+      options.amountLabel
+        ? `<p style="margin:0 0 16px;">Amount due: <strong>${escapeHtml(options.amountLabel)}</strong></p>`
+        : ""
+    }
+    <p style="margin:24px 0;">
+      <a href="${options.invoiceUrl}" style="color:#1d4ed8;font-weight:600;">
+        View &amp; pay invoice →
+      </a>
+    </p>
+    <p style="margin:28px 0 0;">
+      ${escapeHtml(signOff)}
+    </p>
+  </div>`;
+
+  return sendHtmlEmail({
+    to: options.to,
+    subject: options.subject,
+    html,
+    fromUserId: options.fromUserId,
+    fromName: options.senderName,
+    useAdmin: options.useAdmin,
+  });
+}
+
 export async function sendProposalDeclinedEmail(options: {
   to: string;
   freelancerName?: string | null;

@@ -43,6 +43,17 @@ export function getPlatformPriceId() {
   return process.env.STRIPE_PRICE_ID?.trim() || null;
 }
 
+export function getPlatformYearlyPriceId() {
+  return process.env.STRIPE_PRICE_ID_YEARLY?.trim() || null;
+}
+
+export function getPlatformPriceIdForInterval(interval: "month" | "year") {
+  if (interval === "year") {
+    return getPlatformYearlyPriceId();
+  }
+  return getPlatformPriceId();
+}
+
 export function appOriginFromRequest(request: Request) {
   // Prefer the live request origin so local onboarding returns to localhost,
   // not a production NEXT_PUBLIC_APP_URL baked into Account Link return URLs.

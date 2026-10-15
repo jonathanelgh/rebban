@@ -657,9 +657,18 @@ export default function InvoiceEditorPage() {
     setActivityRefreshKey((k) => k + 1);
   }
 
+  async function cancelPendingReminders() {
+    if (!invoiceId) return;
+    const supabase = createClient();
+    await supabase.rpc("cancel_invoice_reminders", {
+      p_invoice_id: invoiceId,
+    });
+  }
+
   async function handleMarkPaid() {
     const ok = await persist("paid");
     if (ok) {
+      await cancelPendingReminders();
       await logInvoiceEvent("paid");
       flash("Marked as paid");
     }
@@ -668,6 +677,7 @@ export default function InvoiceEditorPage() {
   async function handleVoid() {
     const ok = await persist("void");
     if (ok) {
+      await cancelPendingReminders();
       await logInvoiceEvent("voided");
       flash("Invoice voided");
     }
@@ -1570,6 +1580,7 @@ export default function InvoiceEditorPage() {
         <SendInvoiceModal
           invoiceId={invoiceId}
           invoiceLabel={invoiceLabel}
+          dueDate={dueDate}
           defaultEmail={client?.email}
           defaultName={client?.company || client?.name}
           onClose={() => setSendModalOpen(false)}
