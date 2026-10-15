@@ -31,6 +31,11 @@ import {
   todayISODate,
 } from "@/lib/invoices/totals";
 import type { Enums, Json } from "@/types/database";
+import {
+  ModalOverlay,
+  modalHeaderClass,
+  modalPanelClass,
+} from "@/components/ModalFrame";
 
 type ProposalStatus = Enums<"proposal_status">;
 
@@ -527,13 +532,8 @@ export default function ProposalsPage() {
       )}
 
       {sentFeedback && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm">
-          <div
-            className="absolute inset-0"
-            onClick={() => setSentFeedback(null)}
-            aria-hidden
-          />
-          <div className="relative bg-white rounded-3xl border border-line w-full max-w-[420px] overflow-hidden shadow-[0_24px_60px_rgba(16,24,40,0.16)] px-6 pt-8 pb-6 text-center">
+        <ModalOverlay onClose={() => setSentFeedback(null)}>
+          <div className={`${modalPanelClass("max-w-[420px]")} px-5 sm:px-6 pt-8 pb-6 text-center`}>
             <div className="mx-auto w-14 h-14 rounded-2xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center mb-4">
               <Send className="w-6 h-6" strokeWidth={1.75} />
             </div>
@@ -559,7 +559,7 @@ export default function ProposalsPage() {
               Done
             </button>
           </div>
-        </div>
+        </ModalOverlay>
       )}
     </main>
   );
@@ -754,7 +754,7 @@ function ClientSelectDropdown({
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-2 w-full min-w-[280px] bg-white rounded-2xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.15)] border border-line overflow-hidden z-50">
+        <div className="absolute top-full left-0 mt-2 w-full min-w-0 bg-white rounded-2xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.15)] border border-line overflow-hidden z-50">
           <div className="p-3 border-b border-gray-50 flex items-center gap-2">
             <Search className="w-4 h-4 text-gray-400 shrink-0 ml-1" />
             <input
@@ -875,11 +875,11 @@ function CreateClientModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm">
-      <div className="bg-white rounded-[2rem] shadow-[0_30px_60px_-15px_rgba(0,0,0,0.15)] w-full max-w-[500px] flex flex-col overflow-hidden">
-        <div className="px-8 pt-8 pb-4 border-b border-line flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-blue-50 text-[#2563EB] flex items-center justify-center">
+    <ModalOverlay onClose={onClose} zClass="z-[70]">
+      <div className={modalPanelClass("max-w-[500px]")}>
+        <div className={`${modalHeaderClass} border-b border-line`}>
+          <div className="min-w-0 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-blue-50 text-[#2563EB] flex items-center justify-center shrink-0">
               <Building2 className="w-5 h-5" />
             </div>
             <h2 className="text-xl font-semibold text-gray-900">Add New Client</h2>
@@ -887,13 +887,13 @@ function CreateClientModal({
           <button
             type="button"
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500"
+            className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500 shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-8 space-y-5">
+        <div className="px-5 sm:px-6 py-5 space-y-5 overflow-y-auto flex-1 min-h-0">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Primary Contact Name *
@@ -936,7 +936,7 @@ function CreateClientModal({
           )}
         </div>
 
-        <div className="px-8 py-5 border-t border-line flex items-center justify-end bg-gray-50/50 gap-3">
+        <div className="px-5 sm:px-6 py-4 border-t border-line flex items-center justify-end bg-gray-50/50 gap-3 shrink-0">
           <button
             type="button"
             onClick={onClose}
@@ -954,7 +954,7 @@ function CreateClientModal({
           </button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
 
@@ -1084,46 +1084,46 @@ function CreateProposalModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm">
-      <div className="bg-white rounded-[2rem] shadow-[0_30px_60px_-15px_rgba(0,0,0,0.15)] w-full max-w-[600px] flex flex-col overflow-hidden relative max-h-[90vh]">
-        <div className="px-8 pt-8 pb-4 border-b border-line shrink-0 flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-gray-900">
+    <ModalOverlay onClose={onClose} zClass="z-[60]">
+      <div className={modalPanelClass("max-w-[600px]")}>
+        <div className={`${modalHeaderClass} border-b border-line`}>
+          <h2 className="text-xl font-semibold text-gray-900 min-w-0">
             Create New Proposal
           </h2>
           <button
             type="button"
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500"
+            className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500 shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-8 space-y-6 overflow-y-auto">
-          <div className="flex p-1 bg-gray-100 rounded-xl">
+        <div className="px-5 sm:px-6 py-5 space-y-6 overflow-y-auto flex-1 min-h-0">
+          <div className="flex p-1 bg-gray-100 rounded-xl gap-1">
             <button
               type="button"
               onClick={() => setCreationMode("scratch")}
-              className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2 ${
+              className={`flex-1 min-w-0 py-2.5 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2 ${
                 creationMode === "scratch"
                   ? "bg-white shadow-sm text-gray-900"
                   : "text-gray-500 hover:text-gray-700"
               }`}
             >
-              <PenTool className="w-4 h-4" />
-              Start from scratch
+              <PenTool className="w-4 h-4 shrink-0" />
+              <span className="truncate">From scratch</span>
             </button>
             <button
               type="button"
               onClick={() => setCreationMode("ai")}
-              className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2 ${
+              className={`flex-1 min-w-0 py-2.5 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2 ${
                 creationMode === "ai"
                   ? "bg-white shadow-sm text-blue-600"
                   : "text-gray-500 hover:text-gray-700"
               }`}
             >
-              <Sparkles className="w-4 h-4" />
-              Generate with AI
+              <Sparkles className="w-4 h-4 shrink-0" />
+              <span className="truncate">With AI</span>
             </button>
           </div>
 
@@ -1266,7 +1266,7 @@ function CreateProposalModal({
           )}
         </div>
 
-        <div className="px-8 py-5 border-t border-line flex items-center justify-end bg-gray-50/50 shrink-0 gap-3">
+        <div className="px-5 sm:px-6 py-4 border-t border-line flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end bg-gray-50/50 shrink-0 gap-2 sm:gap-3">
           <button
             type="button"
             onClick={onClose}
@@ -1278,7 +1278,7 @@ function CreateProposalModal({
             type="button"
             disabled={saving}
             onClick={() => void handleContinue()}
-            className="btn-primary px-6 py-2.5 rounded-xl text-sm flex items-center gap-2 disabled:opacity-50"
+            className="btn-primary px-6 py-2.5 rounded-xl text-sm flex items-center justify-center gap-2 disabled:opacity-50"
           >
             {saving ? (
               "Creating…"
@@ -1288,7 +1288,7 @@ function CreateProposalModal({
               </>
             ) : (
               <>
-                Create Draft & Continue <ChevronRight className="w-4 h-4" />
+                Continue <ChevronRight className="w-4 h-4" />
               </>
             )}
           </button>
@@ -1307,6 +1307,6 @@ function CreateProposalModal({
           }}
         />
       )}
-    </div>
+    </ModalOverlay>
   );
 }

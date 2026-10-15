@@ -16,6 +16,11 @@ import {
   type TaskPriority,
   type UiTaskColumn,
 } from "@/lib/tasks";
+import {
+  ModalOverlay,
+  modalHeaderClass,
+  modalPanelClass,
+} from "@/components/ModalFrame";
 
 export type TaskColumnId = UiTaskColumn;
 export type { TaskPriority };
@@ -193,14 +198,13 @@ export function TaskModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm">
-      <div className="absolute inset-0" onClick={busy ? undefined : onClose} aria-hidden />
+    <ModalOverlay onClose={busy ? undefined : onClose}>
       <form
         onSubmit={(e) => void handleSubmit(e)}
-        className="relative bg-white rounded-3xl border border-line w-full max-w-[640px] flex flex-col overflow-hidden shadow-[0_24px_60px_rgba(16,24,40,0.16)]"
+        className={modalPanelClass("max-w-[640px]")}
       >
-        <div className="px-7 pt-7 pb-4 flex items-start justify-between gap-4">
-          <div>
+        <div className={modalHeaderClass}>
+          <div className="min-w-0">
             <h2 className="text-xl font-semibold text-gray-900 tracking-tight">
               {mode === "create" ? "New task" : "Edit task"}
             </h2>
@@ -214,13 +218,13 @@ export function TaskModal({
             type="button"
             onClick={onClose}
             disabled={busy}
-            className="p-2 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50"
+            className="p-2 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50 shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="px-7 pb-2 space-y-4 max-h-[70vh] overflow-y-auto no-scrollbar">
+        <div className="px-5 sm:px-6 pb-2 space-y-4 overflow-y-auto flex-1 min-h-0 no-scrollbar">
           {error && (
             <p className="text-[13px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-3.5 py-2.5">
               {error}
@@ -572,7 +576,7 @@ export function TaskModal({
           </div>
         </div>
 
-        <div className="px-7 py-5 mt-2 border-t border-line flex items-center justify-between gap-3 bg-[#FAFBFC]">
+        <div className="px-5 sm:px-6 py-4 border-t border-line flex items-center justify-between gap-3 bg-[#FAFBFC] shrink-0">
           {mode === "edit" && onDelete ? (
             <button
               type="button"
@@ -608,7 +612,7 @@ export function TaskModal({
           </div>
         </div>
       </form>
-    </div>
+    </ModalOverlay>
   );
 }
 

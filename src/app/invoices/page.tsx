@@ -23,6 +23,11 @@ import {
   todayISODate,
 } from "@/lib/invoices/totals";
 import type { Enums } from "@/types/database";
+import {
+  ModalOverlay,
+  modalHeaderClass,
+  modalPanelClass,
+} from "@/components/ModalFrame";
 
 type InvoiceStatus = Enums<"invoice_status">;
 
@@ -530,15 +535,14 @@ function CreateInvoiceModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm">
-      <div className="absolute inset-0" onClick={onClose} aria-hidden />
-      <div className="relative bg-white rounded-[2rem] border border-line w-full max-w-[500px] overflow-hidden shadow-[0_30px_60px_-15px_rgba(0,0,0,0.15)]">
-        <div className="px-8 pt-8 pb-4 border-b border-line flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center">
+    <ModalOverlay onClose={onClose}>
+      <div className={modalPanelClass("max-w-[500px]")}>
+        <div className={`${modalHeaderClass} border-b border-line`}>
+          <div className="min-w-0 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center shrink-0">
               <Send className="w-5 h-5" />
             </div>
-            <div>
+            <div className="min-w-0">
               <h2 className="text-xl font-semibold text-gray-900">New invoice</h2>
               <p className="text-sm text-gray-500 mt-0.5">
                 Pick a client, then build the document.
@@ -548,13 +552,13 @@ function CreateInvoiceModal({
           <button
             type="button"
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-full text-gray-500"
+            className="p-2 hover:bg-gray-100 rounded-full text-gray-500 shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-8 space-y-5">
+        <div className="px-5 sm:px-6 py-5 space-y-5 overflow-y-auto flex-1 min-h-0">
           {formError && (
             <p className="text-[13px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-3.5 py-2.5">
               {formError}
@@ -602,7 +606,7 @@ function CreateInvoiceModal({
           </div>
         </div>
 
-        <div className="px-8 py-5 border-t border-line bg-[#FAFBFC] flex justify-end gap-2">
+        <div className="px-5 sm:px-6 py-4 border-t border-line bg-[#FAFBFC] flex justify-end gap-2 shrink-0">
           <button
             type="button"
             onClick={onClose}
@@ -632,7 +636,7 @@ function CreateInvoiceModal({
           }}
         />
       )}
-    </div>
+    </ModalOverlay>
   );
 }
 
@@ -684,7 +688,7 @@ function ClientSelectDropdown({
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-2 w-full min-w-[280px] bg-white rounded-2xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.15)] border border-line overflow-hidden z-50">
+        <div className="absolute top-full left-0 mt-2 w-full min-w-0 bg-white rounded-2xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.15)] border border-line overflow-hidden z-50">
           <div className="p-3 border-b border-gray-50 flex items-center gap-2">
             <Search className="w-4 h-4 text-gray-400 shrink-0 ml-1" />
             <input
@@ -795,20 +799,24 @@ function CreateClientModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm">
-      <div className="bg-white rounded-[2rem] shadow-[0_30px_60px_-15px_rgba(0,0,0,0.15)] w-full max-w-[500px] overflow-hidden">
-        <div className="px-8 pt-8 pb-4 border-b border-line flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-blue-50 text-[#2563EB] flex items-center justify-center">
+    <ModalOverlay onClose={onClose} zClass="z-[90]">
+      <div className={modalPanelClass("max-w-[500px]")}>
+        <div className={`${modalHeaderClass} border-b border-line`}>
+          <div className="min-w-0 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-blue-50 text-[#2563EB] flex items-center justify-center shrink-0">
               <Building2 className="w-5 h-5" />
             </div>
             <h2 className="text-xl font-semibold text-gray-900">Add New Client</h2>
           </div>
-          <button type="button" onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full text-gray-500">
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 hover:bg-gray-100 rounded-full text-gray-500 shrink-0"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
-        <div className="p-8 space-y-5">
+        <div className="px-5 sm:px-6 py-5 space-y-5 overflow-y-auto flex-1 min-h-0">
           {formError && <p className="text-[13px] text-red-600">{formError}</p>}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -841,7 +849,7 @@ function CreateClientModal({
             />
           </div>
         </div>
-        <div className="px-8 py-5 border-t border-line bg-[#FAFBFC] flex justify-end gap-2">
+        <div className="px-5 sm:px-6 py-4 border-t border-line bg-[#FAFBFC] flex justify-end gap-2 shrink-0">
           <button type="button" onClick={onClose} className="px-4 py-2.5 rounded-xl text-sm text-gray-600 hover:bg-gray-100">
             Cancel
           </button>
@@ -855,6 +863,6 @@ function CreateClientModal({
           </button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }

@@ -19,6 +19,12 @@ import {
   type ReminderSequenceKey,
   type ReminderStepTemplate,
 } from "@/lib/invoices/reminders";
+import {
+  ModalOverlay,
+  modalFooterClass,
+  modalHeaderClass,
+  modalPanelClass,
+} from "@/components/ModalFrame";
 
 type StepId = "recipient" | "automation" | "message";
 
@@ -176,29 +182,28 @@ export function SendInvoiceModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm">
-      <div className="absolute inset-0" onClick={onClose} aria-hidden />
-      <div className="relative bg-white rounded-3xl border border-line w-full max-w-[560px] overflow-hidden shadow-[0_24px_60px_rgba(16,24,40,0.16)] max-h-[90vh] flex flex-col">
-        <div className="px-6 pt-6 pb-4 flex items-start justify-between gap-3 shrink-0">
-          <div>
+    <ModalOverlay onClose={onClose}>
+      <div className={modalPanelClass("max-w-[560px]")}>
+        <div className={modalHeaderClass}>
+          <div className="min-w-0">
             <h2 className="text-lg font-semibold text-gray-900 tracking-tight">
               Send invoice
             </h2>
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-sm text-gray-500 mt-1 truncate">
               <span className="font-medium text-gray-700">{invoiceLabel}</span>
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+            className="p-2 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="px-6 pb-4 shrink-0">
-          <div className="flex items-center gap-2">
+        <div className="px-5 sm:px-6 pb-4 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
             {STEPS.map((item, index) => {
               const Icon = item.icon;
               const active = index === stepIndex;
@@ -207,13 +212,13 @@ export function SendInvoiceModal({
                 <React.Fragment key={item.id}>
                   {index > 0 && (
                     <div
-                      className={`h-px flex-1 ${
+                      className={`h-px flex-1 min-w-2 ${
                         done ? "bg-emerald-400" : "bg-gray-200"
                       }`}
                     />
                   )}
                   <div
-                    className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors ${
+                    className={`flex items-center gap-2 rounded-full px-2.5 sm:px-3 py-1.5 text-[12px] font-semibold transition-colors shrink-0 ${
                       active
                         ? "bg-[#EFF6FF] text-[#2563EB]"
                         : done
@@ -244,7 +249,7 @@ export function SendInvoiceModal({
           </div>
         </div>
 
-        <div className="px-6 pb-2 overflow-y-auto flex-1 min-h-0">
+        <div className="px-5 sm:px-6 pb-2 overflow-y-auto flex-1 min-h-0">
           {step.id === "recipient" && (
             <div className="space-y-4 pb-2">
               <p className="text-[14px] text-gray-500">
@@ -417,7 +422,7 @@ export function SendInvoiceModal({
           {error && <p className="text-[13px] text-red-600 pb-2">{error}</p>}
         </div>
 
-        <div className="px-6 py-5 mt-1 border-t border-line flex items-center justify-between gap-2 bg-[#FAFBFC] shrink-0">
+        <div className={`${modalFooterClass} justify-between bg-[#FAFBFC]`}>
           <button
             type="button"
             onClick={stepIndex === 0 ? onClose : goBack}
@@ -453,6 +458,6 @@ export function SendInvoiceModal({
           )}
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }

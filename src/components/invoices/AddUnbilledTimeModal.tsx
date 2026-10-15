@@ -9,6 +9,7 @@ import {
 } from "@/lib/invoices/unbilled";
 import { formatDurationMinutes } from "@/lib/time-entries";
 import { formatInvoiceMoney } from "@/lib/invoices/totals";
+import { ModalOverlay, modalPanelClass } from "@/components/ModalFrame";
 
 export function AddUnbilledTimeModal({
   open,
@@ -58,9 +59,8 @@ export function AddUnbilledTimeModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-gray-900/40 backdrop-blur-sm">
-      <div className="absolute inset-0" onClick={onClose} aria-hidden />
-      <div className="relative bg-white rounded-t-[1.75rem] sm:rounded-[2rem] border border-line w-full max-w-[560px] max-h-[90vh] overflow-hidden shadow-[0_30px_60px_-15px_rgba(0,0,0,0.15)] flex flex-col">
+    <ModalOverlay onClose={onClose}>
+      <div className={modalPanelClass("max-w-[560px]")}>
         <div className="px-5 sm:px-6 pt-5 pb-4 border-b border-line flex items-start justify-between gap-3 shrink-0">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -185,6 +185,6 @@ export function AddUnbilledTimeModal({
           </button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }

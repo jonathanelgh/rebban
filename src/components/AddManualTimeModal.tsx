@@ -21,6 +21,7 @@ import {
   type TimerProject,
 } from "@/components/TimeTrackingContext";
 import { toISODateLocal } from "@/lib/time-entries";
+import { ModalOverlay, modalPanelClass } from "@/components/ModalFrame";
 
 const inputClass =
   "w-full rounded-xl border border-line bg-[#FAFBFC] px-3.5 py-2.5 text-sm text-gray-900 outline-none placeholder:text-gray-400 focus:border-gray-300 focus:bg-white";
@@ -571,11 +572,10 @@ export function AddManualTimeModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-gray-900/40 backdrop-blur-sm">
-      <div className="absolute inset-0" onClick={onClose} aria-hidden />
+    <ModalOverlay onClose={onClose}>
       <form
         onSubmit={(e) => void handleSubmit(e)}
-        className="relative bg-white rounded-t-[1.75rem] sm:rounded-[2rem] border border-line w-full max-w-[520px] max-h-[90vh] overflow-hidden shadow-[0_30px_60px_-15px_rgba(0,0,0,0.15)] flex flex-col"
+        className={modalPanelClass("max-w-[520px]")}
       >
         <div className="px-5 sm:px-6 pt-5 pb-4 border-b border-line flex items-start justify-between gap-3 shrink-0">
           <div className="min-w-0 flex items-start gap-3">
@@ -616,7 +616,7 @@ export function AddManualTimeModal({
             <DatePickerField value={date} onChange={setDate} />
           </Field>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Started">
               <div className="relative">
                 <Clock className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -707,6 +707,6 @@ export function AddManualTimeModal({
           </button>
         </div>
       </form>
-    </div>
+    </ModalOverlay>
   );
 }

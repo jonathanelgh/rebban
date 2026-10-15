@@ -25,6 +25,7 @@ import {
 } from "@/components/ProposalSendMenu";
 import { DEFAULT_PROPOSAL_SEND_MESSAGE } from "@/lib/proposals/followups";
 import type { Enums } from "@/types/database";
+import { ModalOverlay, modalPanelClass } from "@/components/ModalFrame";
 import {
   asProposalContent,
   blockTypesFromContent,
@@ -4160,13 +4161,8 @@ function ProposalEditorContent() {
       )}
 
       {sendAgainFeedback && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm">
-          <div
-            className="absolute inset-0"
-            onClick={() => setSendAgainFeedback(null)}
-            aria-hidden
-          />
-          <div className="relative bg-white rounded-3xl border border-line w-full max-w-[420px] overflow-hidden shadow-[0_24px_60px_rgba(16,24,40,0.16)] px-6 pt-8 pb-6 text-center">
+        <ModalOverlay onClose={() => setSendAgainFeedback(null)}>
+          <div className={`${modalPanelClass("max-w-[420px]")} px-5 sm:px-6 pt-8 pb-6 text-center`}>
             <div className="mx-auto w-14 h-14 rounded-2xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center mb-4">
               <Send className="w-6 h-6" strokeWidth={1.75} />
             </div>
@@ -4188,7 +4184,7 @@ function ProposalEditorContent() {
               Done
             </button>
           </div>
-        </div>
+        </ModalOverlay>
       )}
 
       {expiryModalOpen && (() => {
@@ -4203,15 +4199,10 @@ function ProposalEditorContent() {
         const weekdays = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
         return (
-          <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm">
-            <div
-              className="absolute inset-0"
-              onClick={() => setExpiryModalOpen(false)}
-              aria-hidden
-            />
-            <div className="relative bg-white rounded-3xl border border-line w-full max-w-[380px] overflow-hidden shadow-[0_24px_60px_rgba(16,24,40,0.16)]">
-              <div className="px-6 pt-6 pb-3 flex items-start justify-between gap-3">
-                <div>
+          <ModalOverlay onClose={() => setExpiryModalOpen(false)}>
+            <div className={modalPanelClass("max-w-[380px]")}>
+              <div className="px-5 sm:px-6 pt-5 sm:pt-6 pb-3 flex items-start justify-between gap-3 shrink-0">
+                <div className="min-w-0">
                   <h2 className="text-lg font-semibold text-gray-900 tracking-tight">
                     Expiration date
                   </h2>
@@ -4363,16 +4354,15 @@ function ProposalEditorContent() {
                 </button>
               </div>
             </div>
-          </div>
+          </ModalOverlay>
         );
       })()}
 
       {saveTemplateOpen && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm">
-          <div className="absolute inset-0" onClick={() => setSaveTemplateOpen(false)} aria-hidden />
-          <div className="relative bg-white rounded-3xl border border-line w-full max-w-[440px] overflow-hidden shadow-[0_24px_60px_rgba(16,24,40,0.16)]">
-            <div className="px-6 pt-6 pb-4 flex items-start justify-between gap-3">
-              <div>
+        <ModalOverlay onClose={() => setSaveTemplateOpen(false)}>
+          <div className={modalPanelClass("max-w-[440px]")}>
+            <div className="px-5 sm:px-6 pt-5 sm:pt-6 pb-4 flex items-start justify-between gap-3 shrink-0">
+              <div className="min-w-0">
                 <h2 className="text-lg font-semibold text-gray-900 tracking-tight">Save as template</h2>
                 <p className="text-sm text-gray-500 mt-1">
                   Reuse this layout and content for other clients.
@@ -4381,7 +4371,7 @@ function ProposalEditorContent() {
               <button
                 type="button"
                 onClick={() => setSaveTemplateOpen(false)}
-                className="p-2 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+                className="p-2 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -4433,7 +4423,7 @@ function ProposalEditorContent() {
               </button>
             </div>
           </div>
-        </div>
+        </ModalOverlay>
       )}
 
       {/* Editor Layout */}

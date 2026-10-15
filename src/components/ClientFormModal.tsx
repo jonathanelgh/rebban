@@ -7,6 +7,12 @@ import {
   ClientStatusDropdown,
   type ClientStatus,
 } from "@/components/ClientStatusDropdown";
+import {
+  ModalOverlay,
+  modalFooterClass,
+  modalHeaderClass,
+  modalPanelClass,
+} from "@/components/ModalFrame";
 
 export type ClientFormValues = {
   name: string;
@@ -179,14 +185,13 @@ export function ClientFormModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm">
-      <div className="absolute inset-0" onClick={onClose} aria-hidden />
+    <ModalOverlay onClose={onClose} zClass="z-[70]">
       <form
         onSubmit={(e) => void handleSubmit(e)}
-        className="relative bg-white rounded-3xl border border-line w-full max-w-[520px] max-h-[90vh] flex flex-col overflow-hidden shadow-[0_24px_60px_rgba(16,24,40,0.16)]"
+        className={modalPanelClass("max-w-[520px]")}
       >
-        <div className="px-7 pt-7 pb-4 flex items-start justify-between gap-4 shrink-0">
-          <div>
+        <div className={modalHeaderClass}>
+          <div className="min-w-0">
             <h2 className="text-xl font-semibold text-gray-900 tracking-tight">
               {mode === "create" ? "New client" : "Edit client"}
             </h2>
@@ -199,13 +204,13 @@ export function ClientFormModal({
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+            className="p-2 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="px-7 pb-2 space-y-4 overflow-y-auto">
+        <div className="px-5 sm:px-6 pb-2 space-y-4 overflow-y-auto flex-1 min-h-0">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 rounded-xl border border-line bg-[#FAFBFC] overflow-hidden flex items-center justify-center shrink-0">
               {logoPreview ? (
@@ -260,7 +265,7 @@ export function ClientFormModal({
               className={inputClass}
             />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Email">
               <input
                 type="email"
@@ -310,7 +315,7 @@ export function ClientFormModal({
           )}
         </div>
 
-        <div className="px-7 py-5 mt-2 border-t border-line flex items-center justify-end gap-2 bg-[#FAFBFC] shrink-0">
+        <div className={`${modalFooterClass} bg-[#FAFBFC]`}>
           <button
             type="button"
             onClick={onClose}
@@ -331,7 +336,7 @@ export function ClientFormModal({
           </button>
         </div>
       </form>
-    </div>
+    </ModalOverlay>
   );
 }
 
