@@ -163,6 +163,12 @@ function SettingsPageInner() {
   const [gmailEmail, setGmailEmail] = useState<string | null>(null);
   const [gmailBusy, setGmailBusy] = useState(false);
   const [gmailNotice, setGmailNotice] = useState<string | null>(null);
+  const [outlookConfigured, setOutlookConfigured] = useState(false);
+  const [outlookConnected, setOutlookConnected] = useState(false);
+  const [outlookCanSend, setOutlookCanSend] = useState(false);
+  const [outlookEmail, setOutlookEmail] = useState<string | null>(null);
+  const [outlookBusy, setOutlookBusy] = useState(false);
+  const [outlookNotice, setOutlookNotice] = useState<string | null>(null);
   const [stripeConfigured, setStripeConfigured] = useState(false);
   const [stripeConnected, setStripeConnected] = useState(false);
   const [stripeReady, setStripeReady] = useState(false);
@@ -303,9 +309,10 @@ function SettingsPageInner() {
 
   useEffect(() => {
     const gmail = searchParams.get("gmail");
+    const outlook = searchParams.get("outlook");
     const stripe = searchParams.get("stripe");
     const billing = searchParams.get("billing");
-    if (!gmail && !stripe && !billing) return;
+    if (!gmail && !outlook && !stripe && !billing) return;
 
     if (gmail === "connected") {
       setGmailNotice("Gmail connected. Proposal emails will send from your account.");
@@ -313,6 +320,18 @@ function SettingsPageInner() {
     } else if (gmail === "error") {
       const reason = searchParams.get("reason") || "Could not connect Gmail.";
       setGmailNotice(reason);
+      setSection("integrations");
+    }
+
+    if (outlook === "connected") {
+      setOutlookNotice(
+        "Outlook connected. Proposal emails will send from your account."
+      );
+      setSection("integrations");
+    } else if (outlook === "error") {
+      const reason =
+        searchParams.get("reason") || "Could not connect Outlook.";
+      setOutlookNotice(reason);
       setSection("integrations");
     }
 
@@ -355,8 +374,9 @@ function SettingsPageInner() {
     if (section !== "integrations") return;
     let cancelled = false;
     async function loadIntegrations() {
-      const [gmailRes, stripeRes] = await Promise.all([
+      const [gmailRes, outlookRes, stripeRes] = await Promise.all([
         fetch("/api/gmail/status"),
+        fetch("/api/outlook/status"),
         fetch("/api/stripe/connect/status"),
       ]);
       if (cancelled) return;
@@ -375,6 +395,24 @@ function SettingsPageInner() {
         if (json.needsReconnect) {
           setGmailNotice(
             "Gmail is connected, but send permission is missing. Disconnect, add the gmail.send scope in Google Cloud, then reconnect."
+          );
+        }
+      }
+      if (outlookRes.ok) {
+        const json = (await outlookRes.json()) as {
+          configured?: boolean;
+          connected?: boolean;
+          email?: string | null;
+          canSend?: boolean;
+          needsReconnect?: boolean;
+        };
+        setOutlookConfigured(Boolean(json.configured));
+        setOutlookConnected(Boolean(json.connected));
+        setOutlookCanSend(Boolean(json.canSend));
+        setOutlookEmail(json.email || null);
+        if (json.needsReconnect) {
+          setOutlookNotice(
+            "Outlook is connected, but send permission is missing. Disconnect, add Mail.Send in Azure, then reconnect."
           );
         }
       }
@@ -425,8 +463,27 @@ function SettingsPageInner() {
       return;
     }
     setGmailConnected(false);
+    setGmailCanSend(false);
     setGmailEmail(null);
     setGmailNotice("Gmail disconnected. Emails will use Rebban’s sender again.");
+  }
+
+  async function handleOutlookDisconnect() {
+    setOutlookBusy(true);
+    setOutlookNotice(null);
+    const res = await fetch("/api/outlook/disconnect", { method: "POST" });
+    setOutlookBusy(false);
+    if (!res.ok) {
+      const json = await res.json();
+      setOutlookNotice(json.error || "Failed to disconnect Outlook.");
+      return;
+    }
+    setOutlookConnected(false);
+    setOutlookCanSend(false);
+    setOutlookEmail(null);
+    setOutlookNotice(
+      "Outlook disconnected. Emails will use Rebban’s sender again."
+    );
   }
 
   async function handleStripeConnect() {
@@ -1338,9 +1395,9 @@ function SettingsPageInner() {
                 title="Integrations"
                 subtitle="Connect tools you already use to get paid and stay in sync."
               >
-                {(gmailNotice || stripeNotice) && (
+                {(gmailNotice || outlookNotice || stripeNotice) && (
                   <p className="mb-4 text-[13px] text-gray-600 bg-[#FAFBFC] border border-line rounded-xl px-3.5 py-2.5">
-                    {stripeNotice || gmailNotice}
+                    {stripeNotice || outlookNotice || gmailNotice}
                   </p>
                 )}
                 <div className="space-y-3">
@@ -1350,7 +1407,7 @@ function SettingsPageInner() {
                       gmailConnected && gmailEmail
                         ? gmailCanSend
                           ? `Sending proposals from ${gmailEmail}`
-                          : `Connected as ${gmailEmail}, but missing send permission — reconnect required`
+                          : `Connected as ${gmailEmail}, but missing send permission. Reconnect required.`
                         : "Send proposals and follow-ups from your Gmail"
                     }
                     connected={gmailConnected && gmailCanSend}
@@ -1374,6 +1431,40 @@ function SettingsPageInner() {
                       gmailConfigured && gmailConnected && !gmailBusy
                         ? () => {
                             void handleGmailDisconnect();
+                          }
+                        : undefined
+                    }
+                  />
+                  <IntegrationRow
+                    name="Outlook"
+                    description={
+                      outlookConnected && outlookEmail
+                        ? outlookCanSend
+                          ? `Sending proposals from ${outlookEmail}`
+                          : `Connected as ${outlookEmail}, but missing send permission. Reconnect required.`
+                        : "Send proposals and follow-ups from Outlook or Microsoft 365"
+                    }
+                    connected={outlookConnected && outlookCanSend}
+                    actionLabel={
+                      !outlookConfigured
+                        ? "Not configured"
+                        : outlookBusy
+                          ? "Working…"
+                          : outlookConnected && !outlookCanSend
+                            ? "Reconnect"
+                            : undefined
+                    }
+                    onConnect={
+                      outlookConfigured && !outlookBusy
+                        ? () => {
+                            window.location.href = "/api/outlook/connect";
+                          }
+                        : undefined
+                    }
+                    onDisconnect={
+                      outlookConfigured && outlookConnected && !outlookBusy
+                        ? () => {
+                            void handleOutlookDisconnect();
                           }
                         : undefined
                     }
@@ -1432,11 +1523,10 @@ function SettingsPageInner() {
                 <div className="mt-6 flex items-start gap-2.5 rounded-xl bg-[#FAFBFC] border border-line px-3.5 py-3">
                   <Shield className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
                   <p className="text-[13px] text-gray-500 leading-relaxed">
-                    Gmail uses Google OAuth with send-only access. Rebban never
-                    stores your password, and we only send emails you choose to
-                    send (proposals and follow-ups you approve). We never send
-                    anything else from your account. If Gmail isn’t connected,
-                    emails still send via Rebban.
+                    Gmail and Outlook use OAuth with send-only access. Rebban
+                    never stores your password, and we only send emails you
+                    choose to send. If neither mailbox is connected, emails
+                    still send via Rebban.
                   </p>
                 </div>
               </Section>

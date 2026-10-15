@@ -164,6 +164,56 @@ export type Database = {
           },
         ]
       }
+      outlook_connections: {
+        Row: {
+          access_token: string
+          connected_at: string
+          email: string
+          id: string
+          organization_id: string | null
+          refresh_token: string
+          revoked_at: string | null
+          scope: string | null
+          token_expiry: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_token: string
+          connected_at?: string
+          email: string
+          id?: string
+          organization_id?: string | null
+          refresh_token: string
+          revoked_at?: string | null
+          scope?: string | null
+          token_expiry: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_token?: string
+          connected_at?: string
+          email?: string
+          id?: string
+          organization_id?: string | null
+          refresh_token?: string
+          revoked_at?: string | null
+          scope?: string | null
+          token_expiry?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "outlook_connections_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       invoice_events: {
         Row: {
           actor_email: string | null

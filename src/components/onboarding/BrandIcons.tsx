@@ -21,6 +21,18 @@ export function GmailIcon({ className = "w-6 h-6" }: { className?: string }) {
   );
 }
 
+export function OutlookIcon({ className = "w-6 h-6" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden>
+      <rect width="24" height="24" rx="5" fill="#0078D4" />
+      <path
+        fill="#fff"
+        d="M6.2 7.4h5.1c1.85 0 3.05 1.05 3.05 2.55 0 1.05-.62 1.88-1.55 2.22v.05c1.2.32 1.98 1.25 1.98 2.55 0 1.72-1.35 2.85-3.45 2.85H6.2V7.4Zm2.15 1.75v2.2h2.55c.95 0 1.5-.48 1.5-1.15 0-.65-.55-1.05-1.48-1.05H8.35Zm0 3.85v2.55h2.85c1.05 0 1.68-.5 1.68-1.28 0-.78-.62-1.27-1.72-1.27H8.35Z"
+      />
+    </svg>
+  );
+}
+
 export function StripeIcon({ className = "w-6 h-6" }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" aria-hidden>

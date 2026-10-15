@@ -8,6 +8,10 @@ import {
   getGmailConnectionStatus,
   sendEmailViaGmail,
 } from "@/lib/email/gmail";
+import {
+  getOutlookConnectionStatus,
+  sendEmailViaOutlook,
+} from "@/lib/email/outlook";
 import { DEFAULT_INVOICE_SEND_MESSAGE } from "@/lib/invoices/send";
 
 export function getResend() {
@@ -39,6 +43,18 @@ async function sendHtmlEmail(options: {
   const hasAttachments = Boolean(options.attachments?.length);
 
   if (options.fromUserId && !hasAttachments) {
+    const outlookResult = await sendEmailViaOutlook({
+      userId: options.fromUserId,
+      to: options.to,
+      subject: options.subject,
+      html: options.html,
+      fromName: options.fromName,
+      useAdmin: options.useAdmin,
+    });
+    // null = not connected → try Gmail / Resend
+    // throw = connected but broken → surface to user (no silent Resend)
+    if (outlookResult) return outlookResult;
+
     const gmailResult = await sendEmailViaGmail({
       userId: options.fromUserId,
       to: options.to,
@@ -47,8 +63,6 @@ async function sendHtmlEmail(options: {
       fromName: options.fromName,
       useAdmin: options.useAdmin,
     });
-    // null = not connected → fall back to Resend
-    // throw = connected but broken → surface to user (no silent Resend)
     if (gmailResult) return gmailResult;
   }
 
@@ -101,13 +115,15 @@ export async function sendProposalInviteEmail(options: {
   const senderFirst = firstName(options.senderName);
   const title = options.proposalTitle?.trim() || "your project";
 
-  const gmail =
-    options.fromUserId
-      ? await getGmailConnectionStatus(options.fromUserId)
-      : null;
-  const fromGmail = Boolean(gmail?.canSend);
+  const [gmail, outlook] = options.fromUserId
+    ? await Promise.all([
+        getGmailConnectionStatus(options.fromUserId),
+        getOutlookConnectionStatus(options.fromUserId),
+      ])
+    : [null, null];
+  const fromOwnMailbox = Boolean(gmail?.canSend || outlook?.canSend);
 
-  if (fromGmail) {
+  if (fromOwnMailbox) {
     const greeting = recipientFirst ? `Hi ${recipientFirst},` : "Hi,";
     const note = options.message?.trim();
     const signOff = senderFirst || options.senderName?.trim() || "Thanks";
@@ -194,12 +210,15 @@ export async function sendInvoiceInviteEmail(options: {
     ? `Invoice ${options.invoiceNumber.trim()}`
     : "your invoice";
 
-  const gmail = options.fromUserId
-    ? await getGmailConnectionStatus(options.fromUserId)
-    : null;
-  const fromGmail = Boolean(gmail?.canSend);
+  const [gmail, outlook] = options.fromUserId
+    ? await Promise.all([
+        getGmailConnectionStatus(options.fromUserId),
+        getOutlookConnectionStatus(options.fromUserId),
+      ])
+    : [null, null];
+  const fromOwnMailbox = Boolean(gmail?.canSend || outlook?.canSend);
 
-  if (fromGmail) {
+  if (fromOwnMailbox) {
     const greeting = recipientFirst ? `Hi ${recipientFirst},` : "Hi,";
     const note = options.message?.trim() || DEFAULT_INVOICE_SEND_MESSAGE;
     const signOff = senderFirst || options.senderName?.trim() || "Thanks";

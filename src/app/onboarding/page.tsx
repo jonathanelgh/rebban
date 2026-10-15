@@ -18,6 +18,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "@/components/ProfileContext";
 import {
   GmailIcon,
+  OutlookIcon,
   RebbanMark,
   StripeIcon,
 } from "@/components/onboarding/BrandIcons";
@@ -101,6 +102,9 @@ export default function OnboardingPage() {
   const [stripeReady, setStripeReady] = useState(false);
   const [gmailConnected, setGmailConnected] = useState(false);
   const [gmailEmail, setGmailEmail] = useState<string | null>(null);
+  const [outlookConnected, setOutlookConnected] = useState(false);
+  const [outlookEmail, setOutlookEmail] = useState<string | null>(null);
+  const mailConnected = gmailConnected || outlookConnected;
 
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
@@ -170,17 +174,27 @@ export default function OnboardingPage() {
       );
     }
 
-    async function loadGmail() {
-      const res = await fetch("/api/gmail/status");
-      const json = await res.json().catch(() => ({}));
-      if (cancelled || !res.ok) return;
-      setGmailConnected(Boolean(json.connected));
-      setGmailEmail(json.email || null);
+    async function loadMail() {
+      const [gmailRes, outlookRes] = await Promise.all([
+        fetch("/api/gmail/status"),
+        fetch("/api/outlook/status"),
+      ]);
+      if (cancelled) return;
+      if (gmailRes.ok) {
+        const json = await gmailRes.json().catch(() => ({}));
+        setGmailConnected(Boolean(json.connected));
+        setGmailEmail(json.email || null);
+      }
+      if (outlookRes.ok) {
+        const json = await outlookRes.json().catch(() => ({}));
+        setOutlookConnected(Boolean(json.connected));
+        setOutlookEmail(json.email || null);
+      }
     }
 
     void loadProfileExtras();
     void loadOrg();
-    void loadGmail();
+    void loadMail();
 
     return () => {
       cancelled = true;
@@ -196,6 +210,16 @@ export default function OnboardingPage() {
         .then((r) => r.json())
         .then((json) => {
           if (json.email) setGmailEmail(json.email);
+        })
+        .catch(() => {});
+    }
+    if (params.get("outlook") === "connected") {
+      setOutlookConnected(true);
+      setStep("email");
+      void fetch("/api/outlook/status")
+        .then((r) => r.json())
+        .then((json) => {
+          if (json.email) setOutlookEmail(json.email);
         })
         .catch(() => {});
     }
@@ -465,6 +489,12 @@ export default function OnboardingPage() {
       encodeURIComponent("/onboarding?step=email&gmail=connected");
   }
 
+  function connectOutlook() {
+    window.location.href =
+      "/api/outlook/connect?returnTo=" +
+      encodeURIComponent("/onboarding?step=email&outlook=connected");
+  }
+
   const progressLabel = useMemo(() => {
     const labels: Record<OnboardingStepId, string> = {
       welcome: "Welcome",
@@ -544,7 +574,7 @@ export default function OnboardingPage() {
                   {[
                     "Personalize your profile & brand",
                     "Set up invoicing, tax & payouts",
-                    "Connect Gmail to send as you",
+                    "Connect Gmail or Outlook to send as you",
                   ].map((item) => (
                     <li
                       key={item}
@@ -898,45 +928,76 @@ export default function OnboardingPage() {
                     Send from your email
                   </h1>
                   <p className="text-[14px] text-gray-500 mt-1.5">
-                    Connect Gmail so proposals and invoices go out as you, not
-                    a no-reply address.
+                    Connect Gmail or Outlook so proposals and invoices go out as
+                    you, not a no-reply address.
                   </p>
                 </div>
 
-                <div className="rounded-2xl border border-line p-5 flex flex-col items-center text-center">
-                  <div className="w-14 h-14 rounded-2xl bg-[#FAFBFC] border border-line flex items-center justify-center mb-4">
-                    <GmailIcon className="w-8 h-8" />
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div className="rounded-2xl border border-line p-5 flex flex-col items-center text-center">
+                    <div className="w-12 h-12 rounded-2xl bg-[#FAFBFC] border border-line flex items-center justify-center mb-3">
+                      <GmailIcon className="w-7 h-7" />
+                    </div>
+                    <div className="text-[15px] font-semibold text-gray-900">
+                      Gmail
+                    </div>
+                    <p className="text-[12px] text-gray-500 mt-1 leading-relaxed">
+                      {gmailConnected
+                        ? `Connected as ${gmailEmail || email || "your Gmail account"}.`
+                        : "Send-only access. We never read your inbox."}
+                    </p>
+                    {gmailConnected ? (
+                      <span className="mt-3 inline-flex items-center gap-1.5 text-[12px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full">
+                        <Check className="w-3.5 h-3.5" strokeWidth={2.5} />
+                        Connected
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={connectGmail}
+                        className="mt-3 btn-primary inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm"
+                      >
+                        <GmailIcon className="w-4 h-4" />
+                        Connect
+                      </button>
+                    )}
                   </div>
-                  <div className="text-[15px] font-semibold text-gray-900">
-                    Gmail
+
+                  <div className="rounded-2xl border border-line p-5 flex flex-col items-center text-center">
+                    <div className="w-12 h-12 rounded-2xl bg-[#FAFBFC] border border-line flex items-center justify-center mb-3">
+                      <OutlookIcon className="w-7 h-7" />
+                    </div>
+                    <div className="text-[15px] font-semibold text-gray-900">
+                      Outlook
+                    </div>
+                    <p className="text-[12px] text-gray-500 mt-1 leading-relaxed">
+                      {outlookConnected
+                        ? `Connected as ${outlookEmail || "your Outlook account"}.`
+                        : "Works with Outlook and Microsoft 365."}
+                    </p>
+                    {outlookConnected ? (
+                      <span className="mt-3 inline-flex items-center gap-1.5 text-[12px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full">
+                        <Check className="w-3.5 h-3.5" strokeWidth={2.5} />
+                        Connected
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={connectOutlook}
+                        className="mt-3 btn-primary inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm"
+                      >
+                        <OutlookIcon className="w-4 h-4" />
+                        Connect
+                      </button>
+                    )}
                   </div>
-                  <p className="text-[13px] text-gray-500 mt-1 max-w-xs leading-relaxed">
-                    {gmailConnected
-                      ? `Connected as ${gmailEmail || email || "your Gmail account"}.`
-                      : "We only request send permission. We never read your inbox."}
-                  </p>
-                  {gmailConnected ? (
-                    <span className="mt-4 inline-flex items-center gap-1.5 text-[13px] font-semibold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-full">
-                      <Check className="w-3.5 h-3.5" strokeWidth={2.5} />
-                      Connected
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={connectGmail}
-                      className="mt-4 btn-primary inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm"
-                    >
-                      <GmailIcon className="w-4 h-4" />
-                      Connect Gmail
-                    </button>
-                  )}
                 </div>
 
                 <div className="rounded-xl bg-[#FAFBFC] border border-line px-4 py-3 text-[13px] text-gray-500 flex items-start gap-2.5">
                   <Mail className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" />
                   <span>
                     Prefer to skip? Rebban can still send via our email until you
-                    connect Gmail later in Settings.
+                    connect a mailbox later in Settings.
                   </span>
                 </div>
               </div>
@@ -1045,7 +1106,7 @@ export default function OnboardingPage() {
                 onClick={goNext}
                 className="btn-primary inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm"
               >
-                {gmailConnected ? "Continue" : "Continue without Gmail"}
+                {mailConnected ? "Continue" : "Continue without email"}
                 <ArrowRight className="w-4 h-4" />
               </button>
             )}

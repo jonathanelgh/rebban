@@ -109,3 +109,19 @@ Google Cloud setup:
 3. Enable Gmail API
 4. Vercel env: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXT_PUBLIC_APP_URL=https://rebban.com`
 5. Leave `GOOGLE_GMAIL_REDIRECT_URI` unset in Vercel (prod uses `NEXT_PUBLIC_APP_URL`)
+
+## Outlook / Microsoft 365 sending
+
+Same Integrations UI and send path as Gmail. If Outlook is connected, mail sends via Microsoft Graph first; otherwise Gmail; otherwise Resend.
+
+Azure App Registration setup:
+
+1. [Azure Portal](https://portal.azure.com/) → Microsoft Entra ID → App registrations → New registration
+2. Supported account types: **Accounts in any organizational directory and personal Microsoft accounts**
+3. Redirect URIs (Web):
+   - `https://rebban.com/api/outlook/callback`
+   - `http://localhost:3001/api/outlook/callback` (local only)
+4. Certificates & secrets → New client secret
+5. API permissions → Microsoft Graph (delegated): `Mail.Send`, `User.Read`, `offline_access` → Grant admin consent if required
+6. Vercel / `.env.local`: `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`
+7. Leave `MICROSOFT_OUTLOOK_REDIRECT_URI` unset unless you need an override

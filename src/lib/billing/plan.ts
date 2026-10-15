@@ -12,7 +12,7 @@ export const PAID_PLAN = {
     "Hosted client payment pages",
     "Invoice & proposal tracking",
     "Time tracking to invoice",
-    "Gmail sending (when connected)",
+    "Gmail / Outlook sending (when connected)",
     "Stripe payouts to your account",
     "Priority email support",
   ],
