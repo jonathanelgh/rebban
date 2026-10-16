@@ -86,8 +86,20 @@ export default function LoginPage() {
           </label>
 
           <label className="block">
-            <span className="block text-[13px] font-medium text-gray-700 mb-1.5">
-              Password
+            <span className="flex items-center justify-between gap-3 mb-1.5">
+              <span className="text-[13px] font-medium text-gray-700">
+                Password
+              </span>
+              <Link
+                href={
+                  email.trim()
+                    ? `/forgot-password?email=${encodeURIComponent(email.trim())}`
+                    : "/forgot-password"
+                }
+                className="text-[13px] font-medium text-[#2563EB] hover:text-[#1d4ed8]"
+              >
+                Forgot password?
+              </Link>
             </span>
             <input
               required

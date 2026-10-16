@@ -164,56 +164,6 @@ export type Database = {
           },
         ]
       }
-      outlook_connections: {
-        Row: {
-          access_token: string
-          connected_at: string
-          email: string
-          id: string
-          organization_id: string | null
-          refresh_token: string
-          revoked_at: string | null
-          scope: string | null
-          token_expiry: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          access_token: string
-          connected_at?: string
-          email: string
-          id?: string
-          organization_id?: string | null
-          refresh_token: string
-          revoked_at?: string | null
-          scope?: string | null
-          token_expiry: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          access_token?: string
-          connected_at?: string
-          email?: string
-          id?: string
-          organization_id?: string | null
-          refresh_token?: string
-          revoked_at?: string | null
-          scope?: string | null
-          token_expiry?: string
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "outlook_connections_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       invoice_events: {
         Row: {
           actor_email: string | null
@@ -705,9 +655,9 @@ export type Database = {
           created_by: string | null
           currency: string
           custom_tax_rates: number[]
-          default_prices_include_tax: boolean
-          default_reminder_sequence: string
           default_hourly_rate: number
+          default_prices_include_tax: boolean
+          default_reminder_sequence: string | null
           default_tax_enabled: boolean
           default_tax_rate: number
           deleted_at: string | null
@@ -741,7 +691,7 @@ export type Database = {
           custom_tax_rates?: number[]
           default_hourly_rate?: number
           default_prices_include_tax?: boolean
-          default_reminder_sequence?: string
+          default_reminder_sequence?: string | null
           default_tax_enabled?: boolean
           default_tax_rate?: number
           deleted_at?: string | null
@@ -775,7 +725,7 @@ export type Database = {
           custom_tax_rates?: number[]
           default_hourly_rate?: number
           default_prices_include_tax?: boolean
-          default_reminder_sequence?: string
+          default_reminder_sequence?: string | null
           default_tax_enabled?: boolean
           default_tax_rate?: number
           deleted_at?: string | null
@@ -799,6 +749,543 @@ export type Database = {
           type?: Database["public"]["Enums"]["organization_type"]
           updated_at?: string
           website?: string | null
+        }
+        Relationships: []
+      }
+      outlook_connections: {
+        Row: {
+          access_token: string
+          connected_at: string
+          email: string
+          id: string
+          organization_id: string | null
+          refresh_token: string
+          revoked_at: string | null
+          scope: string | null
+          token_expiry: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_token: string
+          connected_at?: string
+          email: string
+          id?: string
+          organization_id?: string | null
+          refresh_token: string
+          revoked_at?: string | null
+          scope?: string | null
+          token_expiry: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_token?: string
+          connected_at?: string
+          email?: string
+          id?: string
+          organization_id?: string | null
+          refresh_token?: string
+          revoked_at?: string | null
+          scope?: string | null
+          token_expiry?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "outlook_connections_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      outreach_ai_analyses: {
+        Row: {
+          competitors_mentioned: string[]
+          confidence: number | null
+          created_at: string
+          current_tools: string[]
+          feature_requests: string[]
+          id: string
+          intent: string | null
+          lead_id: string
+          message_id: string | null
+          objections: string[]
+          pain_points: string[]
+          positive_signals: string[]
+          raw_output: Json | null
+          recommended_action: string | null
+          score: number
+          sentiment: string | null
+          suggested_reply: string | null
+          summary: string | null
+          temperature: Database["public"]["Enums"]["outreach_temperature"]
+        }
+        Insert: {
+          competitors_mentioned?: string[]
+          confidence?: number | null
+          created_at?: string
+          current_tools?: string[]
+          feature_requests?: string[]
+          id?: string
+          intent?: string | null
+          lead_id: string
+          message_id?: string | null
+          objections?: string[]
+          pain_points?: string[]
+          positive_signals?: string[]
+          raw_output?: Json | null
+          recommended_action?: string | null
+          score: number
+          sentiment?: string | null
+          suggested_reply?: string | null
+          summary?: string | null
+          temperature: Database["public"]["Enums"]["outreach_temperature"]
+        }
+        Update: {
+          competitors_mentioned?: string[]
+          confidence?: number | null
+          created_at?: string
+          current_tools?: string[]
+          feature_requests?: string[]
+          id?: string
+          intent?: string | null
+          lead_id?: string
+          message_id?: string | null
+          objections?: string[]
+          pain_points?: string[]
+          positive_signals?: string[]
+          raw_output?: Json | null
+          recommended_action?: string | null
+          score?: number
+          sentiment?: string | null
+          suggested_reply?: string | null
+          summary?: string | null
+          temperature?: Database["public"]["Enums"]["outreach_temperature"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "outreach_ai_analyses_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "outreach_leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "outreach_ai_analyses_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "outreach_messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      outreach_followups: {
+        Row: {
+          body: string | null
+          cancellation_reason: string | null
+          cancelled_at: string | null
+          created_at: string
+          follow_up_number: number
+          id: string
+          lead_id: string
+          scheduled_for: string
+          sent_at: string | null
+          status: Database["public"]["Enums"]["outreach_followup_status"]
+          subject: string | null
+          updated_at: string
+        }
+        Insert: {
+          body?: string | null
+          cancellation_reason?: string | null
+          cancelled_at?: string | null
+          created_at?: string
+          follow_up_number?: number
+          id?: string
+          lead_id: string
+          scheduled_for: string
+          sent_at?: string | null
+          status?: Database["public"]["Enums"]["outreach_followup_status"]
+          subject?: string | null
+          updated_at?: string
+        }
+        Update: {
+          body?: string | null
+          cancellation_reason?: string | null
+          cancelled_at?: string | null
+          created_at?: string
+          follow_up_number?: number
+          id?: string
+          lead_id?: string
+          scheduled_for?: string
+          sent_at?: string | null
+          status?: Database["public"]["Enums"]["outreach_followup_status"]
+          subject?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "outreach_followups_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "outreach_leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      outreach_gmail_connections: {
+        Row: {
+          access_token: string
+          connected_at: string
+          email: string
+          id: string
+          last_sync_at: string | null
+          refresh_token: string
+          revoked_at: string | null
+          scope: string | null
+          token_expiry: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_token: string
+          connected_at?: string
+          email: string
+          id?: string
+          last_sync_at?: string | null
+          refresh_token: string
+          revoked_at?: string | null
+          scope?: string | null
+          token_expiry: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_token?: string
+          connected_at?: string
+          email?: string
+          id?: string
+          last_sync_at?: string | null
+          refresh_token?: string
+          revoked_at?: string | null
+          scope?: string | null
+          token_expiry?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      outreach_leads: {
+        Row: {
+          bounce_status: string | null
+          business_name: string | null
+          caution_note: string | null
+          competitors_mentioned: string[]
+          created_at: string
+          created_by: string | null
+          current_tools: string[]
+          display_name: string | null
+          do_not_contact: boolean
+          email: string
+          email_normalized: string | null
+          feature_requests: string[]
+          first_name: string | null
+          follow_up_count: number
+          gmail_message_id: string | null
+          gmail_thread_id: string | null
+          id: string
+          initial_email_body: string | null
+          last_contacted_at: string | null
+          last_name: string | null
+          last_replied_at: string | null
+          lead_tier: Database["public"]["Enums"]["outreach_lead_tier"]
+          location: string | null
+          next_follow_up_at: string | null
+          objections: string[]
+          outreach_angle: string | null
+          outreach_status: Database["public"]["Enums"]["outreach_status"]
+          pain_points: string[]
+          personalized_opener: string | null
+          positive_signals: string[]
+          queued_at: string | null
+          ready_to_send: boolean
+          rebban_fit: string | null
+          research_confidence: Database["public"]["Enums"]["outreach_research_confidence"]
+          role: string | null
+          source_type: string | null
+          source_url: string | null
+          subject_line: string | null
+          temperature:
+            | Database["public"]["Enums"]["outreach_temperature"]
+            | null
+          temperature_reason: string | null
+          temperature_score: number | null
+          unsubscribe_reason: string | null
+          unsubscribed_at: string | null
+          updated_at: string
+          website_summary: string | null
+          website_url: string | null
+        }
+        Insert: {
+          bounce_status?: string | null
+          business_name?: string | null
+          caution_note?: string | null
+          competitors_mentioned?: string[]
+          created_at?: string
+          created_by?: string | null
+          current_tools?: string[]
+          display_name?: string | null
+          do_not_contact?: boolean
+          email: string
+          email_normalized?: string | null
+          feature_requests?: string[]
+          first_name?: string | null
+          follow_up_count?: number
+          gmail_message_id?: string | null
+          gmail_thread_id?: string | null
+          id?: string
+          initial_email_body?: string | null
+          last_contacted_at?: string | null
+          last_name?: string | null
+          last_replied_at?: string | null
+          lead_tier?: Database["public"]["Enums"]["outreach_lead_tier"]
+          location?: string | null
+          next_follow_up_at?: string | null
+          objections?: string[]
+          outreach_angle?: string | null
+          outreach_status?: Database["public"]["Enums"]["outreach_status"]
+          pain_points?: string[]
+          personalized_opener?: string | null
+          positive_signals?: string[]
+          queued_at?: string | null
+          ready_to_send?: boolean
+          rebban_fit?: string | null
+          research_confidence?: Database["public"]["Enums"]["outreach_research_confidence"]
+          role?: string | null
+          source_type?: string | null
+          source_url?: string | null
+          subject_line?: string | null
+          temperature?:
+            | Database["public"]["Enums"]["outreach_temperature"]
+            | null
+          temperature_reason?: string | null
+          temperature_score?: number | null
+          unsubscribe_reason?: string | null
+          unsubscribed_at?: string | null
+          updated_at?: string
+          website_summary?: string | null
+          website_url?: string | null
+        }
+        Update: {
+          bounce_status?: string | null
+          business_name?: string | null
+          caution_note?: string | null
+          competitors_mentioned?: string[]
+          created_at?: string
+          created_by?: string | null
+          current_tools?: string[]
+          display_name?: string | null
+          do_not_contact?: boolean
+          email?: string
+          email_normalized?: string | null
+          feature_requests?: string[]
+          first_name?: string | null
+          follow_up_count?: number
+          gmail_message_id?: string | null
+          gmail_thread_id?: string | null
+          id?: string
+          initial_email_body?: string | null
+          last_contacted_at?: string | null
+          last_name?: string | null
+          last_replied_at?: string | null
+          lead_tier?: Database["public"]["Enums"]["outreach_lead_tier"]
+          location?: string | null
+          next_follow_up_at?: string | null
+          objections?: string[]
+          outreach_angle?: string | null
+          outreach_status?: Database["public"]["Enums"]["outreach_status"]
+          pain_points?: string[]
+          personalized_opener?: string | null
+          positive_signals?: string[]
+          queued_at?: string | null
+          ready_to_send?: boolean
+          rebban_fit?: string | null
+          research_confidence?: Database["public"]["Enums"]["outreach_research_confidence"]
+          role?: string | null
+          source_type?: string | null
+          source_url?: string | null
+          subject_line?: string | null
+          temperature?:
+            | Database["public"]["Enums"]["outreach_temperature"]
+            | null
+          temperature_reason?: string | null
+          temperature_score?: number | null
+          unsubscribe_reason?: string | null
+          unsubscribed_at?: string | null
+          updated_at?: string
+          website_summary?: string | null
+          website_url?: string | null
+        }
+        Relationships: []
+      }
+      outreach_messages: {
+        Row: {
+          ai_processed_at: string | null
+          body_html: string | null
+          body_text: string | null
+          created_at: string
+          created_by: string | null
+          direction: Database["public"]["Enums"]["outreach_message_direction"]
+          from_email: string | null
+          id: string
+          lead_id: string
+          provider: string
+          provider_message_id: string | null
+          provider_thread_id: string | null
+          received_at: string | null
+          send_error: string | null
+          sent_at: string | null
+          subject: string | null
+          to_emails: string[]
+        }
+        Insert: {
+          ai_processed_at?: string | null
+          body_html?: string | null
+          body_text?: string | null
+          created_at?: string
+          created_by?: string | null
+          direction: Database["public"]["Enums"]["outreach_message_direction"]
+          from_email?: string | null
+          id?: string
+          lead_id: string
+          provider?: string
+          provider_message_id?: string | null
+          provider_thread_id?: string | null
+          received_at?: string | null
+          send_error?: string | null
+          sent_at?: string | null
+          subject?: string | null
+          to_emails?: string[]
+        }
+        Update: {
+          ai_processed_at?: string | null
+          body_html?: string | null
+          body_text?: string | null
+          created_at?: string
+          created_by?: string | null
+          direction?: Database["public"]["Enums"]["outreach_message_direction"]
+          from_email?: string | null
+          id?: string
+          lead_id?: string
+          provider?: string
+          provider_message_id?: string | null
+          provider_thread_id?: string | null
+          received_at?: string | null
+          send_error?: string | null
+          sent_at?: string | null
+          subject?: string | null
+          to_emails?: string[]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "outreach_messages_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "outreach_leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      outreach_send_log: {
+        Row: {
+          created_at: string
+          error: string | null
+          id: string
+          idempotency_key: string | null
+          lead_id: string | null
+          message_id: string | null
+          status: Database["public"]["Enums"]["outreach_send_log_status"]
+        }
+        Insert: {
+          created_at?: string
+          error?: string | null
+          id?: string
+          idempotency_key?: string | null
+          lead_id?: string | null
+          message_id?: string | null
+          status: Database["public"]["Enums"]["outreach_send_log_status"]
+        }
+        Update: {
+          created_at?: string
+          error?: string | null
+          id?: string
+          idempotency_key?: string | null
+          lead_id?: string | null
+          message_id?: string | null
+          status?: Database["public"]["Enums"]["outreach_send_log_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "outreach_send_log_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "outreach_leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "outreach_send_log_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "outreach_messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      outreach_settings: {
+        Row: {
+          allowed_weekdays: number[]
+          daily_send_limit: number
+          follow_up_1_days: number
+          follow_up_2_days: number
+          id: number
+          max_follow_ups: number
+          send_window_end: string
+          send_window_start: string
+          sending_enabled: boolean
+          timezone: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          allowed_weekdays?: number[]
+          daily_send_limit?: number
+          follow_up_1_days?: number
+          follow_up_2_days?: number
+          id?: number
+          max_follow_ups?: number
+          send_window_end?: string
+          send_window_start?: string
+          sending_enabled?: boolean
+          timezone?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          allowed_weekdays?: number[]
+          daily_send_limit?: number
+          follow_up_1_days?: number
+          follow_up_2_days?: number
+          id?: number
+          max_follow_ups?: number
+          send_window_end?: string
+          send_window_start?: string
+          sending_enabled?: boolean
+          timezone?: string
+          updated_at?: string
+          updated_by?: string | null
         }
         Relationships: []
       }
@@ -1635,6 +2122,7 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           description?: string | null
+          duration_minutes?: number | null
           ended_at?: string | null
           hourly_rate?: number | null
           id?: string
@@ -1652,6 +2140,7 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           description?: string | null
+          duration_minutes?: number | null
           ended_at?: string | null
           hourly_rate?: number | null
           id?: string
@@ -1798,11 +2287,14 @@ export type Database = {
         }
         Returns: {
           address: string | null
+          country: string | null
           created_at: string
           created_by: string | null
           currency: string
           custom_tax_rates: number[]
+          default_hourly_rate: number
           default_prices_include_tax: boolean
+          default_reminder_sequence: string | null
           default_tax_enabled: boolean
           default_tax_rate: number
           deleted_at: string | null
@@ -1825,6 +2317,7 @@ export type Database = {
           trial_ends_at: string | null
           type: Database["public"]["Enums"]["organization_type"]
           updated_at: string
+          website: string | null
         }
         SetofOptions: {
           from: "*"
@@ -1859,25 +2352,17 @@ export type Database = {
       }
       get_public_invoice: { Args: { p_token: string }; Returns: Json }
       get_public_proposal: { Args: { p_token: string }; Returns: Json }
-      record_public_invoice_view: {
-        Args: { p_ip?: string; p_token: string; p_user_agent?: string }
-        Returns: Json
-      }
       is_org_admin: { Args: { p_org_id: string }; Returns: boolean }
       is_org_member: { Args: { p_org_id: string }; Returns: boolean }
       is_org_owner: { Args: { p_org_id: string }; Returns: boolean }
       is_platform_admin: { Args: never; Returns: boolean }
-      record_public_proposal_view: {
+      record_public_invoice_view: {
         Args: { p_ip?: string; p_token: string; p_user_agent?: string }
         Returns: Json
       }
-      set_public_invoice_checkout: {
-        Args: {
-          p_payment_status?: string
-          p_session_id: string
-          p_token: string
-        }
-        Returns: undefined
+      record_public_proposal_view: {
+        Args: { p_ip?: string; p_token: string; p_user_agent?: string }
+        Returns: Json
       }
       resolve_share_link: {
         Args: { p_token: string }
@@ -1901,6 +2386,14 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      set_public_invoice_checkout: {
+        Args: {
+          p_payment_status?: string
+          p_session_id: string
+          p_token: string
+        }
+        Returns: undefined
       }
       sign_public_proposal: {
         Args: {
@@ -1927,6 +2420,25 @@ export type Database = {
       member_role: "owner" | "admin" | "member"
       member_status: "active" | "invited" | "removed"
       organization_type: "solo" | "agency"
+      outreach_followup_status:
+        | "scheduled"
+        | "due"
+        | "sent"
+        | "cancelled"
+        | "skipped"
+      outreach_lead_tier: "a" | "b" | "c"
+      outreach_message_direction: "outbound" | "inbound"
+      outreach_research_confidence: "high" | "medium" | "low" | "unknown"
+      outreach_send_log_status: "queued" | "sent" | "failed" | "skipped"
+      outreach_status:
+        | "new"
+        | "ready"
+        | "queued"
+        | "contacted"
+        | "replied"
+        | "not_interested"
+        | "bounced"
+      outreach_temperature: "hot" | "warm" | "cold"
       project_status: "active" | "on_hold" | "completed" | "archived"
       proposal_status: "draft" | "sent" | "viewed" | "accepted" | "declined"
       task_column: "backlog" | "todo" | "in_progress" | "review" | "done"
@@ -2063,6 +2575,27 @@ export const Constants = {
       member_role: ["owner", "admin", "member"],
       member_status: ["active", "invited", "removed"],
       organization_type: ["solo", "agency"],
+      outreach_followup_status: [
+        "scheduled",
+        "due",
+        "sent",
+        "cancelled",
+        "skipped",
+      ],
+      outreach_lead_tier: ["a", "b", "c"],
+      outreach_message_direction: ["outbound", "inbound"],
+      outreach_research_confidence: ["high", "medium", "low", "unknown"],
+      outreach_send_log_status: ["queued", "sent", "failed", "skipped"],
+      outreach_status: [
+        "new",
+        "ready",
+        "queued",
+        "contacted",
+        "replied",
+        "not_interested",
+        "bounced",
+      ],
+      outreach_temperature: ["hot", "warm", "cold"],
       project_status: ["active", "on_hold", "completed", "archived"],
       proposal_status: ["draft", "sent", "viewed", "accepted", "declined"],
       task_column: ["backlog", "todo", "in_progress", "review", "done"],

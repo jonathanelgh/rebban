@@ -21,6 +21,9 @@ import {
   CheckCircle2,
   Send,
   XCircle,
+  Shield,
+  Mail,
+  ChartColumn,
   type LucideIcon,
 } from "lucide-react";
 import { useTimeTracking, formatElapsed } from "@/components/TimeTrackingContext";
@@ -98,8 +101,11 @@ function SidebarInner({
   onMobileClose?: () => void;
 }) {
   const pathname = usePathname();
+  const { isPlatformAdmin } = useProfile();
   const { isTracking, elapsedSeconds } = useTimeTracking();
   const [openMenu, setOpenMenu] = useState<SidebarMenu>(null);
+  const isAdminPanel =
+    pathname === "/admin" || pathname.startsWith("/admin/");
 
   // Hide the global sidebar in the proposal editor — it has its own focused layout.
   if (pathname.includes("/edit")) return null;
@@ -116,67 +122,126 @@ function SidebarInner({
   return (
     <aside className="relative z-10 w-[72px] shrink-0 flex flex-col justify-between overflow-visible py-3 bg-transparent">
       <div className="flex flex-col items-center gap-4">
-        <div className="w-10 h-10 rounded-xl bg-gray-950 text-white flex items-center justify-center shrink-0">
+        <Link
+          href={isAdminPanel ? "/admin" : "/"}
+          onClick={handleNavigate}
+          className="w-10 h-10 rounded-xl bg-gray-950 text-white flex items-center justify-center shrink-0"
+          title={isAdminPanel ? "Admin overview" : "Home"}
+        >
           <span className="text-[15px] font-semibold tracking-tight leading-none">R.</span>
-        </div>
+        </Link>
 
         <ProfileMenu
           open={openMenu === "profile"}
           onOpenChange={(next) => setOpenMenu(next ? "profile" : null)}
           onNavigate={handleNavigate}
+          adminMode={isAdminPanel}
         />
 
-        <nav className="w-full space-y-0.5">
-          <NavItem href="/" icon={Home} label="Home" active={pathname === "/"} onNavigate={handleNavigate} />
-          <NavItem href="/clients" icon={Users} label="Clients" active={pathname === "/clients"} onNavigate={handleNavigate} />
-          <NavItem
-            href="/tasks"
-            icon={Kanban}
-            label="Tasks"
-            active={pathname.startsWith("/tasks")}
-            onNavigate={handleNavigate}
-          />
-          <NavItem
-            href="/proposals"
-            icon={FileText}
-            label="Proposals"
-            active={pathname.startsWith("/proposals")}
-            onNavigate={handleNavigate}
-          />
-          <NavItem
-            href="/invoices"
-            icon={FileSpreadsheet}
-            label="Invoices"
-            active={pathname.startsWith("/invoices")}
-            onNavigate={handleNavigate}
-          />
-          <NavItem
-            href="/payments"
-            icon={CreditCard}
-            label="Payments"
-            active={pathname === "/payments"}
-            onNavigate={handleNavigate}
-          />
-          <NavItem
-            href="/time-tracking"
-            icon={Timer}
-            label="Time"
-            active={pathname === "/time-tracking"}
-            badge={isTracking ? formatElapsed(elapsedSeconds) : undefined}
-            badgeLive={isTracking}
-            onNavigate={handleNavigate}
-          />
-        </nav>
+        {isAdminPanel ? (
+          <nav className="w-full space-y-0.5">
+            <NavItem
+              href="/admin/users"
+              icon={Users}
+              label="Users"
+              active={
+                pathname.startsWith("/admin/users") ||
+                pathname.startsWith("/admin/organizations")
+              }
+              onNavigate={handleNavigate}
+            />
+            <NavItem
+              href="/admin/leads"
+              icon={Mail}
+              label="Leads"
+              active={
+                pathname.startsWith("/admin/leads") &&
+                !pathname.startsWith("/admin/leads/insights")
+              }
+              onNavigate={handleNavigate}
+            />
+            <NavItem
+              href="/admin/leads/insights"
+              icon={ChartColumn}
+              label="Insights"
+              active={pathname.startsWith("/admin/leads/insights")}
+              onNavigate={handleNavigate}
+            />
+          </nav>
+        ) : (
+          <nav className="w-full space-y-0.5">
+            <NavItem href="/" icon={Home} label="Home" active={pathname === "/"} onNavigate={handleNavigate} />
+            <NavItem href="/clients" icon={Users} label="Clients" active={pathname === "/clients"} onNavigate={handleNavigate} />
+            <NavItem
+              href="/tasks"
+              icon={Kanban}
+              label="Tasks"
+              active={pathname.startsWith("/tasks")}
+              onNavigate={handleNavigate}
+            />
+            <NavItem
+              href="/proposals"
+              icon={FileText}
+              label="Proposals"
+              active={pathname.startsWith("/proposals")}
+              onNavigate={handleNavigate}
+            />
+            <NavItem
+              href="/invoices"
+              icon={FileSpreadsheet}
+              label="Invoices"
+              active={pathname.startsWith("/invoices")}
+              onNavigate={handleNavigate}
+            />
+            <NavItem
+              href="/payments"
+              icon={CreditCard}
+              label="Payments"
+              active={pathname === "/payments"}
+              onNavigate={handleNavigate}
+            />
+            <NavItem
+              href="/time-tracking"
+              icon={Timer}
+              label="Time"
+              active={pathname === "/time-tracking"}
+              badge={isTracking ? formatElapsed(elapsedSeconds) : undefined}
+              badgeLive={isTracking}
+              onNavigate={handleNavigate}
+            />
+          </nav>
+        )}
       </div>
 
       <div className="w-full space-y-0.5">
-        <AlertsMenu
-          open={openMenu === "alerts"}
-          onOpenChange={(next) => setOpenMenu(next ? "alerts" : null)}
-          active={pathname === "/notifications"}
+        {!isAdminPanel && (
+          <AlertsMenu
+            open={openMenu === "alerts"}
+            onOpenChange={(next) => setOpenMenu(next ? "alerts" : null)}
+            active={pathname === "/notifications"}
+            onNavigate={handleNavigate}
+          />
+        )}
+        {!isAdminPanel && isPlatformAdmin ? (
+          <NavItem
+            href="/admin"
+            icon={Shield}
+            label="Admin"
+            active={false}
+            onNavigate={handleNavigate}
+          />
+        ) : null}
+        <NavItem
+          href={isAdminPanel ? "/admin/settings" : "/settings"}
+          icon={Settings}
+          label="Settings"
+          active={
+            isAdminPanel
+              ? pathname.startsWith("/admin/settings")
+              : pathname === "/settings"
+          }
           onNavigate={handleNavigate}
         />
-        <NavItem href="/settings" icon={Settings} label="Settings" active={pathname === "/settings"} onNavigate={handleNavigate} />
       </div>
     </aside>
   );
@@ -262,12 +327,14 @@ function ProfileMenu({
   open,
   onOpenChange,
   onNavigate,
+  adminMode = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onNavigate?: () => void;
+  adminMode?: boolean;
 }) {
-  const { avatarUrl, fullName } = useProfile();
+  const { avatarUrl, fullName, isPlatformAdmin } = useProfile();
   const { planLabel, openUpgradeModal, paid, trialActive, trialDaysLeft } =
     useBilling();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -333,9 +400,30 @@ function ProfileMenu({
           <div className="h-px bg-gray-200 my-2 mx-4" />
 
           <MenuLink icon={User} label="My profile" href="/settings" onNavigate={onNavigate} />
-          <MenuLink icon={Settings} label="Settings" href="/settings" onNavigate={onNavigate} />
+          <MenuLink
+            icon={Settings}
+            label={adminMode ? "Admin settings" : "Settings"}
+            href={adminMode ? "/admin/settings" : "/settings"}
+            onNavigate={onNavigate}
+          />
+          {isPlatformAdmin && !adminMode ? (
+            <MenuLink
+              icon={Shield}
+              label="Platform admin"
+              href="/admin"
+              onNavigate={onNavigate}
+            />
+          ) : null}
+          {adminMode ? (
+            <MenuLink
+              icon={Home}
+              label="Back to app"
+              href="/"
+              onNavigate={onNavigate}
+            />
+          ) : null}
 
-          {!paid && (
+          {!paid && !adminMode && (
             <button
               type="button"
               onClick={() => {

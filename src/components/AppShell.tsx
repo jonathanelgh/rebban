@@ -27,6 +27,8 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   const isAuthLayout =
     pathname.startsWith("/login") ||
     pathname.startsWith("/signup") ||
+    pathname.startsWith("/forgot-password") ||
+    pathname.startsWith("/reset-password") ||
     pathname.startsWith("/onboarding");
   // Pages that already have a primary create CTA in the page header.
   const hideCreateMenu =
@@ -39,7 +41,9 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
     pathname === "/invoices" ||
     pathname.startsWith("/invoices/") ||
     pathname === "/time-tracking" ||
-    pathname.startsWith("/time-tracking/");
+    pathname.startsWith("/time-tracking/") ||
+    pathname === "/admin" ||
+    pathname.startsWith("/admin/");
 
   useEffect(() => {
     setMobileNavOpen(false);

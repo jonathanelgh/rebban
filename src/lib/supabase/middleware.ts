@@ -35,17 +35,26 @@ export async function updateSession(request: NextRequest) {
   const isAuthRoute =
     path === "/login" ||
     path === "/signup" ||
+    path === "/forgot-password" ||
+    path === "/reset-password" ||
     path.startsWith("/login/") ||
     path.startsWith("/signup/") ||
+    path.startsWith("/forgot-password/") ||
+    path.startsWith("/reset-password/") ||
     path.startsWith("/auth/");
+  const isPasswordResetRoute =
+    path === "/reset-password" || path.startsWith("/reset-password/");
   const isPublicProposalRoute =
     path.startsWith("/p/") || path.startsWith("/api/p/");
   const isPublicPayRoute =
     path.startsWith("/pay/") || path.startsWith("/api/stripe/pay/");
   const isStripeWebhook = path === "/api/stripe/webhook";
+  const isCronRoute = path.startsWith("/api/cron/");
   // Gmail / Outlook OAuth also return ?code= — do not treat as Supabase login.
   const isMailOAuthRoute =
-    path.startsWith("/api/gmail/") || path.startsWith("/api/outlook/");
+    path.startsWith("/api/gmail/") ||
+    path.startsWith("/api/outlook/") ||
+    path.startsWith("/api/admin/outreach-gmail/");
 
   // Supabase sometimes returns ?code= on Site URL (/) instead of /auth/callback.
   // Never strip it — forward to the exchange route (login only, not mail OAuth).
@@ -63,13 +72,20 @@ export async function updateSession(request: NextRequest) {
   if (
     path.startsWith("/auth/callback") ||
     path.startsWith("/api/gmail/callback") ||
-    path.startsWith("/api/outlook/callback")
+    path.startsWith("/api/outlook/callback") ||
+    path.startsWith("/api/admin/outreach-gmail/callback")
   ) {
     return supabaseResponse;
   }
 
   // Public client proposal links (view / decline / sign) and invoice pay pages.
-  if (isPublicProposalRoute || isPublicPayRoute || isStripeWebhook) {
+  // Cron routes authenticate via CRON_SECRET inside the handler.
+  if (
+    isPublicProposalRoute ||
+    isPublicPayRoute ||
+    isStripeWebhook ||
+    isCronRoute
+  ) {
     return supabaseResponse;
   }
 
@@ -80,7 +96,8 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (user && isAuthRoute) {
+  // Recovery links land here with a session — don't bounce them to home.
+  if (user && isAuthRoute && !isPasswordResetRoute) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("onboarding_completed_at")
@@ -93,9 +110,16 @@ export async function updateSession(request: NextRequest) {
   }
 
   const isOnboardingRoute = path === "/onboarding" || path.startsWith("/onboarding/");
+  const isAdminRoute = path === "/admin" || path.startsWith("/admin/");
   const isApiRoute = path.startsWith("/api/");
 
-  if (user && !isOnboardingRoute && !isApiRoute && !isAuthRoute) {
+  if (
+    user &&
+    !isOnboardingRoute &&
+    !isAdminRoute &&
+    !isApiRoute &&
+    !isAuthRoute
+  ) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("onboarding_completed_at")

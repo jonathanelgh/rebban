@@ -22,6 +22,7 @@ type ProfileState = {
   organizationDescription: string | null;
   organizationCurrency: string | null;
   logoUrl: string | null;
+  isPlatformAdmin: boolean;
   loading: boolean;
   refresh: () => Promise<void>;
 };
@@ -61,6 +62,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     string | null
   >(null);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
@@ -79,6 +81,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       setOrganizationDescription(null);
       setOrganizationCurrency(null);
       setLogoUrl(null);
+      setIsPlatformAdmin(false);
       setLoading(false);
       return;
     }
@@ -131,6 +134,8 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
+    const { data: adminFlag } = await supabase.rpc("is_platform_admin");
+
     setUserId(user.id);
     setFullName(profile?.full_name ?? user.user_metadata?.full_name ?? null);
     setEmail(profile?.email ?? user.email ?? null);
@@ -140,6 +145,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     setOrganizationDescription(orgDescription);
     setOrganizationCurrency(orgCurrency);
     setLogoUrl(signedLogo);
+    setIsPlatformAdmin(Boolean(adminFlag));
     setLoading(false);
   }, []);
 
@@ -168,6 +174,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
         organizationDescription,
         organizationCurrency,
         logoUrl,
+        isPlatformAdmin,
         loading,
         refresh,
       }}

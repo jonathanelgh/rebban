@@ -32,6 +32,7 @@ UI: **Continue with Google** on `/login` and **Sign up with Google** on `/signup
      `https://app.rebban.com/**`  
      `http://localhost:3001/auth/callback`  
      `http://localhost:3001/**`  
+   Password reset emails use `…/auth/callback?next=/reset-password` (same allow list).
 
 4. Vercel / `.env`: `NEXT_PUBLIC_APP_URL=https://app.rebban.com`  
    The Google button uses this for `redirectTo`.
@@ -44,12 +45,22 @@ Signup with Google respects freelancer/agency + workspace name chosen on the sig
 
 ## Platform admins
 
+Owner console lives at `/admin` (overview + workspaces). Access is gated by
+`public.is_platform_admin()` and the `platform_admins` table.
+
 Insert via SQL (service role / dashboard only):
 
 ```sql
 insert into public.platform_admins (user_id, notes)
-values ('<auth-user-uuid>', 'Rebban staff');
+values ('<auth-user-uuid>', 'Rebban staff')
+on conflict (user_id) do update
+set notes = excluded.notes,
+    revoked_at = null;
 ```
+
+Admin APIs (`/api/admin/*`) verify the session with `is_platform_admin`, then
+read cross-tenant rows via existing RLS (`is_platform_admin()` on orgs /
+profiles / members). Non-admins are redirected to `/`.
 
 ## Storage path conventions
 
@@ -109,6 +120,39 @@ Google Cloud setup:
 3. Enable Gmail API
 4. Vercel env: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXT_PUBLIC_APP_URL=https://app.rebban.com`
 5. Leave `GOOGLE_GMAIL_REDIRECT_URI` unset in Vercel (prod uses `NEXT_PUBLIC_APP_URL`)
+
+## Internal outreach Gmail (admin leads)
+
+Platform admins use a **separate** OAuth connection for founder outreach (`outreach_gmail_connections`), so tenant proposal-sending Gmail stays isolated.
+
+Same env vars as freelancer Gmail:
+
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `NEXT_PUBLIC_APP_URL` (or `APP_URL`) — used to build the outreach redirect URI in production
+
+Add these redirect URIs on the same Google OAuth client:
+
+- `https://app.rebban.com/api/admin/outreach-gmail/callback`
+- `http://localhost:3000/api/admin/outreach-gmail/callback` (and/or `:3001` if that is your local port)
+
+OAuth scopes requested for outreach: `gmail.send` + `gmail.readonly` (required for reply sync).
+
+Admin UI: sidebar Users / Leads / Insights / Settings. Leads at `/admin/leads`, outreach controls at `/admin/settings?section=outreach`.
+
+Additional env:
+
+- `OPENAI_API_KEY` — reply analysis + suggested drafts (optional until you sync replies)
+- `OPENAI_OUTREACH_MODEL` — optional, default `gpt-4o-mini`
+- `SUPABASE_SERVICE_ROLE_KEY` — required for outreach cron jobs
+- `CRON_SECRET` — authorizes `/api/cron/outreach-sync` and `/api/cron/outreach-queue`
+
+Crons (see `vercel.json`):
+
+- `/api/cron/outreach-sync` every 15 minutes — Gmail reply sync, AI analysis, follow-up prep
+- `/api/cron/outreach-queue` every 20 minutes — processes queued sends when sending_enabled + window/limit allow
+
+Manual: lead detail **Sync replies**, settings **Sync replies now**, list **Send email**.
 
 ## Outlook / Microsoft 365 sending
 
