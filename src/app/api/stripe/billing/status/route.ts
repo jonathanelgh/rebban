@@ -3,16 +3,18 @@ import { createClient } from "@/lib/supabase/server";
 import {
   getPlatformPriceId,
   getPlatformYearlyPriceId,
-  getStripe,
   isStripeConfigured,
 } from "@/lib/stripe/client";
 import {
   getActiveOrganizationId,
   getOrganizationStripeState,
 } from "@/lib/stripe/org";
-import { computeEntitlement } from "@/lib/billing/plan";
+import {
+  computeEntitlement,
+  isPaidSubscriptionStatus,
+} from "@/lib/billing/plan";
 import { fetchPlatformPricing } from "@/lib/stripe/prices";
-import { subscriptionPeriodEndIso } from "@/lib/stripe/billing-customer";
+import { syncOrgSubscriptionFromStripe } from "@/lib/stripe/sync-subscription";
 
 export async function GET() {
   const supabase = await createClient();
@@ -29,48 +31,79 @@ export async function GET() {
     return NextResponse.json({ error: "No organization" }, { status: 400 });
   }
 
-  const org = await getOrganizationStripeState(supabase, organizationId);
-  const status = org?.stripe_subscription_status || null;
-  const entitlement = computeEntitlement({
-    subscriptionStatus: status,
-    trialEndsAt: org?.trial_ends_at,
-    complimentaryPro: org?.complimentary_pro,
-  });
+  let org = await getOrganizationStripeState(supabase, organizationId);
   const pricing = await fetchPlatformPricing();
 
   let cancelAtPeriodEnd = false;
   let currentPeriodEnd: string | null = null;
   let paymentMethodLabel: string | null = null;
+  let status = org?.stripe_subscription_status || null;
+  let subscriptionId = org?.stripe_subscription_id ?? null;
+  let priceId = org?.stripe_price_id ?? null;
 
-  if (
+  // If we have a Stripe customer but DB looks unpaid/stale (common when webhooks
+  // lag or billing webhook secret isn't set), hydrate from Stripe.
+  const needsStripeSync =
     isStripeConfigured() &&
-    org?.stripe_subscription_id &&
-    entitlement.paid
+    Boolean(org?.stripe_customer_id) &&
+    (!subscriptionId || !isPaidSubscriptionStatus(status));
+
+  if (needsStripeSync && org?.stripe_customer_id) {
+    try {
+      const synced = await syncOrgSubscriptionFromStripe({
+        organizationId,
+        customerId: org.stripe_customer_id,
+        knownSubscriptionId: subscriptionId,
+        supabase,
+      });
+      if (synced.status) {
+        status = synced.status;
+        subscriptionId = synced.subscriptionId;
+        priceId = synced.priceId;
+        cancelAtPeriodEnd = synced.cancelAtPeriodEnd;
+        currentPeriodEnd = synced.currentPeriodEnd;
+        paymentMethodLabel = synced.paymentMethodLabel;
+        org = await getOrganizationStripeState(supabase, organizationId);
+      }
+    } catch (err) {
+      console.error("[billing/status] sync from Stripe failed", err);
+    }
+  } else if (
+    isStripeConfigured() &&
+    org?.stripe_customer_id &&
+    subscriptionId &&
+    isPaidSubscriptionStatus(status)
   ) {
     try {
-      const stripe = getStripe();
-      const sub = await stripe.subscriptions.retrieve(
-        org.stripe_subscription_id,
-        { expand: ["default_payment_method"] }
-      );
-      cancelAtPeriodEnd = Boolean(sub.cancel_at_period_end);
-      currentPeriodEnd = subscriptionPeriodEndIso(sub);
-      const pm = sub.default_payment_method;
-      if (pm && typeof pm !== "string" && pm.type === "card" && pm.card) {
-        paymentMethodLabel = `${pm.card.brand?.toUpperCase() || "Card"} ···· ${pm.card.last4}`;
-      }
+      const synced = await syncOrgSubscriptionFromStripe({
+        organizationId,
+        customerId: org.stripe_customer_id,
+        knownSubscriptionId: subscriptionId,
+        supabase,
+      });
+      cancelAtPeriodEnd = synced.cancelAtPeriodEnd;
+      currentPeriodEnd = synced.currentPeriodEnd;
+      paymentMethodLabel = synced.paymentMethodLabel;
+      status = synced.status || status;
+      priceId = synced.priceId || priceId;
     } catch (err) {
       console.error("[billing/status] subscription lookup failed", err);
     }
   }
 
+  const entitlement = computeEntitlement({
+    subscriptionStatus: status,
+    trialEndsAt: org?.trial_ends_at,
+    complimentaryPro: org?.complimentary_pro,
+  });
+
   return NextResponse.json({
     configured: isStripeConfigured() && Boolean(getPlatformPriceId()),
     yearlyConfigured: Boolean(getPlatformYearlyPriceId() && pricing.yearly),
     hasCustomer: Boolean(org?.stripe_customer_id),
-    subscriptionId: org?.stripe_subscription_id ?? null,
+    subscriptionId,
     status,
-    priceId: org?.stripe_price_id ?? null,
+    priceId,
     trialEndsAt: org?.trial_ends_at ?? null,
     trialDaysLeft: entitlement.trialDaysLeft,
     trialActive: entitlement.trialActive,

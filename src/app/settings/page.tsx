@@ -188,7 +188,7 @@ function SettingsPageInner() {
   const [stripeNotice, setStripeNotice] = useState<string | null>(null);
   const [billingConfigured, setBillingConfigured] = useState(false);
   const [billingActive, setBillingActive] = useState(false);
-  const [billingPlanLabel, setBillingPlanLabel] = useState("Free");
+  const [billingPlanLabel, setBillingPlanLabel] = useState("Trial");
   const [billingStatus, setBillingStatus] = useState<string | null>(null);
   const [billingBusy, setBillingBusy] = useState(false);
   const [billingNotice, setBillingNotice] = useState<string | null>(null);
@@ -399,8 +399,16 @@ function SettingsPageInner() {
 
     if (billing === "success") {
       setSection("billing");
-      setBillingNotice("Subscription updated. It can take a moment to sync.");
-      void refreshBilling();
+      setBillingNotice("Subscription active. Syncing your plan…");
+      void (async () => {
+        try {
+          await fetch("/api/stripe/billing/sync", { method: "POST" });
+        } catch {
+          // status load still is the source of truth
+        }
+        await refreshBilling();
+        setBillingNotice("You're on Pro. Thanks for subscribing.");
+      })();
     } else if (billing === "cancelled") {
       setSection("billing");
       setBillingNotice("Checkout cancelled.");
@@ -483,7 +491,7 @@ function SettingsPageInner() {
       if (cancelled) return;
       setBillingConfigured(Boolean(json.configured));
       setBillingActive(Boolean(json.active));
-      setBillingPlanLabel(json.planLabel || "Free");
+      setBillingPlanLabel(json.planLabel || "Trial");
       setBillingStatus(json.status || null);
       setBillingCancelAtPeriodEnd(Boolean(json.cancelAtPeriodEnd));
       setBillingPeriodEnd(json.currentPeriodEnd || null);
@@ -598,7 +606,7 @@ function SettingsPageInner() {
     const json = await res.json();
     setBillingConfigured(Boolean(json.configured));
     setBillingActive(Boolean(json.active));
-    setBillingPlanLabel(json.planLabel || "Free");
+    setBillingPlanLabel(json.planLabel || "Trial");
     setBillingStatus(json.status || null);
     setBillingCancelAtPeriodEnd(Boolean(json.cancelAtPeriodEnd));
     setBillingPeriodEnd(json.currentPeriodEnd || null);
@@ -1569,7 +1577,9 @@ function SettingsPageInner() {
                                   year: "numeric",
                                 })}`
                               : `Status: ${billingStatus || "active"}`
-                          : "7-day free trial, then upgrade to Pro to keep full access."}
+                          : billingPlanLabel === "Trial ended"
+                            ? "Your 7-day trial has ended. Upgrade to Pro to keep full access."
+                            : "You're on a 7-day trial. Upgrade to Pro anytime to keep full access."}
                       </p>
                     </div>
                     {!billingActive && (

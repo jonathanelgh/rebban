@@ -55,6 +55,12 @@ export function UpgradeModal({
 
   async function handleComplete() {
     setPaidSuccess(true);
+    // Checkout can finish before the webhook writes the org — sync from Stripe.
+    try {
+      await fetch("/api/stripe/billing/sync", { method: "POST" });
+    } catch {
+      // refreshBilling still runs below
+    }
     await refreshBilling();
     window.setTimeout(() => {
       onClose();

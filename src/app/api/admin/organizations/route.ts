@@ -30,7 +30,7 @@ export async function GET(request: Request) {
     if (plan === "paid") orgs = orgs.filter((o) => o.paid);
     else if (plan === "trial")
       orgs = orgs.filter((o) => o.trialActive && !o.paid);
-    else if (plan === "free")
+    else if (plan === "ended" || plan === "free")
       orgs = orgs.filter((o) => !o.paid && !o.trialActive);
 
     return NextResponse.json({ organizations: orgs });

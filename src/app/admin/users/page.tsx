@@ -24,7 +24,7 @@ function planTone(label: string) {
 export default function AdminUsersPage() {
   const [orgs, setOrgs] = useState<AdminOrgRow[]>([]);
   const [q, setQ] = useState("");
-  const [plan, setPlan] = useState<"all" | "paid" | "trial" | "free">("all");
+  const [plan, setPlan] = useState<"all" | "paid" | "trial" | "ended">("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
@@ -84,7 +84,7 @@ export default function AdminUsersPage() {
               ["all", "All"],
               ["paid", "Paid"],
               ["trial", "Trial"],
-              ["free", "Free"],
+              ["ended", "Trial ended"],
             ] as const
           ).map(([value, label]) => (
             <button

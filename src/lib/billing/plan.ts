@@ -76,7 +76,8 @@ export function computeEntitlement(options: {
     trialExpired: Boolean(trialEnds && !trialActive && !paid),
     trialEndsAt: trialEnds?.toISOString() ?? null,
     trialDaysLeft,
-    planLabel: paid ? PAID_PLAN.name : trialActive ? "Trial" : "Free",
+    // Product model is trial or paid only — never a free tier.
+    planLabel: paid ? PAID_PLAN.name : trialActive ? "Trial" : "Trial ended",
   };
 }
 
