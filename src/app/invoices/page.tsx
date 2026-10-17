@@ -361,7 +361,7 @@ function InvoicesPageInner() {
   }, [invoices, organizationCurrency]);
 
   return (
-    <main className="w-full px-4 md:px-8 pt-10 pb-8 max-w-7xl mx-auto relative">
+    <main className="w-full min-w-0 max-w-7xl mx-auto relative px-4 md:px-8 pt-10 pb-8 overflow-x-hidden">
       {sentBanner && (
         <div
           role="status"
@@ -408,7 +408,7 @@ function InvoicesPageInner() {
         <button
           type="button"
           onClick={() => setModalOpen(true)}
-          className="btn-primary px-5 py-2.5 rounded-full text-sm flex items-center gap-2 self-start"
+          className="btn-primary px-5 py-2.5 rounded-full text-sm hidden md:inline-flex items-center gap-2 self-start"
         >
           <Plus className="w-4 h-4" />
           New Invoice
@@ -417,26 +417,26 @@ function InvoicesPageInner() {
 
       {error && <p className="mb-4 text-[13px] text-red-600">{error}</p>}
 
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-8">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-8 min-w-0">
         <StatCard label="Outstanding" value={loading ? "—" : stats.outstanding} accent="bg-[#FFF9D6]" />
         <StatCard label="Overdue" value={loading ? "—" : stats.overdue} accent="bg-[#FEF2F2]" />
         <StatCard label="Paid" value={loading ? "—" : stats.paidThisMonth} hint="This month" accent="bg-[#F3FAF6]" />
         <StatCard label="Drafts" value={loading ? "—" : stats.drafts} accent="bg-white" />
       </div>
 
-      <div className="flex items-center justify-between mb-5 gap-3 flex-wrap">
-        <div className="relative w-full sm:w-72">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-5 gap-3 min-w-0">
+        <div className="relative w-full sm:w-72 min-w-0">
           <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search invoices..."
-            className="w-full pl-10 pr-4 py-2.5 bg-white border border-line rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-100"
+            className="w-full min-w-0 pl-10 pr-4 py-2.5 bg-white border border-line rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-100"
           />
         </div>
-        <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap sm:flex-nowrap">
-          <div className="w-full sm:w-56">
+        <div className="grid grid-cols-1 sm:flex sm:items-center gap-2 w-full sm:w-auto min-w-0">
+          <div className="w-full sm:w-56 min-w-0">
             <FancySelect
               value={clientFilter}
               onChange={setClientFilter}
@@ -463,17 +463,17 @@ function InvoicesPageInner() {
         </div>
       </div>
 
-      <div className="surface-panel overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left">
+      <div className="surface-panel overflow-hidden min-w-0">
+        <div className="overflow-x-auto overscroll-x-contain">
+          <table className="w-full min-w-[640px] text-sm text-left">
             <thead className="text-gray-400 font-medium">
               <tr className="border-b border-line">
-                <th className="px-6 py-3 font-medium">Client</th>
-                <th className="px-6 py-3 font-medium">Invoice</th>
-                <th className="px-6 py-3 font-medium">Amount</th>
-                <th className="px-6 py-3 font-medium">Status</th>
-                <th className="px-6 py-3 font-medium">Due</th>
-                <th className="px-6 py-3 font-medium text-right w-14">
+                <th className="px-4 sm:px-6 py-3 font-medium">Client</th>
+                <th className="px-4 sm:px-6 py-3 font-medium">Invoice</th>
+                <th className="px-4 sm:px-6 py-3 font-medium">Amount</th>
+                <th className="px-4 sm:px-6 py-3 font-medium">Status</th>
+                <th className="px-4 sm:px-6 py-3 font-medium">Due</th>
+                <th className="px-4 sm:px-6 py-3 font-medium text-right w-14">
                   <span className="sr-only">Actions</span>
                 </th>
               </tr>
@@ -481,7 +481,7 @@ function InvoicesPageInner() {
             <tbody className="text-gray-700">
               {loading && (
                 <tr>
-                  <td colSpan={6} className="px-6 py-16 text-center text-sm text-gray-400">
+                  <td colSpan={6} className="px-4 sm:px-6 py-16 text-center text-sm text-gray-400">
                     Loading invoices…
                   </td>
                 </tr>
@@ -493,33 +493,33 @@ function InvoicesPageInner() {
                     onClick={() => router.push(`/invoices/${invoice.id}/edit`)}
                     className="border-b border-line last:border-0 hover:bg-[#FAFBFC] transition-colors cursor-pointer"
                   >
-                    <td className="px-6 py-4">
-                      <div className="font-medium text-gray-900">
+                    <td className="px-4 sm:px-6 py-4 max-w-[160px] sm:max-w-[220px]">
+                      <div className="font-medium text-gray-900 truncate">
                         {invoice.clientCompany || invoice.clientName}
                       </div>
                       {invoice.clientCompany && (
-                        <div className="text-[12px] text-gray-400 mt-0.5">
+                        <div className="text-[12px] text-gray-400 mt-0.5 truncate">
                           {invoice.clientName}
                         </div>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-gray-700">
+                    <td className="px-4 sm:px-6 py-4 text-gray-700 whitespace-nowrap">
                       {invoice.number || "Draft"}
                     </td>
-                    <td className="px-6 py-4 font-medium text-gray-900">
+                    <td className="px-4 sm:px-6 py-4 font-medium text-gray-900 whitespace-nowrap">
                       {formatInvoiceMoney(invoice.total, invoice.currency)}
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-4 sm:px-6 py-4">
                       <span
                         className={`inline-flex text-[12px] font-semibold rounded-full px-2.5 py-1 ${STATUS_STYLES[invoice.status]}`}
                       >
                         {statusLabel(invoice.status)}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-gray-500">
+                    <td className="px-4 sm:px-6 py-4 text-gray-500 whitespace-nowrap">
                       {formatDate(invoice.dueDate)}
                     </td>
-                    <td className="px-6 py-4 text-right">
+                    <td className="px-4 sm:px-6 py-4 text-right">
                       <InvoiceActionsMenu
                         status={invoice.status}
                         busy={actionBusyId === invoice.id}
@@ -537,7 +537,7 @@ function InvoicesPageInner() {
                 ))}
               {!loading && filtered.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-6 py-16 text-center">
+                  <td colSpan={6} className="px-4 sm:px-6 py-16 text-center">
                     <FileSpreadsheet className="w-8 h-8 text-gray-300 mx-auto mb-3" />
                     <p className="text-sm font-medium text-gray-700">
                       {invoices.length === 0 ? "No invoices yet" : "No invoices found"}
@@ -719,12 +719,18 @@ function StatCard({
   accent?: string;
 }) {
   return (
-    <div className={`rounded-2xl border border-line ${accent} px-5 py-4`}>
-      <div className="text-[13px] font-medium text-gray-500">{label}</div>
-      <div className="text-2xl font-semibold text-gray-900 mt-1 tracking-tight">
+    <div
+      className={`rounded-2xl border border-line ${accent} px-3.5 sm:px-5 py-4 min-w-0 overflow-hidden`}
+    >
+      <div className="text-[13px] font-medium text-gray-500 truncate">
+        {label}
+      </div>
+      <div className="text-xl sm:text-2xl font-semibold text-gray-900 mt-1 tracking-tight truncate">
         {value}
       </div>
-      {hint && <div className="text-[12px] text-gray-400 mt-1">{hint}</div>}
+      {hint && (
+        <div className="text-[12px] text-gray-400 mt-1 truncate">{hint}</div>
+      )}
     </div>
   );
 }
@@ -856,7 +862,9 @@ function CreateInvoiceModal({
               <Send className="w-5 h-5" />
             </div>
             <div className="min-w-0">
-              <h2 className="text-xl font-semibold text-gray-900">New invoice</h2>
+              <h2 className="text-xl font-semibold text-gray-900 truncate">
+                New invoice
+              </h2>
               <p className="text-sm text-gray-500 mt-0.5">
                 Pick a client, then build the document.
               </p>
@@ -871,14 +879,14 @@ function CreateInvoiceModal({
           </button>
         </div>
 
-        <div className="px-5 sm:px-6 py-5 space-y-5 overflow-y-auto flex-1 min-h-0">
+        <div className="px-5 sm:px-6 py-5 space-y-5 overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0">
           {formError && (
             <p className="text-[13px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-3.5 py-2.5">
               {formError}
             </p>
           )}
 
-          <div>
+          <div className="min-w-0">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Client *
             </label>
@@ -890,8 +898,8 @@ function CreateInvoiceModal({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 min-w-0">
+            <div className="min-w-0">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Currency
               </label>
@@ -904,29 +912,30 @@ function CreateInvoiceModal({
                 }))}
               />
             </div>
-            <div>
+            <div className="min-w-0">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Due in (days)
               </label>
               <input
                 type="number"
+                inputMode="numeric"
                 min={0}
                 value={dueInDays}
                 onChange={(e) => setDueInDays(e.target.value)}
-                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-100"
+                className="w-full min-w-0 max-w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-100"
               />
             </div>
           </div>
 
-          <div className="rounded-2xl border border-line p-4 space-y-3">
-            <label className="flex items-start gap-3 cursor-pointer">
+          <div className="rounded-2xl border border-line p-4 space-y-3 min-w-0 overflow-hidden">
+            <label className="flex items-start gap-3 cursor-pointer min-w-0">
               <input
                 type="checkbox"
                 checked={isRetainer}
                 onChange={(e) => setIsRetainer(e.target.checked)}
-                className="mt-1 rounded border-gray-300"
+                className="mt-1 rounded border-gray-300 shrink-0"
               />
-              <span>
+              <span className="min-w-0">
                 <span className="block text-sm font-medium text-gray-900">
                   Retainer / recurring invoice
                 </span>
@@ -938,8 +947,8 @@ function CreateInvoiceModal({
             </label>
 
             {isRetainer && (
-              <div className="space-y-3 pt-1">
-                <div>
+              <div className="space-y-3 pt-1 min-w-0">
+                <div className="min-w-0">
                   <label className="block text-[13px] font-medium text-gray-700 mb-1.5">
                     Interval
                   </label>
@@ -950,7 +959,7 @@ function CreateInvoiceModal({
                         e.target.value as InvoiceRecurrenceInterval
                       )
                     }
-                    className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-100 bg-white"
+                    className="w-full min-w-0 max-w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-100 bg-white"
                   >
                     {RECURRENCE_INTERVAL_OPTIONS.map((opt) => (
                       <option key={opt.value} value={opt.value}>
@@ -961,7 +970,7 @@ function CreateInvoiceModal({
                 </div>
 
                 {isWeekInterval(recurrenceInterval) ? (
-                  <div>
+                  <div className="min-w-0">
                     <label className="block text-[13px] font-medium text-gray-700 mb-1.5">
                       Day of week
                     </label>
@@ -970,7 +979,7 @@ function CreateInvoiceModal({
                       onChange={(e) =>
                         setRecurrenceWeekday(Number(e.target.value))
                       }
-                      className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-100 bg-white"
+                      className="w-full min-w-0 max-w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-100 bg-white"
                     >
                       {WEEKDAY_OPTIONS.map((opt) => (
                         <option key={opt.value} value={opt.value}>
@@ -980,7 +989,7 @@ function CreateInvoiceModal({
                     </select>
                   </div>
                 ) : (
-                  <div>
+                  <div className="min-w-0">
                     <label className="block text-[13px] font-medium text-gray-700 mb-1.5">
                       Day of month
                     </label>
@@ -989,7 +998,7 @@ function CreateInvoiceModal({
                       onChange={(e) =>
                         setRecurrenceDayOfMonth(Number(e.target.value) || 1)
                       }
-                      className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-100 bg-white"
+                      className="w-full min-w-0 max-w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-100 bg-white"
                     >
                       {Array.from({ length: 28 }, (_, i) => i + 1).map((day) => (
                         <option key={day} value={day}>
@@ -1000,7 +1009,7 @@ function CreateInvoiceModal({
                   </div>
                 )}
 
-                <p className="text-[12px] text-gray-500">
+                <p className="text-[12px] text-gray-500 break-words">
                   Next automatic send after the first invoice:{" "}
                   {firstRecurrenceAt({
                     interval: recurrenceInterval,
@@ -1017,7 +1026,7 @@ function CreateInvoiceModal({
           </div>
         </div>
 
-        <div className="px-5 sm:px-6 py-4 border-t border-line bg-[#FAFBFC] flex justify-end gap-2 shrink-0">
+        <div className="px-5 sm:px-6 py-4 border-t border-line bg-[#FAFBFC] flex flex-wrap justify-end gap-2 shrink-0 min-w-0">
           <button
             type="button"
             onClick={onClose}
@@ -1086,16 +1095,20 @@ function ClientSelectDropdown({
   }, []);
 
   return (
-    <div className="relative" ref={containerRef}>
+    <div className="relative min-w-0 max-w-full" ref={containerRef}>
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none bg-white text-left hover:border-gray-300 transition-colors"
+        className="w-full min-w-0 max-w-full flex items-center justify-between gap-2 border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none bg-white text-left hover:border-gray-300 transition-colors"
       >
-        <span className={selected ? "text-gray-900" : "text-gray-400"}>
+        <span
+          className={`min-w-0 truncate ${
+            selected ? "text-gray-900" : "text-gray-400"
+          }`}
+        >
           {selected ? clientLabel(selected) : "Select a client..."}
         </span>
-        <ChevronDown className="w-4 h-4 text-gray-400" />
+        <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />
       </button>
 
       {isOpen && (
@@ -1227,9 +1240,9 @@ function CreateClientModal({
             <X className="w-5 h-5" />
           </button>
         </div>
-        <div className="px-5 sm:px-6 py-5 space-y-5 overflow-y-auto flex-1 min-h-0">
+        <div className="px-5 sm:px-6 py-5 space-y-5 overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0">
           {formError && <p className="text-[13px] text-red-600">{formError}</p>}
-          <div>
+          <div className="min-w-0">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Primary Contact Name *
             </label>
@@ -1237,26 +1250,26 @@ function CreateClientModal({
               autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-100"
+              className="w-full min-w-0 max-w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-100"
             />
           </div>
-          <div>
+          <div className="min-w-0">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Company Name
             </label>
             <input
               value={company}
               onChange={(e) => setCompany(e.target.value)}
-              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-100"
+              className="w-full min-w-0 max-w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-100"
             />
           </div>
-          <div>
+          <div className="min-w-0">
             <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-100"
+              className="w-full min-w-0 max-w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-100"
             />
           </div>
         </div>

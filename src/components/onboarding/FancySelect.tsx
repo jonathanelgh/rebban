@@ -65,7 +65,7 @@ export function FancySelect({
   }, [open]);
 
   return (
-    <div className="relative" ref={containerRef}>
+    <div className="relative min-w-0 max-w-full" ref={containerRef}>
       <button
         type="button"
         aria-haspopup="listbox"

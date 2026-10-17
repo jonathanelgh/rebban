@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Calendar,
   ChevronLeft,
@@ -47,6 +48,22 @@ type TimeEntryRow = {
 };
 
 export default function TimeTrackingPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="w-full px-4 md:px-8 pt-10 pb-8 max-w-7xl mx-auto">
+          <p className="text-sm text-gray-400">Loading…</p>
+        </main>
+      }
+    >
+      <TimeTrackingPageInner />
+    </Suspense>
+  );
+}
+
+function TimeTrackingPageInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const {
     isTracking,
     selectedClient,
@@ -71,6 +88,12 @@ export default function TimeTrackingPage() {
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [invoiceBusy, setInvoiceBusy] = useState(false);
+
+  useEffect(() => {
+    if (searchParams.get("new") !== "1") return;
+    setShowAddModal(true);
+    router.replace("/time-tracking", { scroll: false });
+  }, [searchParams, router]);
 
   const weekStart = useMemo(() => startOfWeek(weekAnchor), [weekAnchor]);
   const weekEnd = useMemo(() => endOfWeek(weekAnchor), [weekAnchor]);
@@ -376,7 +399,7 @@ export default function TimeTrackingPage() {
           <button
             type="button"
             onClick={() => setShowAddModal(true)}
-            className="btn-primary px-5 py-2.5 rounded-full text-sm flex items-center gap-2"
+            className="btn-primary px-5 py-2.5 rounded-full text-sm hidden md:inline-flex items-center gap-2"
           >
             <Plus className="w-4 h-4" />
             Add time

@@ -1,7 +1,14 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import React, {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Plus,
   Search,
@@ -123,7 +130,22 @@ function actionForStatus(status: ProposalStatus) {
 }
 
 export default function ProposalsPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="w-full px-4 md:px-8 pt-10 pb-8 max-w-7xl mx-auto">
+          <p className="text-sm text-gray-400">Loading…</p>
+        </main>
+      }
+    >
+      <ProposalsPageInner />
+    </Suspense>
+  );
+}
+
+function ProposalsPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const {
     organizationId,
     organizationCurrency,
@@ -148,14 +170,20 @@ export default function ProposalsPage() {
   } | null>(null);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("sent") !== "1") return;
+    if (searchParams.get("new") === "1") {
+      setIsModalOpen(true);
+      router.replace("/proposals", { scroll: false });
+    }
+  }, [searchParams, router]);
+
+  useEffect(() => {
+    if (searchParams.get("sent") !== "1") return;
     setSentFeedback({
-      to: params.get("to") || "",
-      title: params.get("title") || "Proposal",
+      to: searchParams.get("to") || "",
+      title: searchParams.get("title") || "Proposal",
     });
     router.replace("/proposals", { scroll: false });
-  }, [router]);
+  }, [searchParams, router]);
 
   const load = useCallback(async () => {
     if (!organizationId) {
@@ -399,7 +427,7 @@ export default function ProposalsPage() {
         <button
           type="button"
           onClick={() => setIsModalOpen(true)}
-          className="btn-primary px-5 py-2.5 rounded-full text-sm flex items-center gap-2"
+          className="btn-primary px-5 py-2.5 rounded-full text-sm hidden md:inline-flex items-center gap-2"
         >
           <Plus className="w-4 h-4" />
           New Proposal
@@ -893,16 +921,20 @@ function ClientSelectDropdown({
     : null;
 
   return (
-    <div className="relative" ref={containerRef}>
+    <div className="relative min-w-0 max-w-full" ref={containerRef}>
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none bg-white text-left hover:border-gray-300 transition-colors"
+        className="w-full min-w-0 max-w-full flex items-center justify-between gap-2 border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none bg-white text-left hover:border-gray-300 transition-colors"
       >
-        <span className={displayName ? "text-gray-900" : "text-gray-400"}>
+        <span
+          className={`min-w-0 truncate ${
+            displayName ? "text-gray-900" : "text-gray-400"
+          }`}
+        >
           {displayName || "Select a client..."}
         </span>
-        <ChevronDown className="w-4 h-4 text-gray-400" />
+        <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />
       </button>
 
       {isOpen && (
@@ -1045,7 +1077,7 @@ function CreateClientModal({
           </button>
         </div>
 
-        <div className="px-5 sm:px-6 py-5 space-y-5 overflow-y-auto flex-1 min-h-0">
+        <div className="px-5 sm:px-6 py-5 space-y-5 overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Primary Contact Name *
@@ -1291,7 +1323,7 @@ function CreateProposalModal({
           </button>
         </div>
 
-        <div className="px-5 sm:px-6 py-5 space-y-6 overflow-y-auto flex-1 min-h-0">
+        <div className="px-5 sm:px-6 py-5 space-y-6 overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0">
           <div className="flex p-1 bg-gray-100 rounded-xl gap-1">
             <button
               type="button"
@@ -1416,8 +1448,8 @@ function CreateProposalModal({
             </div>
           ) : (
             <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-6 relative z-10">
-                <div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-6 relative z-10 min-w-0">
+                <div className="min-w-0">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Client
                   </label>
@@ -1428,7 +1460,7 @@ function CreateProposalModal({
                     onCreateNew={() => setIsClientModalOpen(true)}
                   />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Project Category
                   </label>
@@ -1475,8 +1507,8 @@ function CreateProposalModal({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-6">
-                <div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-6 min-w-0">
+                <div className="min-w-0">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Currency
                   </label>
@@ -1486,18 +1518,18 @@ function CreateProposalModal({
                     onChange={setCurrency}
                   />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Estimated Value (Optional)
                   </label>
-                  <div className="relative">
+                  <div className="relative min-w-0">
                     <DollarSign className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                       type="text"
                       value={amount}
                       onChange={(e) => setAmount(e.target.value)}
                       placeholder="0.00"
-                      className="w-full border border-gray-200 rounded-xl pl-9 pr-4 py-3 text-sm focus:ring-2 focus:ring-blue-100 outline-none"
+                      className="w-full min-w-0 max-w-full border border-gray-200 rounded-xl pl-9 pr-4 py-3 text-sm focus:ring-2 focus:ring-blue-100 outline-none"
                     />
                   </div>
                 </div>

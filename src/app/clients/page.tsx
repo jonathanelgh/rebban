@@ -1,7 +1,14 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import React, {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Plus,
   Search,
@@ -92,7 +99,22 @@ function displayCompany(client: Pick<ClientRow, "company" | "name">) {
 }
 
 export default function ClientsPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="w-full px-4 md:px-8 pt-10 pb-8 max-w-7xl mx-auto">
+          <p className="text-sm text-gray-400">Loading…</p>
+        </main>
+      }
+    >
+      <ClientsPageInner />
+    </Suspense>
+  );
+}
+
+function ClientsPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const {
     organizationId,
     organizationCurrency,
@@ -108,6 +130,12 @@ export default function ClientsPage() {
   const [error, setError] = useState<string | null>(null);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (searchParams.get("new") !== "1") return;
+    setModalOpen(true);
+    router.replace("/clients", { scroll: false });
+  }, [searchParams, router]);
 
   const loadClients = useCallback(async () => {
     if (!organizationId) {
@@ -372,7 +400,7 @@ export default function ClientsPage() {
         <button
           type="button"
           onClick={() => setModalOpen(true)}
-          className="btn-primary px-5 py-2.5 rounded-full text-sm flex items-center gap-2 shrink-0"
+          className="btn-primary px-5 py-2.5 rounded-full text-sm hidden md:inline-flex items-center gap-2 shrink-0"
         >
           <Plus className="w-4 h-4" />
           New client

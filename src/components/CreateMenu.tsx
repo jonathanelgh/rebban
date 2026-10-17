@@ -14,25 +14,25 @@ import { useBilling } from "@/components/BillingContext";
 
 const CREATE_ITEMS = [
   {
-    href: "/proposals",
+    href: "/proposals?new=1",
     label: "New proposal",
     description: "Scope, pricing, and send for acceptance",
     icon: FileText,
   },
   {
-    href: "/clients",
+    href: "/clients?new=1",
     label: "New client",
     description: "Add a client to your workspace",
     icon: Users,
   },
   {
-    href: "/tasks",
+    href: "/tasks?new=1",
     label: "New task",
     description: "Add work to your board or list",
     icon: ListTodo,
   },
   {
-    href: "/time-tracking",
+    href: "/time-tracking?new=1",
     label: "Track time",
     description: "Start a timer for client work",
     icon: FolderKanban,

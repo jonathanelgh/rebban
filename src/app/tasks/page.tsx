@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   DndContext,
   DragOverlay,
@@ -136,6 +137,22 @@ function emptyForm(defaults?: Partial<TaskFormValues>): TaskFormValues {
 }
 
 export default function TasksPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="h-full min-h-0 w-full flex items-center justify-center">
+          <p className="text-sm text-gray-400">Loading…</p>
+        </main>
+      }
+    >
+      <TasksPageInner />
+    </Suspense>
+  );
+}
+
+function TasksPageInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const {
     userId,
     fullName,
@@ -584,6 +601,14 @@ export default function TasksPage() {
       defaults: { ...defaultsForScope(scope), column },
     });
   }
+
+  useEffect(() => {
+    if (searchParams.get("new") !== "1") return;
+    openCreate();
+    router.replace("/tasks", { scroll: false });
+    // Intentionally only react to the query flag.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, router]);
 
   function openEdit(task: Task) {
     setModalError(null);
@@ -1097,7 +1122,7 @@ export default function TasksPage() {
             <button
               type="button"
               onClick={() => openCreate()}
-              className="btn-primary inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm"
+              className="btn-primary hidden md:inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm"
             >
               <Plus className="w-4 h-4" />
               Add task

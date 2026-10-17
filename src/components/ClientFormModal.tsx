@@ -210,7 +210,7 @@ export function ClientFormModal({
           </button>
         </div>
 
-        <div className="px-5 sm:px-6 pb-2 space-y-4 overflow-y-auto flex-1 min-h-0">
+        <div className="px-5 sm:px-6 pb-2 space-y-4 overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 rounded-xl border border-line bg-[#FAFBFC] overflow-hidden flex items-center justify-center shrink-0">
               {logoPreview ? (

@@ -224,7 +224,7 @@ export function TaskModal({
           </button>
         </div>
 
-        <div className="px-5 sm:px-6 pb-2 space-y-4 overflow-y-auto flex-1 min-h-0 no-scrollbar">
+        <div className="px-5 sm:px-6 pb-2 space-y-4 overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0 no-scrollbar">
           {error && (
             <p className="text-[13px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-3.5 py-2.5">
               {error}

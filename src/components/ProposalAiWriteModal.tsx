@@ -77,7 +77,7 @@ export function ProposalAiWriteModal({
           </button>
         </div>
 
-        <div className="px-5 sm:px-6 py-5 space-y-4 overflow-y-auto flex-1 min-h-0">
+        <div className="px-5 sm:px-6 py-5 space-y-4 overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0">
           <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-5">
             <div className="flex items-start gap-3 text-sm text-gray-600 mb-4">
               <Sparkles className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />

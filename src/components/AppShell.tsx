@@ -32,8 +32,9 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
     pathname.startsWith("/forgot-password") ||
     pathname.startsWith("/reset-password") ||
     pathname.startsWith("/onboarding");
-  // Pages that already have a primary create CTA in the page header.
-  const hideCreateMenu =
+  // Desktop: hide shell Create where the page header already has a primary CTA.
+  // Mobile: always show Create in the top-right chrome (same as dashboard).
+  const hideCreateMenuOnDesktop =
     pathname === "/proposals" ||
     pathname.startsWith("/proposals/") ||
     pathname === "/clients" ||
@@ -43,9 +44,9 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
     pathname === "/invoices" ||
     pathname.startsWith("/invoices/") ||
     pathname === "/time-tracking" ||
-    pathname.startsWith("/time-tracking/") ||
-    pathname === "/admin" ||
-    pathname.startsWith("/admin/");
+    pathname.startsWith("/time-tracking/");
+  const hideCreateMenuEntirely =
+    pathname === "/admin" || pathname.startsWith("/admin/");
 
   useEffect(() => {
     setMobileNavOpen(false);
@@ -115,9 +116,11 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                   <Menu className="w-5 h-5" strokeWidth={1.75} />
                 )}
               </button>
-              {!hideCreateMenu && (
+              {!hideCreateMenuEntirely && (
                 <div
-                  className="pointer-events-auto ml-auto"
+                  className={`pointer-events-auto ml-auto ${
+                    hideCreateMenuOnDesktop ? "md:hidden" : ""
+                  }`}
                   onClick={(e) => e.stopPropagation()}
                 >
                   <CreateMenu />

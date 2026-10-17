@@ -182,7 +182,7 @@ export function ProposalActivityLog({
           </button>
         </div>
 
-        <div className="px-5 sm:px-6 py-4 overflow-y-auto flex-1 min-h-0">
+        <div className="px-5 sm:px-6 py-4 overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0">
           <ActivityList events={events} loading={loading} />
         </div>
       </div>

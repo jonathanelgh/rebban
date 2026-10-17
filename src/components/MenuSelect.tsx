@@ -50,7 +50,10 @@ export function MenuSelect<T extends string>({
   }, [open]);
 
   return (
-    <div ref={rootRef} className={`relative w-full text-left ${className}`}>
+    <div
+      ref={rootRef}
+      className={`relative w-full min-w-0 max-w-full text-left ${className}`}
+    >
       <button
         type="button"
         disabled={disabled}
@@ -62,7 +65,11 @@ export function MenuSelect<T extends string>({
           open ? "border-gray-300 ring-2 ring-blue-100" : ""
         }`}
       >
-        <span className={selected ? "text-gray-900" : "text-gray-400"}>
+        <span
+          className={`min-w-0 truncate ${
+            selected ? "text-gray-900" : "text-gray-400"
+          }`}
+        >
           {selected?.label ?? placeholder}
         </span>
         <ChevronDown
@@ -94,7 +101,9 @@ export function MenuSelect<T extends string>({
                   active ? "bg-[#FAFBFC] text-gray-900" : "text-gray-700 hover:bg-[#FAFBFC]"
                 }`}
               >
-                <span className="font-medium">{option.label}</span>
+                <span className="font-medium min-w-0 truncate">
+                  {option.label}
+                </span>
                 {active && (
                   <Check className="w-4 h-4 text-[#2563EB] shrink-0" strokeWidth={2} />
                 )}

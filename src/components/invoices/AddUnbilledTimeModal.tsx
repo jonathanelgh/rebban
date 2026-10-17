@@ -179,7 +179,7 @@ export function AddUnbilledTimeModal({
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden">
           {loading ? (
             <div className="px-6 py-12 text-center text-sm text-gray-500">
               Loading time entries…

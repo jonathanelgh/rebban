@@ -204,7 +204,7 @@ export function SendProposalModal({
           </div>
         </div>
 
-        <div className="px-5 sm:px-6 pb-2 overflow-y-auto flex-1 min-h-0">
+        <div className="px-5 sm:px-6 pb-2 overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0">
           {step.id === "recipient" && (
             <div className="space-y-4 pb-2">
               <p className="text-[14px] text-gray-500">
