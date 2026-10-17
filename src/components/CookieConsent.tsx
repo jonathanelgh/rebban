@@ -4,9 +4,7 @@ import React, { useEffect, useState } from "react";
 import Script from "next/script";
 import {
   COOKIE_PREFERENCES_EVENT,
-  acceptAllCookies,
   readCookieConsent,
-  rejectNonEssentialCookies,
   writeCookieConsent,
   type CookieConsentPreferences,
 } from "@/lib/cookies/consent";
@@ -23,6 +21,11 @@ declare global {
   }
 }
 
+/**
+ * Does not show a consent banner — that lives on rebban.com.
+ * Reads the shared `.rebban.com` consent cookie, loads GA/Meta when allowed,
+ * and opens preferences from Settings → Legal.
+ */
 export function CookieConsent() {
   const [ready, setReady] = useState(false);
   const [prefs, setPrefs] = useState<CookieConsentPreferences | null>(null);
@@ -61,7 +64,6 @@ export function CookieConsent() {
 
   if (!ready) return null;
 
-  const showBanner = !prefs && !panelOpen;
   const loadAnalytics = Boolean(prefs?.analytics && GA_ID);
   const loadMarketing = Boolean(prefs?.marketing && META_PIXEL_ID);
 
@@ -98,57 +100,6 @@ export function CookieConsent() {
         </Script>
       )}
 
-      {showBanner && (
-        <div className="fixed inset-x-0 bottom-0 z-[80] p-4 sm:p-6 pointer-events-none">
-          <div className="pointer-events-auto mx-auto max-w-xl rounded-2xl border border-line bg-white p-4 sm:p-5 shadow-[0_8px_30px_rgba(16,24,40,0.12)]">
-            <p className="text-[14px] font-semibold text-gray-900 tracking-tight">
-              Cookies
-            </p>
-            <p className="mt-1.5 text-[13px] text-gray-500 leading-relaxed">
-              We use essential cookies to run Rebban, and optional analytics and
-              marketing cookies (Google Analytics, Meta Pixel) to understand usage
-              and measure ads. See our{" "}
-              <a
-                href="https://rebban.com/privacy"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-medium text-[#2563EB] hover:text-[#1d4ed8]"
-              >
-                Privacy Policy
-              </a>
-              .
-            </p>
-            <div className="mt-4 flex flex-col-reverse sm:flex-row sm:flex-wrap gap-2 sm:justify-end">
-              <button
-                type="button"
-                onClick={() => {
-                  setDraftAnalytics(false);
-                  setDraftMarketing(false);
-                  setPanelOpen(true);
-                }}
-                className="rounded-xl px-3.5 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
-              >
-                Customize
-              </button>
-              <button
-                type="button"
-                onClick={() => applyPrefs(rejectNonEssentialCookies())}
-                className="rounded-xl border border-line px-3.5 py-2.5 text-sm font-medium text-gray-800 hover:bg-[#FAFBFC] transition-colors"
-              >
-                Essential only
-              </button>
-              <button
-                type="button"
-                onClick={() => applyPrefs(acceptAllCookies())}
-                className="btn-primary rounded-xl px-3.5 py-2.5 text-sm"
-              >
-                Accept all
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {panelOpen && (
         <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center p-4 bg-black/30">
           <div
@@ -164,7 +115,7 @@ export function CookieConsent() {
               Cookie preferences
             </h2>
             <p className="mt-1.5 text-[13px] text-gray-500 leading-relaxed">
-              Choose which optional cookies to allow. Essential cookies are always
+              These settings are shared with rebban.com. Essential cookies stay
               on.
             </p>
 
@@ -193,12 +144,8 @@ export function CookieConsent() {
               <button
                 type="button"
                 onClick={() => {
-                  if (!prefs) {
-                    setPanelOpen(false);
-                    return;
-                  }
-                  setDraftAnalytics(prefs.analytics);
-                  setDraftMarketing(prefs.marketing);
+                  setDraftAnalytics(prefs?.analytics ?? false);
+                  setDraftMarketing(prefs?.marketing ?? false);
                   setPanelOpen(false);
                 }}
                 className="rounded-xl px-3.5 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
