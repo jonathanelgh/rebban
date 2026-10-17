@@ -16,7 +16,11 @@ import {
   Percent,
   Trash2,
   Download,
+  Scale,
+  ExternalLink,
+  Cookie,
 } from "lucide-react";
+import { openCookiePreferences } from "@/lib/cookies/consent";
 import { TAX_RATE_PRESETS } from "@/lib/invoices/totals";
 import {
   normalizeBankgiro,
@@ -53,7 +57,8 @@ type SectionId =
   | "billing"
   | "tax"
   | "preferences"
-  | "integrations";
+  | "integrations"
+  | "legal";
 
 type NavSection = {
   id: SectionId;
@@ -153,6 +158,12 @@ function SettingsPageInner() {
       description: "Stripe, calendar, and more",
       icon: Link2,
     },
+    {
+      id: "legal",
+      label: "Legal",
+      description: "Terms, privacy, and account",
+      icon: Scale,
+    },
   ];
 
   const initialSection = (searchParams.get("section") as SectionId | null) || "profile";
@@ -166,6 +177,7 @@ function SettingsPageInner() {
       "tax",
       "preferences",
       "integrations",
+      "legal",
     ].includes(initialSection)
       ? initialSection
       : "profile"
@@ -1110,42 +1122,6 @@ function SettingsPageInner() {
                     </Field>
                   </div>
                 </div>
-
-                <div className="mt-10 rounded-2xl border border-red-100 bg-red-50/60 p-4">
-                  <div className="text-[14px] font-semibold text-red-900">
-                    Delete account
-                  </div>
-                  <p className="text-[13px] text-red-800/80 mt-1 leading-relaxed">
-                    Permanently delete your account and personal data. Workspaces
-                    you own are soft-deleted and any active subscription is
-                    canceled. This cannot be undone.
-                  </p>
-                  {deleteError && (
-                    <p className="mt-2 text-[13px] text-red-700">{deleteError}</p>
-                  )}
-                  <label className="block mt-3">
-                    <span className="block text-[12px] font-medium text-red-900 mb-1.5">
-                      Type delete to confirm
-                    </span>
-                    <input
-                      value={deleteConfirm}
-                      onChange={(e) => setDeleteConfirm(e.target.value)}
-                      className="w-full border border-red-200 rounded-xl px-3 py-2.5 text-sm bg-white outline-none focus:border-red-300"
-                      placeholder="delete"
-                      autoComplete="off"
-                      disabled={deletingAccount}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    disabled={deletingAccount || !userId}
-                    onClick={() => void handleDeleteAccount()}
-                    className="mt-3 w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    {deletingAccount ? "Deleting…" : "Delete my account"}
-                  </button>
-                </div>
               </Section>
             )}
 
@@ -2071,7 +2047,104 @@ function SettingsPageInner() {
               </Section>
             )}
 
-            {section !== "integrations" && section !== "billing" && (
+            {section === "legal" && (
+              <Section
+                title="Legal"
+                subtitle="Policies for Rebban and options to remove your account."
+              >
+                <div className="space-y-2">
+                  <a
+                    href="https://rebban.com/terms"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-between gap-3 rounded-2xl border border-line px-4 py-3.5 hover:bg-[#FAFBFC] transition-colors"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-[14px] font-medium text-gray-900">
+                        Terms of Service
+                      </div>
+                      <div className="text-[13px] text-gray-500 mt-0.5">
+                        Rules for using Rebban
+                      </div>
+                    </div>
+                    <ExternalLink className="w-4 h-4 text-gray-400 shrink-0" />
+                  </a>
+                  <a
+                    href="https://rebban.com/privacy"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-between gap-3 rounded-2xl border border-line px-4 py-3.5 hover:bg-[#FAFBFC] transition-colors"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-[14px] font-medium text-gray-900">
+                        Privacy Policy
+                      </div>
+                      <div className="text-[13px] text-gray-500 mt-0.5">
+                        How we collect and use data, including analytics
+                      </div>
+                    </div>
+                    <ExternalLink className="w-4 h-4 text-gray-400 shrink-0" />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => openCookiePreferences()}
+                    className="w-full flex items-center justify-between gap-3 rounded-2xl border border-line px-4 py-3.5 hover:bg-[#FAFBFC] transition-colors text-left"
+                  >
+                    <div className="min-w-0 flex items-start gap-3">
+                      <Cookie className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+                      <div>
+                        <div className="text-[14px] font-medium text-gray-900">
+                          Cookie preferences
+                        </div>
+                        <div className="text-[13px] text-gray-500 mt-0.5">
+                          Manage analytics and marketing cookies
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                </div>
+
+                <div className="mt-10 rounded-2xl border border-red-100 bg-red-50/60 p-4">
+                  <div className="text-[14px] font-semibold text-red-900">
+                    Delete account
+                  </div>
+                  <p className="text-[13px] text-red-800/80 mt-1 leading-relaxed">
+                    Permanently delete your account and personal data. Workspaces
+                    you own are soft-deleted and any active subscription is
+                    canceled. This cannot be undone.
+                  </p>
+                  {deleteError && (
+                    <p className="mt-2 text-[13px] text-red-700">{deleteError}</p>
+                  )}
+                  <label className="block mt-3">
+                    <span className="block text-[12px] font-medium text-red-900 mb-1.5">
+                      Type delete to confirm
+                    </span>
+                    <input
+                      value={deleteConfirm}
+                      onChange={(e) => setDeleteConfirm(e.target.value)}
+                      className="w-full border border-red-200 rounded-xl px-3 py-2.5 text-sm bg-white outline-none focus:border-red-300"
+                      placeholder="delete"
+                      autoComplete="off"
+                      disabled={deletingAccount}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    disabled={deletingAccount || !userId}
+                    onClick={() => void handleDeleteAccount()}
+                    className="mt-3 w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    {deletingAccount ? "Deleting…" : "Delete my account"}
+                  </button>
+                </div>
+              </Section>
+            )}
+
+            {section !== "integrations" &&
+              section !== "billing" &&
+              section !== "legal" && (
               <div className="mt-6 md:mt-8 pt-5 border-t border-line flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3">
                 {saved && (
                   <span className="inline-flex items-center justify-center gap-1.5 text-[13px] font-medium text-emerald-600">

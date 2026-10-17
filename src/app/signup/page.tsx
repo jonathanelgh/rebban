@@ -134,6 +134,28 @@ export default function SignupPage() {
           >
             {loading ? "Creating account…" : "Create account"}
           </button>
+
+          <p className="text-[12px] text-gray-500 text-center leading-snug pt-1">
+            By creating an account you agree to our{" "}
+            <a
+              href="https://rebban.com/terms"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[#2563EB] font-medium hover:text-[#1d4ed8]"
+            >
+              Terms
+            </a>{" "}
+            and{" "}
+            <a
+              href="https://rebban.com/privacy"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[#2563EB] font-medium hover:text-[#1d4ed8]"
+            >
+              Privacy Policy
+            </a>
+            .
+          </p>
         </form>
 
         <p className="text-sm text-gray-500 text-center mt-6">

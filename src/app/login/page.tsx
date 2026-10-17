@@ -132,6 +132,26 @@ export default function LoginPage() {
             Create an account
           </Link>
         </p>
+
+        <p className="text-[12px] text-gray-400 text-center mt-4">
+          <a
+            href="https://rebban.com/terms"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-gray-500 hover:text-gray-700"
+          >
+            Terms of Service
+          </a>
+          {" · "}
+          <a
+            href="https://rebban.com/privacy"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-gray-500 hover:text-gray-700"
+          >
+            Privacy Policy
+          </a>
+        </p>
       </div>
     </main>
   );

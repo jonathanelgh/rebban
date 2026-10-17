@@ -4,6 +4,7 @@ import { Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AppShell } from "@/components/AppShell";
 import { BillingProvider } from "@/components/BillingContext";
+import { CookieConsent } from "@/components/CookieConsent";
 import { ProfileProvider } from "@/components/ProfileContext";
 import { TimeTrackingProvider } from "@/components/TimeTrackingContext";
 
@@ -61,6 +62,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <BillingProvider>
             <TimeTrackingProvider>
               <AppShell>{children}</AppShell>
+              <CookieConsent />
             </TimeTrackingProvider>
           </BillingProvider>
         </ProfileProvider>
