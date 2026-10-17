@@ -7,6 +7,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { CreateMenu } from "@/components/CreateMenu";
 import { SupportChat } from "@/components/SupportChat";
 import { UpgradeModal } from "@/components/UpgradeModal";
+import { PastDueBillingBanner } from "@/components/PastDueBillingBanner";
 import { useBilling } from "@/components/BillingContext";
 import { isBillingExemptPath } from "@/lib/billing/plan";
 
@@ -128,13 +129,14 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
               )}
             </div>
             <div
-              className={`h-full min-h-0 max-md:pt-16 ${
+              className={`h-full min-h-0 flex flex-col max-md:pt-16 ${
                 pathname === "/" || pathname.startsWith("/tasks")
                   ? "overflow-hidden"
                   : "overflow-y-auto no-scrollbar"
               }`}
             >
-              {children}
+              <PastDueBillingBanner />
+              <div className="min-h-0 flex-1 flex flex-col">{children}</div>
             </div>
           </div>
         </div>

@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fulfillInvoiceCheckoutPaid } from "@/lib/invoices/fulfill-paid";
+import { handleSubscriptionInvoicePaymentFailed } from "@/lib/billing/payment-failed";
 import {
   getStripe,
-  getStripeWebhookSecret,
+  getStripeWebhookSecrets,
   isStripeConfigured,
 } from "@/lib/stripe/client";
 
@@ -126,10 +127,13 @@ export async function POST(request: Request) {
       );
     }
 
-    const secret = getStripeWebhookSecret();
-    if (!secret || secret === "whsec_...") {
+    const secrets = getStripeWebhookSecrets();
+    if (secrets.length === 0) {
       return NextResponse.json(
-        { error: "STRIPE_WEBHOOK_SECRET is not set" },
+        {
+          error:
+            "No Stripe webhook secrets set. Add STRIPE_WEBHOOK_SECRET (Connect) and/or STRIPE_BILLING_WEBHOOK_SECRET (Pro billing).",
+        },
         { status: 503 }
       );
     }
@@ -141,12 +145,21 @@ export async function POST(request: Request) {
     }
 
     const rawBody = await request.text();
-    let event: Stripe.Event;
-    try {
-      event = stripe.webhooks.constructEvent(rawBody, signature, secret);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Invalid signature";
-      return NextResponse.json({ error: message }, { status: 400 });
+    let event: Stripe.Event | null = null;
+    let lastError: string | null = null;
+    for (const secret of secrets) {
+      try {
+        event = stripe.webhooks.constructEvent(rawBody, signature, secret);
+        break;
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : "Invalid signature";
+      }
+    }
+    if (!event) {
+      return NextResponse.json(
+        { error: lastError || "Invalid signature" },
+        { status: 400 }
+      );
     }
 
     if (await alreadyProcessed(event.id)) {
@@ -171,6 +184,12 @@ export async function POST(request: Request) {
       case "customer.subscription.updated":
       case "customer.subscription.deleted": {
         await syncSubscription(event.data.object as Stripe.Subscription);
+        break;
+      }
+      case "invoice.payment_failed": {
+        await handleSubscriptionInvoicePaymentFailed(
+          event.data.object as Stripe.Invoice
+        );
         break;
       }
       case "account.updated": {

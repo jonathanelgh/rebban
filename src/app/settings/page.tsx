@@ -15,6 +15,7 @@ import {
   ImageIcon,
   Percent,
   Trash2,
+  Download,
 } from "lucide-react";
 import { TAX_RATE_PRESETS } from "@/lib/invoices/totals";
 import {
@@ -90,7 +91,7 @@ function SettingsPageInner() {
     loading: profileLoading,
     refresh,
   } = useProfile();
-  const { openUpgradeModal, refreshBilling } = useBilling();
+  const { openUpgradeModal, refreshBilling, pastDue } = useBilling();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
@@ -191,6 +192,25 @@ function SettingsPageInner() {
   const [billingStatus, setBillingStatus] = useState<string | null>(null);
   const [billingBusy, setBillingBusy] = useState(false);
   const [billingNotice, setBillingNotice] = useState<string | null>(null);
+  const [billingCancelAtPeriodEnd, setBillingCancelAtPeriodEnd] =
+    useState(false);
+  const [billingPeriodEnd, setBillingPeriodEnd] = useState<string | null>(null);
+  const [billingPaymentMethod, setBillingPaymentMethod] = useState<
+    string | null
+  >(null);
+  const [billingInvoices, setBillingInvoices] = useState<
+    Array<{
+      id: string;
+      number: string | null;
+      status: string;
+      amountLabel: string;
+      createdAt: string;
+      hostedInvoiceUrl: string | null;
+      invoicePdf: string | null;
+    }>
+  >([]);
+  const [billingInvoicesLoading, setBillingInvoicesLoading] = useState(false);
+  const [cancelConfirm, setCancelConfirm] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -465,6 +485,25 @@ function SettingsPageInner() {
       setBillingActive(Boolean(json.active));
       setBillingPlanLabel(json.planLabel || "Free");
       setBillingStatus(json.status || null);
+      setBillingCancelAtPeriodEnd(Boolean(json.cancelAtPeriodEnd));
+      setBillingPeriodEnd(json.currentPeriodEnd || null);
+      setBillingPaymentMethod(json.paymentMethodLabel || null);
+
+      if (json.active || json.hasCustomer) {
+        setBillingInvoicesLoading(true);
+        const invRes = await fetch("/api/stripe/billing/invoices");
+        if (!cancelled) {
+          if (invRes.ok) {
+            const invJson = await invRes.json();
+            setBillingInvoices(invJson.invoices || []);
+          } else {
+            setBillingInvoices([]);
+          }
+          setBillingInvoicesLoading(false);
+        }
+      } else {
+        setBillingInvoices([]);
+      }
     }
     void loadBilling();
     return () => {
@@ -547,10 +586,72 @@ function SettingsPageInner() {
     const json = await res.json();
     setBillingBusy(false);
     if (!res.ok || !json.url) {
-      setBillingNotice(json.error || "Could not open billing portal.");
+      setBillingNotice(json.error || "Could not open card update.");
       return;
     }
     window.location.href = json.url as string;
+  }
+
+  async function refreshBillingSection() {
+    const res = await fetch("/api/stripe/billing/status");
+    if (!res.ok) return;
+    const json = await res.json();
+    setBillingConfigured(Boolean(json.configured));
+    setBillingActive(Boolean(json.active));
+    setBillingPlanLabel(json.planLabel || "Free");
+    setBillingStatus(json.status || null);
+    setBillingCancelAtPeriodEnd(Boolean(json.cancelAtPeriodEnd));
+    setBillingPeriodEnd(json.currentPeriodEnd || null);
+    setBillingPaymentMethod(json.paymentMethodLabel || null);
+    await refreshBilling();
+  }
+
+  async function handleCancelSubscription() {
+    setBillingBusy(true);
+    setBillingNotice(null);
+    const res = await fetch("/api/stripe/billing/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const json = await res.json().catch(() => ({}));
+    setBillingBusy(false);
+    if (!res.ok) {
+      setBillingNotice(json.error || "Could not cancel subscription.");
+      return;
+    }
+    setCancelConfirm(false);
+    setBillingCancelAtPeriodEnd(true);
+    if (json.currentPeriodEnd) setBillingPeriodEnd(json.currentPeriodEnd);
+    setBillingNotice(
+      json.currentPeriodEnd
+        ? `Subscription will end on ${new Date(
+            json.currentPeriodEnd
+          ).toLocaleDateString(undefined, {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          })}. You’ll keep access until then.`
+        : "Subscription set to cancel at the end of the billing period."
+    );
+    await refreshBillingSection();
+  }
+
+  async function handleReactivateSubscription() {
+    setBillingBusy(true);
+    setBillingNotice(null);
+    const res = await fetch("/api/stripe/billing/reactivate", {
+      method: "POST",
+    });
+    const json = await res.json().catch(() => ({}));
+    setBillingBusy(false);
+    if (!res.ok) {
+      setBillingNotice(json.error || "Could not reactivate subscription.");
+      return;
+    }
+    setBillingCancelAtPeriodEnd(false);
+    setBillingNotice("Subscription reactivated. You’re staying on Pro.");
+    await refreshBillingSection();
   }
 
   function flashSaved() {
@@ -1424,58 +1525,81 @@ function SettingsPageInner() {
             {section === "billing" && (
               <Section
                 title="Billing"
-                subtitle="Your Rebban plan and payment method."
+                subtitle="Your Rebban plan, invoices, and subscription."
               >
                 {billingNotice && (
                   <p className="mb-4 text-[13px] text-gray-600 bg-[#FAFBFC] border border-line rounded-xl px-3.5 py-2.5">
                     {billingNotice}
                   </p>
                 )}
+                {pastDue && (
+                  <p className="mb-4 text-[13px] text-amber-950 bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-2.5">
+                    Your last payment failed. Update your card below — you keep
+                    Pro while Stripe retries.
+                  </p>
+                )}
                 <div className="rounded-2xl border border-line bg-[#FAFBFC] p-4 sm:p-5 mb-5">
                   <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
                     <div className="min-w-0">
-                      <div className="text-[13px] font-medium text-gray-500">Current plan</div>
+                      <div className="text-[13px] font-medium text-gray-500">
+                        Current plan
+                      </div>
                       <div className="text-xl font-semibold text-gray-900 mt-1">
                         {billingPlanLabel}
+                        {pastDue ? " · Past due" : ""}
                       </div>
                       <p className="text-[13px] text-gray-500 mt-1">
                         {billingActive
-                          ? `Status: ${billingStatus || "active"}`
+                          ? pastDue
+                            ? "Payment failed — update your card to avoid losing access."
+                            : billingCancelAtPeriodEnd && billingPeriodEnd
+                            ? `Cancels ${new Date(
+                                billingPeriodEnd
+                              ).toLocaleDateString(undefined, {
+                                month: "short",
+                                day: "numeric",
+                                year: "numeric",
+                              })} · access until then`
+                            : billingPeriodEnd
+                              ? `Renews ${new Date(
+                                  billingPeriodEnd
+                                ).toLocaleDateString(undefined, {
+                                  month: "short",
+                                  day: "numeric",
+                                  year: "numeric",
+                                })}`
+                              : `Status: ${billingStatus || "active"}`
                           : "7-day free trial, then upgrade to Pro to keep full access."}
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      disabled={billingBusy || (!billingActive && !billingConfigured)}
-                      onClick={() => {
-                        if (billingActive) {
-                          void handleBillingPortal();
-                          return;
-                        }
-                        openUpgradeModal();
-                      }}
-                      className="btn-primary w-full sm:w-auto px-4 py-2.5 rounded-full text-sm disabled:opacity-50"
-                    >
-                      {billingBusy
-                        ? "Please wait…"
-                        : billingActive
-                          ? "Manage plan"
-                          : "Upgrade"}
-                    </button>
+                    {!billingActive && (
+                      <button
+                        type="button"
+                        disabled={billingBusy || !billingConfigured}
+                        onClick={() => openUpgradeModal()}
+                        className="btn-primary w-full sm:w-auto px-4 py-2.5 rounded-full text-sm disabled:opacity-50"
+                      >
+                        Upgrade
+                      </button>
+                    )}
                   </div>
                 </div>
-                <div className="rounded-2xl border border-line p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+
+                <div className="rounded-2xl border border-line p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 mb-5">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center text-gray-600 shrink-0">
                       <CreditCard className="w-5 h-5" strokeWidth={1.75} />
                     </div>
                     <div className="min-w-0">
                       <div className="text-[14px] font-medium text-gray-900">
-                        {billingActive ? "Payment method on file" : "No payment method"}
+                        {billingPaymentMethod ||
+                          (billingActive
+                            ? "Payment method on file"
+                            : "No payment method")}
                       </div>
                       <div className="text-[12px] text-gray-400 mt-0.5">
                         {billingConfigured
-                          ? "Managed securely in the Stripe Customer Portal"
+                          ? "Card updates are handled securely by Stripe"
                           : "Add STRIPE_PRICE_ID to enable paid plans"}
                       </div>
                     </div>
@@ -1487,10 +1611,127 @@ function SettingsPageInner() {
                       onClick={() => void handleBillingPortal()}
                       className="text-sm font-medium text-[#2563EB] hover:text-[#1d4ed8] transition-colors self-start sm:self-auto disabled:opacity-50"
                     >
-                      Update
+                      Update card
                     </button>
                   )}
                 </div>
+
+                {(billingActive || billingInvoices.length > 0) && (
+                  <div className="rounded-2xl border border-line overflow-hidden mb-5 min-w-0">
+                    <div className="px-4 sm:px-5 py-3.5 border-b border-line bg-[#FAFBFC]">
+                      <div className="text-[14px] font-semibold text-gray-900">
+                        Invoices
+                      </div>
+                      <p className="text-[12px] text-gray-500 mt-0.5">
+                        Your Rebban subscription receipts.
+                      </p>
+                    </div>
+                    {billingInvoicesLoading ? (
+                      <p className="px-4 sm:px-5 py-8 text-sm text-gray-400 text-center">
+                        Loading invoices…
+                      </p>
+                    ) : billingInvoices.length === 0 ? (
+                      <p className="px-4 sm:px-5 py-8 text-sm text-gray-400 text-center">
+                        No invoices yet.
+                      </p>
+                    ) : (
+                      <ul className="divide-y divide-line">
+                        {billingInvoices.map((inv) => (
+                          <li
+                            key={inv.id}
+                            className="px-4 sm:px-5 py-3.5 flex items-center gap-3 min-w-0"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="text-[14px] font-medium text-gray-900 truncate">
+                                {inv.number || "Invoice"}
+                              </div>
+                              <div className="text-[12px] text-gray-500 mt-0.5">
+                                {new Date(inv.createdAt).toLocaleDateString(
+                                  undefined,
+                                  {
+                                    month: "short",
+                                    day: "numeric",
+                                    year: "numeric",
+                                  }
+                                )}
+                                {" · "}
+                                <span className="capitalize">{inv.status}</span>
+                                {" · "}
+                                {inv.amountLabel}
+                              </div>
+                            </div>
+                            {(inv.invoicePdf || inv.hostedInvoiceUrl) && (
+                              <a
+                                href={
+                                  inv.invoicePdf || inv.hostedInvoiceUrl || "#"
+                                }
+                                target="_blank"
+                                rel="noreferrer"
+                                className="shrink-0 inline-flex items-center gap-1.5 text-sm font-medium text-[#2563EB] hover:text-[#1d4ed8]"
+                              >
+                                <Download className="w-4 h-4" />
+                                PDF
+                              </a>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+
+                {billingActive && (
+                  <div className="rounded-2xl border border-red-100 bg-red-50/40 p-4 sm:p-5">
+                    <div className="text-[14px] font-semibold text-gray-900">
+                      Cancel subscription
+                    </div>
+                    <p className="text-[13px] text-gray-600 mt-1 leading-relaxed">
+                      {billingCancelAtPeriodEnd
+                        ? "Your plan is already set to end after this billing period. You can keep Pro by reactivating."
+                        : "You’ll keep Pro until the end of the current billing period. No further charges after that."}
+                    </p>
+                    {billingCancelAtPeriodEnd ? (
+                      <button
+                        type="button"
+                        disabled={billingBusy}
+                        onClick={() => void handleReactivateSubscription()}
+                        className="mt-3 btn-primary px-4 py-2.5 rounded-xl text-sm disabled:opacity-50"
+                      >
+                        {billingBusy ? "Please wait…" : "Keep Pro"}
+                      </button>
+                    ) : cancelConfirm ? (
+                      <div className="mt-3 flex flex-col sm:flex-row gap-2">
+                        <button
+                          type="button"
+                          disabled={billingBusy}
+                          onClick={() => void handleCancelSubscription()}
+                          className="inline-flex items-center justify-center rounded-xl bg-red-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                        >
+                          {billingBusy
+                            ? "Canceling…"
+                            : "Confirm cancel at period end"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={billingBusy}
+                          onClick={() => setCancelConfirm(false)}
+                          className="inline-flex items-center justify-center rounded-xl border border-line bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          Never mind
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={billingBusy}
+                        onClick={() => setCancelConfirm(true)}
+                        className="mt-3 inline-flex items-center justify-center rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                      >
+                        Cancel subscription
+                      </button>
+                    )}
+                  </div>
+                )}
               </Section>
             )}
 

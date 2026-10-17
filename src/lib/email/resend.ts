@@ -678,6 +678,58 @@ export async function sendProposalDeclinedEmail(options: {
   });
 }
 
+export async function sendSubscriptionPaymentFailedEmail(options: {
+  to: string;
+  recipientName?: string | null;
+  organizationName?: string | null;
+  amountLabel: string;
+  invoiceNumber?: string | null;
+  attemptCount?: number;
+}) {
+  const esc = brandEscapeHtml;
+  const first = firstName(options.recipientName);
+  const greeting = first ? `Hi ${first},` : "Hi,";
+  const invoiceLabel = options.invoiceNumber?.trim()
+    ? `Invoice ${options.invoiceNumber.trim()}`
+    : "Your Pro subscription invoice";
+  const billingUrl = `${getAppUrl()}/settings?section=billing`;
+  const attempt =
+    options.attemptCount && options.attemptCount > 1
+      ? ` (attempt ${options.attemptCount})`
+      : "";
+
+  const bodyHtml = `
+    <p style="margin:0 0 12px;">${esc(greeting)}</p>
+    <p style="margin:0;">
+      We couldn’t charge your card for Rebban Pro${esc(attempt)}.
+      Update your payment method to keep proposals, invoices, and reminders running.
+    </p>
+    ${emailDetailCard([
+      { label: "Amount", value: options.amountLabel },
+      { label: "Invoice", value: invoiceLabel },
+      ...(options.organizationName?.trim()
+        ? [{ label: "Workspace", value: options.organizationName.trim() }]
+        : []),
+    ])}
+    <p style="margin:20px 0 0;font-size:14px;color:#6B7280;">
+      Stripe will retry automatically. You keep access while the subscription is past due.
+    </p>`;
+
+  const html = rebbanEmailLayout({
+    preheader: `Payment failed for Rebban Pro — ${options.amountLabel}`,
+    title: "Payment failed",
+    bodyHtml,
+    cta: { label: "Update payment method", url: billingUrl },
+    footerNote: null,
+  });
+
+  return sendHtmlEmail({
+    to: options.to,
+    subject: `Action needed: Rebban Pro payment failed · ${options.amountLabel}`,
+    html,
+  });
+}
+
 function escapeHtml(value: string) {
   return value
     .replace(/&/g, "&amp;")

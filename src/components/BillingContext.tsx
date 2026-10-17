@@ -18,6 +18,7 @@ type BillingState = {
   yearlyConfigured: boolean;
   entitled: boolean;
   paid: boolean;
+  pastDue: boolean;
   trialActive: boolean;
   trialExpired: boolean;
   trialDaysLeft: number | null;
@@ -104,6 +105,8 @@ export function BillingProvider({ children }: { children: React.ReactNode }) {
     [subscriptionStatus, trialEndsAt, complimentaryPro]
   );
 
+  const pastDue = subscriptionStatus === "past_due";
+
   const value = useMemo<BillingState>(
     () => ({
       loading: profileLoading || loading,
@@ -111,6 +114,7 @@ export function BillingProvider({ children }: { children: React.ReactNode }) {
       yearlyConfigured,
       entitled: entitlement.entitled,
       paid: entitlement.paid,
+      pastDue,
       trialActive: entitlement.trialActive,
       trialExpired: entitlement.trialExpired,
       trialDaysLeft: entitlement.trialDaysLeft,
@@ -129,6 +133,7 @@ export function BillingProvider({ children }: { children: React.ReactNode }) {
       configured,
       yearlyConfigured,
       entitlement,
+      pastDue,
       subscriptionStatus,
       pricing,
       upgradeModalOpen,

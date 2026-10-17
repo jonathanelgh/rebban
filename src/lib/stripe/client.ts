@@ -35,8 +35,34 @@ export function toStripeAmount(amount: number) {
   return Math.round((Number(amount) || 0) * 100);
 }
 
+/** Connect webhook (client → freelancer invoice pay + account.updated). */
+export function getStripeConnectWebhookSecret() {
+  const secret = process.env.STRIPE_WEBHOOK_SECRET?.trim() || null;
+  if (!secret || secret === "whsec_...") return null;
+  return secret;
+}
+
+/** Platform Billing webhook (freelancer → you / Pro subscriptions). */
+export function getStripeBillingWebhookSecret() {
+  const secret = process.env.STRIPE_BILLING_WEBHOOK_SECRET?.trim() || null;
+  if (!secret || secret === "whsec_...") return null;
+  return secret;
+}
+
+/**
+ * Signing secrets for `/api/stripe/webhook`.
+ * Both Dashboard endpoints can point at the same URL; we try each secret.
+ */
+export function getStripeWebhookSecrets() {
+  return [
+    getStripeConnectWebhookSecret(),
+    getStripeBillingWebhookSecret(),
+  ].filter((secret): secret is string => Boolean(secret));
+}
+
+/** @deprecated Prefer getStripeConnectWebhookSecret / getStripeWebhookSecrets */
 export function getStripeWebhookSecret() {
-  return process.env.STRIPE_WEBHOOK_SECRET?.trim() || null;
+  return getStripeConnectWebhookSecret();
 }
 
 export function getPlatformPriceId() {

@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import {
   getPlatformPriceId,
   getPlatformYearlyPriceId,
+  getStripe,
   isStripeConfigured,
 } from "@/lib/stripe/client";
 import {
@@ -11,6 +12,7 @@ import {
 } from "@/lib/stripe/org";
 import { computeEntitlement } from "@/lib/billing/plan";
 import { fetchPlatformPricing } from "@/lib/stripe/prices";
+import { subscriptionPeriodEndIso } from "@/lib/stripe/billing-customer";
 
 export async function GET() {
   const supabase = await createClient();
@@ -36,6 +38,32 @@ export async function GET() {
   });
   const pricing = await fetchPlatformPricing();
 
+  let cancelAtPeriodEnd = false;
+  let currentPeriodEnd: string | null = null;
+  let paymentMethodLabel: string | null = null;
+
+  if (
+    isStripeConfigured() &&
+    org?.stripe_subscription_id &&
+    entitlement.paid
+  ) {
+    try {
+      const stripe = getStripe();
+      const sub = await stripe.subscriptions.retrieve(
+        org.stripe_subscription_id,
+        { expand: ["default_payment_method"] }
+      );
+      cancelAtPeriodEnd = Boolean(sub.cancel_at_period_end);
+      currentPeriodEnd = subscriptionPeriodEndIso(sub);
+      const pm = sub.default_payment_method;
+      if (pm && typeof pm !== "string" && pm.type === "card" && pm.card) {
+        paymentMethodLabel = `${pm.card.brand?.toUpperCase() || "Card"} ···· ${pm.card.last4}`;
+      }
+    } catch (err) {
+      console.error("[billing/status] subscription lookup failed", err);
+    }
+  }
+
   return NextResponse.json({
     configured: isStripeConfigured() && Boolean(getPlatformPriceId()),
     yearlyConfigured: Boolean(getPlatformYearlyPriceId() && pricing.yearly),
@@ -52,5 +80,8 @@ export async function GET() {
     complimentaryPro: entitlement.complimentaryPro,
     planLabel: entitlement.planLabel,
     pricing,
+    cancelAtPeriodEnd,
+    currentPeriodEnd,
+    paymentMethodLabel,
   });
 }
