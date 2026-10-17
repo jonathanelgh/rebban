@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Search } from "lucide-react";
 import type { AdminOrgRow } from "@/lib/platform-admin";
+import { AdminUserDrawer } from "@/components/admin/AdminUserDrawer";
 
 function formatDate(iso: string) {
   const d = new Date(iso);
@@ -26,32 +27,35 @@ export default function AdminUsersPage() {
   const [plan, setPlan] = useState<"all" | "paid" | "trial" | "free">("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (q.trim()) params.set("q", q.trim());
+    if (plan !== "all") params.set("plan", plan);
+    const res = await fetch(`/api/admin/organizations?${params.toString()}`);
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setError(json.error || "Could not load users.");
+      setLoading(false);
+      return;
+    }
+    setOrgs((json.organizations || []) as AdminOrgRow[]);
+    setError(null);
+    setLoading(false);
+  }, [q, plan]);
 
   useEffect(() => {
     let cancelled = false;
-    const handle = window.setTimeout(async () => {
-      setLoading(true);
-      const params = new URLSearchParams();
-      if (q.trim()) params.set("q", q.trim());
-      if (plan !== "all") params.set("plan", plan);
-      const res = await fetch(`/api/admin/organizations?${params.toString()}`);
-      const json = await res.json().catch(() => ({}));
-      if (cancelled) return;
-      if (!res.ok) {
-        setError(json.error || "Could not load users.");
-        setLoading(false);
-        return;
-      }
-      setOrgs((json.organizations || []) as AdminOrgRow[]);
-      setError(null);
-      setLoading(false);
+    const handle = window.setTimeout(() => {
+      if (!cancelled) void load();
     }, 200);
-
     return () => {
       cancelled = true;
       window.clearTimeout(handle);
     };
-  }, [q, plan]);
+  }, [load]);
 
   return (
     <main className="w-full px-4 sm:px-8 pt-10 pb-8 max-w-7xl mx-auto relative">
@@ -124,7 +128,11 @@ export default function AdminUsersPage() {
               </thead>
               <tbody className="divide-y divide-line">
                 {orgs.map((org) => (
-                  <tr key={org.id} className="hover:bg-gray-50/80">
+                  <tr
+                    key={org.id}
+                    onClick={() => setSelectedOrgId(org.id)}
+                    className="hover:bg-gray-50/80 cursor-pointer"
+                  >
                     <td className="px-4 py-3">
                       <div className="font-medium text-gray-900">{org.name}</div>
                       <div className="text-[12px] text-gray-400 capitalize">
@@ -146,7 +154,11 @@ export default function AdminUsersPage() {
                       >
                         {org.planLabel}
                       </span>
-                      {org.subscriptionStatus ? (
+                      {org.complimentaryPro ? (
+                        <div className="text-[11px] text-violet-600 mt-1">
+                          Complimentary
+                        </div>
+                      ) : org.subscriptionStatus ? (
                         <div className="text-[11px] text-gray-400 mt-1">
                           {org.subscriptionStatus}
                         </div>
@@ -167,6 +179,14 @@ export default function AdminUsersPage() {
           </div>
         )}
       </div>
+
+      {selectedOrgId && (
+        <AdminUserDrawer
+          orgId={selectedOrgId}
+          onClose={() => setSelectedOrgId(null)}
+          onChanged={() => void load()}
+        />
+      )}
     </main>
   );
 }

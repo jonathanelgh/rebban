@@ -4,15 +4,11 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { GoogleAuthButton } from "@/components/GoogleAuthButton";
-import type { Enums } from "@/types/database";
 
 export default function SignupPage() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [organizationName, setOrganizationName] = useState("");
-  const [organizationType, setOrganizationType] =
-    useState<Enums<"organization_type">>("solo");
   const [marketingConsent, setMarketingConsent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -23,20 +19,16 @@ export default function SignupPage() {
     setLoading(true);
 
     const supabase = createClient();
-    const orgName =
-      organizationName.trim() ||
-      (organizationType === "agency"
-        ? `${fullName.trim() || "My"} Agency`
-        : `${fullName.trim() || "My"}'s workspace`);
+    const name = fullName.trim();
 
     const { error: signUpError } = await supabase.auth.signUp({
       email: email.trim(),
       password,
       options: {
         data: {
-          full_name: fullName.trim(),
-          organization_name: orgName,
-          organization_type: organizationType,
+          full_name: name,
+          organization_name: name || "My studio",
+          organization_type: "solo",
           marketing_consent: marketingConsent,
         },
       },
@@ -64,51 +56,11 @@ export default function SignupPage() {
             Create your account
           </h1>
           <p className="text-sm text-gray-500 mt-1.5">
-            Start as a freelancer or set up an agency workspace.
+            Start free as a freelancer — proposals to paid, in one place.
           </p>
         </div>
 
         <div className="space-y-4 mb-4">
-          <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-[#FAFBFC] border border-line">
-            <button
-              type="button"
-              onClick={() => setOrganizationType("solo")}
-              className={`rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
-                organizationType === "solo"
-                  ? "bg-white text-gray-900 shadow-sm border border-line"
-                  : "text-gray-500 hover:text-gray-800"
-              }`}
-            >
-              Freelancer
-            </button>
-            <button
-              type="button"
-              onClick={() => setOrganizationType("agency")}
-              className={`rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
-                organizationType === "agency"
-                  ? "bg-white text-gray-900 shadow-sm border border-line"
-                  : "text-gray-500 hover:text-gray-800"
-              }`}
-            >
-              Agency
-            </button>
-          </div>
-
-          <Field
-            label={
-              organizationType === "agency" ? "Agency name" : "Workspace name"
-            }
-          >
-            <input
-              value={organizationName}
-              onChange={(e) => setOrganizationName(e.target.value)}
-              className={inputClass}
-              placeholder={
-                organizationType === "agency" ? "Nordic Elk AB" : "Optional"
-              }
-            />
-          </Field>
-
           <label className="flex items-start gap-2.5 cursor-pointer">
             <input
               type="checkbox"
@@ -124,8 +76,7 @@ export default function SignupPage() {
           <GoogleAuthButton
             label="Sign up with Google"
             next="/onboarding"
-            organizationType={organizationType}
-            organizationName={organizationName}
+            organizationType="solo"
             marketingConsent={marketingConsent}
           />
 

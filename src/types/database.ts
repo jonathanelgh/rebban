@@ -232,6 +232,7 @@ export type Database = {
           position: number
           quantity: number
           time_entry_id: string | null
+          unit: Database["public"]["Enums"]["invoice_line_unit"]
           unit_price: number
         }
         Insert: {
@@ -244,6 +245,7 @@ export type Database = {
           position?: number
           quantity?: number
           time_entry_id?: string | null
+          unit?: Database["public"]["Enums"]["invoice_line_unit"]
           unit_price?: number
         }
         Update: {
@@ -256,6 +258,7 @@ export type Database = {
           position?: number
           quantity?: number
           time_entry_id?: string | null
+          unit?: Database["public"]["Enums"]["invoice_line_unit"]
           unit_price?: number
         }
         Relationships: [
@@ -378,6 +381,15 @@ export type Database = {
           prices_include_tax: boolean
           project_id: string | null
           proposal_id: string | null
+          recurrence_day_of_month: number | null
+          recurrence_enabled: boolean
+          recurrence_interval:
+            | Database["public"]["Enums"]["invoice_recurrence_interval"]
+            | null
+          recurrence_last_sent_at: string | null
+          recurrence_next_at: string | null
+          recurrence_source_id: string | null
+          recurrence_weekday: number | null
           reference_number: string | null
           sent_at: string | null
           shipping_address: string | null
@@ -418,6 +430,15 @@ export type Database = {
           prices_include_tax?: boolean
           project_id?: string | null
           proposal_id?: string | null
+          recurrence_day_of_month?: number | null
+          recurrence_enabled?: boolean
+          recurrence_interval?:
+            | Database["public"]["Enums"]["invoice_recurrence_interval"]
+            | null
+          recurrence_last_sent_at?: string | null
+          recurrence_next_at?: string | null
+          recurrence_source_id?: string | null
+          recurrence_weekday?: number | null
           reference_number?: string | null
           sent_at?: string | null
           shipping_address?: string | null
@@ -458,6 +479,15 @@ export type Database = {
           prices_include_tax?: boolean
           project_id?: string | null
           proposal_id?: string | null
+          recurrence_day_of_month?: number | null
+          recurrence_enabled?: boolean
+          recurrence_interval?:
+            | Database["public"]["Enums"]["invoice_recurrence_interval"]
+            | null
+          recurrence_last_sent_at?: string | null
+          recurrence_next_at?: string | null
+          recurrence_source_id?: string | null
+          recurrence_weekday?: number | null
           reference_number?: string | null
           sent_at?: string | null
           shipping_address?: string | null
@@ -505,6 +535,13 @@ export type Database = {
             columns: ["proposal_id"]
             isOneToOne: false
             referencedRelation: "proposals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoices_recurrence_source_id_fkey"
+            columns: ["recurrence_source_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
             referencedColumns: ["id"]
           },
         ]
@@ -653,6 +690,7 @@ export type Database = {
           country: string | null
           created_at: string
           created_by: string | null
+          complimentary_pro: boolean
           currency: string
           custom_tax_rates: number[]
           default_hourly_rate: number
@@ -667,6 +705,8 @@ export type Database = {
           logo_url: string | null
           name: string
           org_number: string | null
+          payment_bankgiro: string | null
+          payment_iban: string | null
           slug: string
           stripe_account_id: string | null
           stripe_charges_enabled: boolean
@@ -687,6 +727,7 @@ export type Database = {
           country?: string | null
           created_at?: string
           created_by?: string | null
+          complimentary_pro?: boolean
           currency?: string
           custom_tax_rates?: number[]
           default_hourly_rate?: number
@@ -701,6 +742,8 @@ export type Database = {
           logo_url?: string | null
           name: string
           org_number?: string | null
+          payment_bankgiro?: string | null
+          payment_iban?: string | null
           slug: string
           stripe_account_id?: string | null
           stripe_charges_enabled?: boolean
@@ -721,6 +764,7 @@ export type Database = {
           country?: string | null
           created_at?: string
           created_by?: string | null
+          complimentary_pro?: boolean
           currency?: string
           custom_tax_rates?: number[]
           default_hourly_rate?: number
@@ -735,6 +779,8 @@ export type Database = {
           logo_url?: string | null
           name?: string
           org_number?: string | null
+          payment_bankgiro?: string | null
+          payment_iban?: string | null
           slug?: string
           stripe_account_id?: string | null
           stripe_charges_enabled?: boolean
@@ -1380,6 +1426,7 @@ export type Database = {
       }
       projects: {
         Row: {
+          billing_type: Database["public"]["Enums"]["project_billing_type"]
           budget_amount: number | null
           budget_hours: number | null
           client_id: string
@@ -1391,11 +1438,19 @@ export type Database = {
           id: string
           name: string
           organization_id: string
+          proposal_id: string | null
+          retainer_amount: number | null
+          retainer_auto_invoice: boolean
+          retainer_currency: string | null
+          retainer_day_of_month: number
+          retainer_last_invoiced_at: string | null
+          retainer_next_invoice_at: string | null
           start_date: string | null
           status: Database["public"]["Enums"]["project_status"]
           updated_at: string
         }
         Insert: {
+          billing_type?: Database["public"]["Enums"]["project_billing_type"]
           budget_amount?: number | null
           budget_hours?: number | null
           client_id: string
@@ -1407,11 +1462,19 @@ export type Database = {
           id?: string
           name: string
           organization_id: string
+          proposal_id?: string | null
+          retainer_amount?: number | null
+          retainer_auto_invoice?: boolean
+          retainer_currency?: string | null
+          retainer_day_of_month?: number
+          retainer_last_invoiced_at?: string | null
+          retainer_next_invoice_at?: string | null
           start_date?: string | null
           status?: Database["public"]["Enums"]["project_status"]
           updated_at?: string
         }
         Update: {
+          billing_type?: Database["public"]["Enums"]["project_billing_type"]
           budget_amount?: number | null
           budget_hours?: number | null
           client_id?: string
@@ -1423,6 +1486,13 @@ export type Database = {
           id?: string
           name?: string
           organization_id?: string
+          proposal_id?: string | null
+          retainer_amount?: number | null
+          retainer_auto_invoice?: boolean
+          retainer_currency?: string | null
+          retainer_day_of_month?: number
+          retainer_last_invoiced_at?: string | null
+          retainer_next_invoice_at?: string | null
           start_date?: string | null
           status?: Database["public"]["Enums"]["project_status"]
           updated_at?: string
@@ -1440,6 +1510,13 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "projects_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "proposals"
             referencedColumns: ["id"]
           },
         ]
@@ -1664,6 +1741,10 @@ export type Database = {
           id: string
           ip_address: string | null
           organization_id: string
+          pdf_byte_size: number | null
+          pdf_filename: string | null
+          pdf_path: string | null
+          pdf_stored_at: string | null
           proposal_id: string
           share_link_id: string | null
           signature_image: string | null
@@ -1683,6 +1764,10 @@ export type Database = {
           id?: string
           ip_address?: string | null
           organization_id: string
+          pdf_byte_size?: number | null
+          pdf_filename?: string | null
+          pdf_path?: string | null
+          pdf_stored_at?: string | null
           proposal_id: string
           share_link_id?: string | null
           signature_image?: string | null
@@ -1702,6 +1787,10 @@ export type Database = {
           id?: string
           ip_address?: string | null
           organization_id?: string
+          pdf_byte_size?: number | null
+          pdf_filename?: string | null
+          pdf_path?: string | null
+          pdf_stored_at?: string | null
           proposal_id?: string
           share_link_id?: string | null
           signature_image?: string | null
@@ -2021,6 +2110,177 @@ export type Database = {
           },
         ]
       }
+      support_messages: {
+        Row: {
+          agent: Database["public"]["Enums"]["support_agent"]
+          author_user_id: string | null
+          body: string
+          created_at: string
+          email_sent_at: string | null
+          id: string
+          is_internal: boolean
+          metadata: Json
+          ticket_id: string
+        }
+        Insert: {
+          agent: Database["public"]["Enums"]["support_agent"]
+          author_user_id?: string | null
+          body: string
+          created_at?: string
+          email_sent_at?: string | null
+          id?: string
+          is_internal?: boolean
+          metadata?: Json
+          ticket_id: string
+        }
+        Update: {
+          agent?: Database["public"]["Enums"]["support_agent"]
+          author_user_id?: string | null
+          body?: string
+          created_at?: string
+          email_sent_at?: string | null
+          id?: string
+          is_internal?: boolean
+          metadata?: Json
+          ticket_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_messages_ticket_id_fkey"
+            columns: ["ticket_id"]
+            isOneToOne: false
+            referencedRelation: "support_tickets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      support_ticket_events: {
+        Row: {
+          actor_user_id: string | null
+          agent: Database["public"]["Enums"]["support_agent"] | null
+          created_at: string
+          event_type: string
+          id: string
+          payload: Json
+          ticket_id: string
+        }
+        Insert: {
+          actor_user_id?: string | null
+          agent?: Database["public"]["Enums"]["support_agent"] | null
+          created_at?: string
+          event_type: string
+          id?: string
+          payload?: Json
+          ticket_id: string
+        }
+        Update: {
+          actor_user_id?: string | null
+          agent?: Database["public"]["Enums"]["support_agent"] | null
+          created_at?: string
+          event_type?: string
+          id?: string
+          payload?: Json
+          ticket_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_ticket_events_ticket_id_fkey"
+            columns: ["ticket_id"]
+            isOneToOne: false
+            referencedRelation: "support_tickets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      support_tickets: {
+        Row: {
+          assigned_agent: Database["public"]["Enums"]["support_agent"]
+          channel: Database["public"]["Enums"]["support_ticket_channel"]
+          closed_at: string | null
+          created_at: string
+          escalated_at: string | null
+          escalation_reason: string | null
+          first_human_reply_at: string | null
+          id: string
+          last_message_at: string | null
+          last_message_preview: string | null
+          message_count: number
+          metadata: Json
+          organization_id: string
+          priority: Database["public"]["Enums"]["support_ticket_priority"]
+          requester_email: string | null
+          requester_name: string | null
+          resolved_at: string | null
+          sla_due_at: string | null
+          status: Database["public"]["Enums"]["support_ticket_status"]
+          subject: string
+          tags: string[]
+          ticket_number: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          assigned_agent?: Database["public"]["Enums"]["support_agent"]
+          channel?: Database["public"]["Enums"]["support_ticket_channel"]
+          closed_at?: string | null
+          created_at?: string
+          escalated_at?: string | null
+          escalation_reason?: string | null
+          first_human_reply_at?: string | null
+          id?: string
+          last_message_at?: string | null
+          last_message_preview?: string | null
+          message_count?: number
+          metadata?: Json
+          organization_id: string
+          priority?: Database["public"]["Enums"]["support_ticket_priority"]
+          requester_email?: string | null
+          requester_name?: string | null
+          resolved_at?: string | null
+          sla_due_at?: string | null
+          status?: Database["public"]["Enums"]["support_ticket_status"]
+          subject?: string
+          tags?: string[]
+          ticket_number?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          assigned_agent?: Database["public"]["Enums"]["support_agent"]
+          channel?: Database["public"]["Enums"]["support_ticket_channel"]
+          closed_at?: string | null
+          created_at?: string
+          escalated_at?: string | null
+          escalation_reason?: string | null
+          first_human_reply_at?: string | null
+          id?: string
+          last_message_at?: string | null
+          last_message_preview?: string | null
+          message_count?: number
+          metadata?: Json
+          organization_id?: string
+          priority?: Database["public"]["Enums"]["support_ticket_priority"]
+          requester_email?: string | null
+          requester_name?: string | null
+          resolved_at?: string | null
+          sla_due_at?: string | null
+          status?: Database["public"]["Enums"]["support_ticket_status"]
+          subject?: string
+          tags?: string[]
+          ticket_number?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_tickets_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tasks: {
         Row: {
           assignee_id: string | null
@@ -2304,6 +2564,8 @@ export type Database = {
           logo_url: string | null
           name: string
           org_number: string | null
+          payment_bankgiro: string | null
+          payment_iban: string | null
           slug: string
           stripe_account_id: string | null
           stripe_charges_enabled: boolean
@@ -2352,6 +2614,7 @@ export type Database = {
       }
       get_public_invoice: { Args: { p_token: string }; Returns: Json }
       get_public_proposal: { Args: { p_token: string }; Returns: Json }
+      get_signed_proposal_bundle: { Args: { p_token: string }; Returns: Json }
       is_org_admin: { Args: { p_org_id: string }; Returns: boolean }
       is_org_member: { Args: { p_org_id: string }; Returns: boolean }
       is_org_owner: { Args: { p_org_id: string }; Returns: boolean }
@@ -2416,6 +2679,12 @@ export type Database = {
     }
     Enums: {
       client_status: "active" | "idle" | "prospect"
+      invoice_line_unit: "qty" | "hr" | "day" | "flat"
+      invoice_recurrence_interval:
+        | "weekly"
+        | "biweekly"
+        | "monthly"
+        | "quarterly"
       invoice_status: "draft" | "sent" | "viewed" | "paid" | "overdue" | "void"
       member_role: "owner" | "admin" | "member"
       member_status: "active" | "invited" | "removed"
@@ -2439,8 +2708,18 @@ export type Database = {
         | "not_interested"
         | "bounced"
       outreach_temperature: "hot" | "warm" | "cold"
+      project_billing_type: "fixed" | "hourly" | "daily" | "retainer" | "mixed"
       project_status: "active" | "on_hold" | "completed" | "archived"
       proposal_status: "draft" | "sent" | "viewed" | "accepted" | "declined"
+      support_agent: "ai" | "human" | "user" | "system"
+      support_ticket_channel: "in_app_chat" | "email"
+      support_ticket_priority: "low" | "normal" | "high" | "urgent"
+      support_ticket_status:
+        | "open"
+        | "awaiting_human"
+        | "awaiting_user"
+        | "resolved"
+        | "closed"
       task_column: "backlog" | "todo" | "in_progress" | "review" | "done"
       task_priority: "low" | "medium" | "high" | "urgent"
     }
@@ -2571,6 +2850,13 @@ export const Constants = {
   public: {
     Enums: {
       client_status: ["active", "idle", "prospect"],
+      invoice_line_unit: ["qty", "hr", "day", "flat"],
+      invoice_recurrence_interval: [
+        "weekly",
+        "biweekly",
+        "monthly",
+        "quarterly",
+      ],
       invoice_status: ["draft", "sent", "viewed", "paid", "overdue", "void"],
       member_role: ["owner", "admin", "member"],
       member_status: ["active", "invited", "removed"],
@@ -2596,8 +2882,19 @@ export const Constants = {
         "bounced",
       ],
       outreach_temperature: ["hot", "warm", "cold"],
+      project_billing_type: ["fixed", "hourly", "daily", "retainer", "mixed"],
       project_status: ["active", "on_hold", "completed", "archived"],
       proposal_status: ["draft", "sent", "viewed", "accepted", "declined"],
+      support_agent: ["ai", "human", "user", "system"],
+      support_ticket_channel: ["in_app_chat", "email"],
+      support_ticket_priority: ["low", "normal", "high", "urgent"],
+      support_ticket_status: [
+        "open",
+        "awaiting_human",
+        "awaiting_user",
+        "resolved",
+        "closed",
+      ],
       task_column: ["backlog", "todo", "in_progress", "review", "done"],
       task_priority: ["low", "medium", "high", "urgent"],
     },

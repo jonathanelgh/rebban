@@ -293,7 +293,42 @@ export type GmailThreadMessage = {
   subject: string | null;
   bodyText: string | null;
   snippet: string | null;
+  /** RFC 2822 Message-ID header (with angle brackets when present). */
+  rfcMessageId: string | null;
+  inReplyTo: string | null;
+  references: string | null;
 };
+
+export type GmailReplyContext = {
+  threadId: string;
+  subject: string | null;
+  /** Message-ID of the message we are replying to. */
+  inReplyTo: string;
+  /** Full References chain for Gmail/Outlook threading. */
+  references: string;
+  replyToGmailId: string;
+};
+
+function normalizeMsgId(value: string | null | undefined) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("<") && trimmed.endsWith(">")) return trimmed;
+  return `<${trimmed.replace(/^<|>$/g, "")}>`;
+}
+
+function buildReferencesChain(
+  existingReferences: string | null,
+  parentMessageId: string
+) {
+  const parts = (existingReferences || "")
+    .split(/\s+/)
+    .map((p) => normalizeMsgId(p))
+    .filter(Boolean) as string[];
+  const parent = normalizeMsgId(parentMessageId);
+  if (parent && !parts.includes(parent)) parts.push(parent);
+  return parts.join(" ");
+}
 
 function headerValue(
   headers: { name?: string; value?: string }[] | undefined,
@@ -424,8 +459,48 @@ export async function fetchGmailThreadMessages(options: {
         subject: headerValue(headers, "Subject"),
         bodyText: extractBodyText(m.payload || {}) || m.snippet || null,
         snippet: m.snippet || null,
+        rfcMessageId: normalizeMsgId(headerValue(headers, "Message-ID")),
+        inReplyTo: normalizeMsgId(headerValue(headers, "In-Reply-To")),
+        references: headerValue(headers, "References"),
       };
     });
+}
+
+/**
+ * Build In-Reply-To / References so outbound replies stay in the original
+ * Gmail conversation (API threadId alone is not enough for recipients).
+ */
+export async function getGmailThreadReplyContext(options: {
+  userId: string;
+  threadId: string;
+  /** Prefer replying to this Gmail API message id when present. */
+  preferGmailMessageId?: string | null;
+  db?: Db;
+}): Promise<GmailReplyContext | null> {
+  const messages = await fetchGmailThreadMessages({
+    userId: options.userId,
+    threadId: options.threadId,
+    db: options.db,
+  });
+  if (!messages.length) return null;
+
+  const preferred =
+    (options.preferGmailMessageId
+      ? messages.find((m) => m.id === options.preferGmailMessageId)
+      : null) ||
+    [...messages].reverse().find((m) => m.rfcMessageId) ||
+    messages[messages.length - 1];
+
+  const parentId = preferred.rfcMessageId;
+  if (!parentId) return null;
+
+  return {
+    threadId: preferred.threadId || options.threadId,
+    subject: preferred.subject,
+    inReplyTo: parentId,
+    references: buildReferencesChain(preferred.references, parentId),
+    replyToGmailId: preferred.id,
+  };
 }
 
 export async function listActiveOutreachGmailConnections(db: Db) {
@@ -463,6 +538,13 @@ function encodeRfc2047(value: string) {
   return `=?UTF-8?B?${Buffer.from(value, "utf8").toString("base64")}?=`;
 }
 
+function toBase64Mime(value: string) {
+  return Buffer.from(value, "utf8")
+    .toString("base64")
+    .replace(/(.{76})/g, "$1\r\n")
+    .trim();
+}
+
 function textToHtml(text: string) {
   const escaped = text
     .replace(/&/g, "&amp;")
@@ -486,6 +568,9 @@ function buildPlainMime(options: {
   const fromHeader = `${encodeRfc2047(fromName)} <${options.from}>`;
   const boundary = `rebban_out_${Date.now().toString(36)}`;
   const html = textToHtml(options.bodyText);
+  // base64 so real emoji / non-ASCII survive (7bit would strip them)
+  const plainB64 = toBase64Mime(options.bodyText);
+  const htmlB64 = toBase64Mime(html);
 
   const headers = [
     `From: ${fromHeader}`,
@@ -504,15 +589,15 @@ function buildPlainMime(options: {
     "",
     `--${boundary}`,
     'Content-Type: text/plain; charset="UTF-8"',
-    "Content-Transfer-Encoding: 7bit",
+    "Content-Transfer-Encoding: base64",
     "",
-    options.bodyText,
+    plainB64,
     "",
     `--${boundary}`,
     'Content-Type: text/html; charset="UTF-8"',
-    "Content-Transfer-Encoding: 7bit",
+    "Content-Transfer-Encoding: base64",
     "",
-    html,
+    htmlB64,
     "",
     `--${boundary}--`,
   ].join("\r\n");

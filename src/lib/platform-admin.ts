@@ -42,12 +42,17 @@ export type AdminOrgRow = {
   planLabel: string;
   entitled: boolean;
   paid: boolean;
+  complimentaryPro: boolean;
   trialActive: boolean;
   memberCount: number;
   ownerEmail: string | null;
   ownerName: string | null;
+  ownerId: string | null;
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;
+  currency: string | null;
+  country: string | null;
+  address: string | null;
 };
 
 export type AdminOverview = {
@@ -65,10 +70,12 @@ export type AdminOverview = {
 function planFromOrg(org: {
   stripe_subscription_status: string | null;
   trial_ends_at: string | null;
+  complimentary_pro?: boolean | null;
 }) {
   return computeEntitlement({
     subscriptionStatus: org.stripe_subscription_status,
     trialEndsAt: org.trial_ends_at,
+    complimentaryPro: org.complimentary_pro,
   });
 }
 
@@ -76,7 +83,7 @@ export async function loadAdminOrganizations(db: DbClient) {
   const { data: orgs, error } = await db
     .from("organizations")
     .select(
-      "id, name, type, created_at, trial_ends_at, stripe_subscription_status, stripe_customer_id, stripe_subscription_id, created_by"
+      "id, name, type, created_at, trial_ends_at, stripe_subscription_status, stripe_customer_id, stripe_subscription_id, complimentary_pro, created_by, currency, country, address"
     )
     .is("deleted_at", null)
     .order("created_at", { ascending: false });
@@ -146,12 +153,17 @@ export async function loadAdminOrganizations(db: DbClient) {
       planLabel: entitlement.planLabel,
       entitled: entitlement.entitled,
       paid: entitlement.paid,
+      complimentaryPro: entitlement.complimentaryPro,
       trialActive: entitlement.trialActive,
       memberCount: memberCountByOrg.get(org.id) || 0,
       ownerEmail: owner?.email || null,
       ownerName: owner?.full_name || null,
+      ownerId: org.created_by,
       stripeCustomerId: org.stripe_customer_id,
       stripeSubscriptionId: org.stripe_subscription_id,
+      currency: org.currency,
+      country: org.country,
+      address: org.address,
     };
   });
 }

@@ -8,12 +8,22 @@ import {
   FileText,
   ShieldCheck,
   Loader2,
+  X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
   formatMoneyLabel,
   hashProposalDocument,
 } from "@/lib/proposals/documentHash";
+import { PublicProposalDocument } from "@/components/proposals/PublicProposalDocument";
+import { SignaturePad } from "@/components/proposals/SignaturePad";
+import {
+  ModalOverlay,
+  modalBodyClass,
+  modalFooterClass,
+  modalHeaderClass,
+  modalPanelClass,
+} from "@/components/ModalFrame";
 
 type PublicProposalPayload = {
   token: string;
@@ -30,6 +40,7 @@ type PublicProposalPayload = {
     viewed_at: string | null;
     accepted_at: string | null;
     declined_at: string | null;
+    expires_at?: string | null;
   };
   organization: {
     id: string;
@@ -52,6 +63,7 @@ type PublicProposalPayload = {
     document_hash: string;
     signature_type: string;
     signature_text: string | null;
+    signature_image?: string | null;
   } | null;
 };
 
@@ -63,6 +75,7 @@ export default function PublicProposalPage() {
   const token = typeof params.token === "string" ? params.token : "";
 
   const [data, setData] = useState<PublicProposalPayload | null>(null);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<"view" | "decline" | "sign">("view");
@@ -73,7 +86,11 @@ export default function PublicProposalPage() {
   const [signerEmail, setSignerEmail] = useState("");
   const [signerTitle, setSignerTitle] = useState("");
   const [signerCompany, setSignerCompany] = useState("");
+  const [signatureMode, setSignatureMode] = useState<"drawn" | "typed">(
+    "drawn"
+  );
   const [signatureText, setSignatureText] = useState("");
+  const [signatureImage, setSignatureImage] = useState<string | null>(null);
   const [consent, setConsent] = useState(false);
 
   useEffect(() => {
@@ -99,10 +116,28 @@ export default function PublicProposalPage() {
 
       const parsed = payload as PublicProposalPayload;
       setData(parsed);
-      setSignerName(parsed.recipient_name || parsed.client?.name || "");
+      setSignerName(
+        personNameForSigning(
+          parsed.client?.name,
+          parsed.recipient_name,
+          parsed.client?.company
+        )
+      );
       setSignerEmail(parsed.recipient_email || parsed.client?.email || "");
-      setSignerCompany(parsed.client?.company || "");
+      setSignerCompany(parsed.client?.company?.trim() || "");
       setLoading(false);
+
+      if (!parsed.organization.logo_url) {
+        setLogoUrl(null);
+      } else if (/^https?:\/\//i.test(parsed.organization.logo_url)) {
+        setLogoUrl(parsed.organization.logo_url);
+      } else {
+        const logoRes = await fetch(`/api/p/${token}/logo`);
+        const logoJson = await logoRes.json().catch(() => ({}));
+        setLogoUrl(
+          logoRes.ok && typeof logoJson.url === "string" ? logoJson.url : null
+        );
+      }
 
       void fetch(`/api/p/${token}/view`, { method: "POST" });
     }
@@ -164,8 +199,16 @@ export default function PublicProposalPage() {
       setError("Please confirm the consent statement to continue.");
       return;
     }
-    if (!signerName.trim() || !signerEmail.trim() || !signatureText.trim()) {
-      setError("Name, email, and signature are required.");
+    if (!signerName.trim() || !signerEmail.trim()) {
+      setError("Name and email are required.");
+      return;
+    }
+    if (signatureMode === "typed" && !signatureText.trim()) {
+      setError("Please type your signature.");
+      return;
+    }
+    if (signatureMode === "drawn" && !signatureImage) {
+      setError("Please draw your signature.");
       return;
     }
 
@@ -188,8 +231,11 @@ export default function PublicProposalPage() {
         signerEmail: signerEmail.trim(),
         signerTitle: signerTitle.trim(),
         signerCompany: signerCompany.trim(),
-        signatureType: "typed",
-        signatureText: signatureText.trim(),
+        signatureType: signatureMode,
+        signatureText:
+          signatureMode === "typed" ? signatureText.trim() : undefined,
+        signatureImage:
+          signatureMode === "drawn" ? signatureImage : undefined,
         consentText: CONSENT_TEXT,
         documentHash,
       }),
@@ -218,8 +264,11 @@ export default function PublicProposalPage() {
               signer_email: signerEmail.trim(),
               signed_at: json.signed_at || new Date().toISOString(),
               document_hash: json.document_hash,
-              signature_type: "typed",
-              signature_text: signatureText.trim(),
+              signature_type: signatureMode,
+              signature_text:
+                signatureMode === "typed" ? signatureText.trim() : null,
+              signature_image:
+                signatureMode === "drawn" ? signatureImage : null,
             },
           }
         : prev
@@ -253,55 +302,47 @@ export default function PublicProposalPage() {
 
   return (
     <main className="min-h-screen bg-[#F3F4F6]">
-      <div className="max-w-3xl mx-auto px-4 py-10">
-        <div className="mb-6">
-          <div className="text-[13px] font-medium text-gray-500">
-            Proposal from {data.organization.name}
+      <div className="max-w-[920px] mx-auto px-4 py-8 sm:py-12">
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[13px] font-medium text-gray-500">
+              Proposal from {data.organization.name}
+              {data.sender?.full_name ? ` · ${data.sender.full_name}` : ""}
+            </div>
           </div>
-          <h1 className="text-3xl font-semibold text-gray-900 tracking-tight mt-1">
-            {data.proposal.title}
-          </h1>
-          {data.sender?.full_name && (
-            <p className="text-sm text-gray-500 mt-2">
-              Prepared by {data.sender.full_name}
-            </p>
-          )}
+          <div className="flex flex-wrap gap-2 text-[12px]">
+            <span className="rounded-full bg-white border border-line px-2.5 py-1 font-medium text-gray-600">
+              {amountLabel || "—"}
+            </span>
+            <span className="rounded-full bg-white border border-line px-2.5 py-1 font-medium text-gray-600 capitalize">
+              {data.proposal.status}
+            </span>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
-          <InfoCard label="Investment" value={amountLabel || "—"} />
-          <InfoCard
-            label="Status"
-            value={data.proposal.status.charAt(0).toUpperCase() + data.proposal.status.slice(1)}
-          />
-          <InfoCard
-            label="Prepared for"
-            value={
+        <div className="mb-6">
+          <PublicProposalDocument
+            content={data.proposal.content}
+            currency={data.proposal.currency || "USD"}
+            organizationName={data.organization.name}
+            organizationLogoUrl={logoUrl}
+            clientLabel={
               data.client?.company ||
               data.client?.name ||
               data.recipient_name ||
-              "Client"
+              null
             }
+            sentAt={data.proposal.sent_at}
+            expiresAt={data.proposal.expires_at}
           />
         </div>
 
-        <div className="bg-white border border-line rounded-3xl p-7 mb-6">
-          <h2 className="text-sm font-semibold text-gray-900 mb-3">Overview</h2>
-          <p className="text-sm text-gray-600 leading-relaxed">
-            {data.organization.description?.trim() ||
-              "Review the proposal details below. You can accept and e-sign, or decline with a short note."}
+        <div className="bg-white border border-line rounded-3xl p-5 mb-6">
+          <p className="inline-flex items-start gap-2 text-sm text-gray-600">
+            <ShieldCheck className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
+            Acceptance requires an electronic signature with your name, email,
+            consent, timestamp, and a document fingerprint for auditability.
           </p>
-          <div className="mt-5 rounded-2xl bg-[#FAFBFC] border border-line p-4 text-sm text-gray-600 space-y-2">
-            <p>
-              This secure link is unique to you. Opening it notifies{" "}
-              {data.organization.name} that you viewed the proposal.
-            </p>
-            <p className="inline-flex items-start gap-2">
-              <ShieldCheck className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
-              Acceptance requires an electronic signature with your name, email,
-              consent, timestamp, and a document fingerprint for auditability.
-            </p>
-          </div>
         </div>
 
         {data.signature && (
@@ -331,14 +372,26 @@ export default function PublicProposalPage() {
                   {data.signature.document_hash}
                 </dd>
               </div>
-              {data.signature.signature_text && (
+              {(data.signature.signature_image ||
+                data.signature.signature_text) && (
                 <div className="sm:col-span-2">
                   <dt className="text-gray-400">Signature</dt>
-                  <dd
-                    className="mt-1 text-2xl text-gray-900"
-                    style={{ fontFamily: "Georgia, serif" }}
-                  >
-                    {data.signature.signature_text}
+                  <dd className="mt-1">
+                    {data.signature.signature_image ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={data.signature.signature_image}
+                        alt="Signature"
+                        className="h-16 w-auto max-w-full object-contain"
+                      />
+                    ) : (
+                      <span
+                        className="text-2xl text-gray-900"
+                        style={{ fontFamily: "Georgia, serif" }}
+                      >
+                        {data.signature.signature_text}
+                      </span>
+                    )}
                   </dd>
                 </div>
               )}
@@ -370,7 +423,14 @@ export default function PublicProposalPage() {
           <div className="flex flex-wrap gap-3">
             <button
               type="button"
-              onClick={() => setMode("sign")}
+              onClick={() => {
+                setError(null);
+                setSignatureMode("drawn");
+                setSignatureText("");
+                setSignatureImage(null);
+                setConsent(false);
+                setMode("sign");
+              }}
               className="btn-primary px-5 py-2.5 rounded-xl text-sm"
             >
               Accept & e-sign
@@ -432,69 +492,137 @@ export default function PublicProposalPage() {
           </div>
         )}
 
-        {mode === "sign" && !isFinal && (
-          <div className="bg-white border border-line rounded-3xl p-7 mt-4 space-y-4">
-            <h2 className="text-lg font-semibold text-gray-900">
-              Accept & e-sign
-            </h2>
-            <p className="text-sm text-gray-500">
-              Complete the fields below to create a binding electronic acceptance
-              record for this proposal.
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Field label="Full legal name">
-                <input
-                  value={signerName}
-                  onChange={(e) => setSignerName(e.target.value)}
-                  className="w-full border border-line rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-gray-300"
-                />
-              </Field>
-              <Field label="Email">
-                <input
-                  type="email"
-                  value={signerEmail}
-                  onChange={(e) => setSignerEmail(e.target.value)}
-                  className="w-full border border-line rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-gray-300"
-                />
-              </Field>
-              <Field label="Title (optional)">
-                <input
-                  value={signerTitle}
-                  onChange={(e) => setSignerTitle(e.target.value)}
-                  className="w-full border border-line rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-gray-300"
-                />
-              </Field>
-              <Field label="Company (optional)">
-                <input
-                  value={signerCompany}
-                  onChange={(e) => setSignerCompany(e.target.value)}
-                  className="w-full border border-line rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-gray-300"
-                />
-              </Field>
-            </div>
-            <Field label="Type your signature">
-              <input
-                value={signatureText}
-                onChange={(e) => setSignatureText(e.target.value)}
-                placeholder={signerName || "Your full name"}
-                className="w-full border border-line rounded-xl px-3.5 py-2.5 outline-none focus:border-gray-300"
-                style={{ fontFamily: "Georgia, serif", fontSize: 22 }}
-              />
-            </Field>
-            <label className="flex items-start gap-3 text-sm text-gray-600">
-              <input
-                type="checkbox"
-                checked={consent}
-                onChange={(e) => setConsent(e.target.checked)}
-                className="mt-1"
-              />
-              <span>{CONSENT_TEXT}</span>
-            </label>
-            <div className="flex gap-2 justify-end">
+      </div>
+
+      {mode === "sign" && !isFinal && (
+        <ModalOverlay onClose={submitting ? undefined : () => setMode("view")}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="sign-proposal-title"
+            className={modalPanelClass("max-w-[560px]")}
+          >
+            <div className={modalHeaderClass}>
+              <div className="min-w-0">
+                <h2
+                  id="sign-proposal-title"
+                  className="text-xl font-semibold text-gray-900 tracking-tight"
+                >
+                  Accept & e-sign
+                </h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  Complete the fields below to create a binding electronic
+                  acceptance record for this proposal.
+                </p>
+              </div>
               <button
                 type="button"
+                disabled={submitting}
                 onClick={() => setMode("view")}
-                className="px-4 py-2.5 rounded-xl text-sm text-gray-600 hover:bg-gray-100"
+                className="p-2 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors shrink-0 disabled:opacity-50"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className={`${modalBodyClass} space-y-4`}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Field label="Full legal name">
+                  <input
+                    value={signerName}
+                    onChange={(e) => setSignerName(e.target.value)}
+                    className="w-full border border-line rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-gray-300"
+                  />
+                </Field>
+                <Field label="Email">
+                  <input
+                    type="email"
+                    value={signerEmail}
+                    onChange={(e) => setSignerEmail(e.target.value)}
+                    className="w-full border border-line rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-gray-300"
+                  />
+                </Field>
+                <Field label="Title (optional)">
+                  <input
+                    value={signerTitle}
+                    onChange={(e) => setSignerTitle(e.target.value)}
+                    className="w-full border border-line rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-gray-300"
+                  />
+                </Field>
+                <Field label="Company (optional)">
+                  <input
+                    value={signerCompany}
+                    onChange={(e) => setSignerCompany(e.target.value)}
+                    className="w-full border border-line rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-gray-300"
+                  />
+                </Field>
+              </div>
+              <div>
+                <div className="flex items-center justify-between gap-3 mb-1.5">
+                  <span className="text-[13px] font-medium text-gray-700">
+                    Signature
+                  </span>
+                  <div className="inline-flex rounded-lg border border-line p-0.5 bg-[#F8F9FA]">
+                    <button
+                      type="button"
+                      onClick={() => setSignatureMode("drawn")}
+                      className={`px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors ${
+                        signatureMode === "drawn"
+                          ? "bg-white text-gray-900 shadow-sm"
+                          : "text-gray-500 hover:text-gray-800"
+                      }`}
+                    >
+                      Draw
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSignatureMode("typed")}
+                      className={`px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors ${
+                        signatureMode === "typed"
+                          ? "bg-white text-gray-900 shadow-sm"
+                          : "text-gray-500 hover:text-gray-800"
+                      }`}
+                    >
+                      Type
+                    </button>
+                  </div>
+                </div>
+                {signatureMode === "drawn" ? (
+                  <SignaturePad
+                    disabled={submitting}
+                    onChange={setSignatureImage}
+                  />
+                ) : (
+                  <input
+                    value={signatureText}
+                    onChange={(e) => setSignatureText(e.target.value)}
+                    placeholder={signerName || "Your full name"}
+                    className="w-full border border-line rounded-xl px-3.5 py-2.5 outline-none focus:border-gray-300"
+                    style={{ fontFamily: "Georgia, serif", fontSize: 22 }}
+                  />
+                )}
+              </div>
+              <label className="flex items-start gap-3 text-sm text-gray-600">
+                <input
+                  type="checkbox"
+                  checked={consent}
+                  onChange={(e) => setConsent(e.target.checked)}
+                  className="mt-1"
+                />
+                <span>{CONSENT_TEXT}</span>
+              </label>
+              {error ? (
+                <p className="text-[13px] text-red-600">{error}</p>
+              ) : null}
+            </div>
+
+            <div className={modalFooterClass}>
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() => setMode("view")}
+                className="px-4 py-2.5 rounded-xl text-sm text-gray-600 hover:bg-gray-100 disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -508,20 +636,33 @@ export default function PublicProposalPage() {
               </button>
             </div>
           </div>
-        )}
-      </div>
-
+        </ModalOverlay>
+      )}
     </main>
   );
 }
 
-function InfoCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="bg-white border border-line rounded-2xl p-4">
-      <div className="text-[12px] font-medium text-gray-400">{label}</div>
-      <div className="text-[15px] font-semibold text-gray-900 mt-1">{value}</div>
-    </div>
-  );
+function personNameForSigning(
+  clientName: string | null | undefined,
+  recipientName: string | null | undefined,
+  company: string | null | undefined
+) {
+  const fromClient = clientName?.trim() || "";
+  if (fromClient) return fromClient;
+
+  const raw = recipientName?.trim() || "";
+  if (!raw) return "";
+
+  const org = company?.trim() || "";
+  if (org) {
+    const suffix = ` · ${org}`;
+    if (raw.endsWith(suffix)) return raw.slice(0, -suffix.length).trim();
+  }
+
+  const sep = " · ";
+  const idx = raw.indexOf(sep);
+  if (idx > 0) return raw.slice(0, idx).trim();
+  return raw;
 }
 
 function Field({

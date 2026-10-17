@@ -10,6 +10,11 @@ import {
   type ReminderStepTemplate,
 } from "@/lib/invoices/reminders";
 import { requireOrgEntitlement } from "@/lib/billing/require-entitlement";
+import { ensureInvoiceNumber } from "@/lib/invoices/numbering";
+import {
+  firstRecurrenceAt,
+  type InvoiceRecurrenceInterval,
+} from "@/lib/invoices/recurrence";
 
 export async function POST(
   request: Request,
@@ -41,7 +46,9 @@ export async function POST(
       .from("invoices")
       .select(
         `id, number, status, currency, total, organization_id, client_id,
-         created_by, sent_at, payment_token, due_date`
+         created_by, sent_at, payment_token, due_date,
+         recurrence_enabled, recurrence_interval, recurrence_weekday,
+         recurrence_day_of_month, recurrence_next_at, recurrence_source_id`
       )
       .eq("id", invoiceId)
       .is("deleted_at", null)
@@ -124,6 +131,12 @@ export async function POST(
       paymentToken = nanoid(24);
     }
 
+    const invoiceNumber = await ensureInvoiceNumber(supabase, {
+      invoiceId: invoice.id,
+      organizationId: invoice.organization_id,
+      currentNumber: invoice.number,
+    });
+
     const invoiceUrl = `${getAppUrl()}/pay/${paymentToken}`;
     const amountLabel = formatInvoiceMoney(
       Number(invoice.total) || 0,
@@ -137,7 +150,7 @@ export async function POST(
       recipientName,
       senderName: profile?.full_name,
       organizationName: org?.name || "Your freelancer",
-      invoiceNumber: invoice.number,
+      invoiceNumber,
       invoiceUrl,
       amountLabel,
       message: sendMessage,
@@ -150,12 +163,29 @@ export async function POST(
         ? invoice.status
         : ("sent" as const);
 
+    const recurrencePatch: Record<string, unknown> = {};
+    if (
+      invoice.recurrence_enabled &&
+      !invoice.recurrence_source_id &&
+      invoice.recurrence_interval
+    ) {
+      const nextAt = firstRecurrenceAt({
+        interval: invoice.recurrence_interval as InvoiceRecurrenceInterval,
+        weekday: invoice.recurrence_weekday,
+        dayOfMonth: invoice.recurrence_day_of_month,
+      });
+      recurrencePatch.recurrence_last_sent_at = now;
+      recurrencePatch.recurrence_next_at = nextAt.toISOString();
+    }
+
     const { error: updateError } = await supabase
       .from("invoices")
       .update({
         status: nextStatus,
         sent_at: invoice.sent_at || now,
         payment_token: paymentToken,
+        number: invoiceNumber,
+        ...recurrencePatch,
       })
       .eq("id", invoice.id)
       .eq("organization_id", invoice.organization_id);
@@ -228,9 +258,7 @@ export async function POST(
       },
     });
 
-    const invoiceLabel = invoice.number
-      ? `Invoice ${invoice.number}`
-      : "Invoice";
+    const invoiceLabel = `Invoice ${invoiceNumber}`;
     const recipientLabel = recipientName || recipientEmail;
     await supabase.rpc("create_user_notification", {
       p_organization_id: invoice.organization_id,
@@ -248,6 +276,7 @@ export async function POST(
       url: invoiceUrl,
       paymentToken,
       recipientEmail,
+      number: invoiceNumber,
       status: nextStatus,
       remindersScheduled: scheduled.length,
       provider:

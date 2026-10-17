@@ -3,6 +3,7 @@
 import React, { useEffect, useId, useRef, useState } from "react";
 import {
   Copy,
+  Download,
   ExternalLink,
   MoreHorizontal,
   PenLine,
@@ -42,20 +43,24 @@ export function resumeStatusFromTimestamps(row: {
 export function ProposalSendMenu({
   status,
   clientUrl,
+  proposalId,
   editingPreviouslySent = false,
   onSend,
   onSendAgain,
   onMakeChanges,
   onCloseEditing,
+  onResendSigned,
   busy = false,
 }: {
   status: ProposalStatus | null;
   clientUrl?: string | null;
+  proposalId?: string | null;
   editingPreviouslySent?: boolean;
   onSend: () => void | Promise<void>;
   onSendAgain: () => void | Promise<void>;
   onMakeChanges: () => void | Promise<void>;
   onCloseEditing?: () => void | Promise<void>;
+  onResendSigned?: () => void | Promise<void>;
   busy?: boolean;
 }) {
   const alreadySent = isProposalAlreadySent(status);
@@ -151,6 +156,35 @@ export function ProposalSendMenu({
             >
               {alreadySent ? (
                 <>
+                  {status === "accepted" && proposalId ? (
+                    <>
+                      <MenuItem
+                        icon={<Download className="w-4 h-4" />}
+                        label="Download signed PDF"
+                        description="Certificate + audit log copy"
+                        onClick={() => {
+                          setOpen(false);
+                          window.open(
+                            `/api/proposals/${proposalId}/signed-pdf`,
+                            "_blank",
+                            "noopener,noreferrer"
+                          );
+                        }}
+                      />
+                      {onResendSigned ? (
+                        <MenuItem
+                          icon={<Send className="w-4 h-4" />}
+                          label={busy ? "Sending…" : "Email signed PDF"}
+                          description="Resend confirmation to the signer"
+                          disabled={busy}
+                          onClick={() => {
+                            setOpen(false);
+                            void onResendSigned();
+                          }}
+                        />
+                      ) : null}
+                    </>
+                  ) : null}
                   <MenuItem
                     icon={<Send className="w-4 h-4" />}
                     label={busy ? "Sending…" : "Send again"}

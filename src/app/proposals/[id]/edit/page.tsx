@@ -11,24 +11,28 @@ import {
   Columns, CreditCard, BoxSelect, AppWindow, GalleryHorizontalEnd,
   Layout, Users, Calendar, ScrollText, ListChecks,
   Target, Package, Route, Ban, UserCheck, RefreshCw, ArrowRight, PenLine, BookmarkPlus, X,
-  UploadCloud, Loader2, Send
+  UploadCloud, Loader2, Send, Sparkles, FolderKanban
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "@/components/ProfileContext";
 import { MenuSelect } from "@/components/MenuSelect";
 import { SendProposalModal } from "@/components/SendProposalModal";
 import { ProposalActivityLog } from "@/components/ProposalActivityLog";
+import { ProposalAiWriteModal } from "@/components/ProposalAiWriteModal";
+import { ConvertToProjectModal } from "@/components/ConvertToProjectModal";
 import {
   ProposalSendMenu,
   isProposalAlreadySent,
   resumeStatusFromTimestamps,
 } from "@/components/ProposalSendMenu";
+import type { ProjectBillingType } from "@/lib/projects/billing";
 import { DEFAULT_PROPOSAL_SEND_MESSAGE } from "@/lib/proposals/followups";
 import type { Enums } from "@/types/database";
 import { ModalOverlay, modalPanelClass } from "@/components/ModalFrame";
 import {
   asProposalContent,
   blockTypesFromContent,
+  mergeElementStyles,
   toProposalContentJson,
   type ProposalContentSnapshot,
   type ProposalHeaderTheme,
@@ -858,6 +862,11 @@ function ProposalEditorContent() {
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [templateMessage, setTemplateMessage] = useState<string | null>(null);
   const [contentReady, setContentReady] = useState(false);
+  const [needsAiGenerate, setNeedsAiGenerate] = useState(false);
+  const [aiWriteOpen, setAiWriteOpen] = useState(false);
+  const [convertOpen, setConvertOpen] = useState(false);
+  const [linkedProjectId, setLinkedProjectId] = useState<string | null>(null);
+  const [proposalClientId, setProposalClientId] = useState<string | null>(null);
   const [sendOpen, setSendOpen] = useState(false);
   const [sendAgainFeedback, setSendAgainFeedback] = useState<{
     to: string;
@@ -1379,10 +1388,12 @@ function ProposalEditorContent() {
     );
 
     if (content.elementStyles && typeof content.elementStyles === 'object') {
-      setElementStyles({
-        ...DEFAULT_ELEMENT_STYLES,
-        ...(content.elementStyles as Record<string, ElementStyle>),
-      });
+      setElementStyles(
+        mergeElementStyles(
+          DEFAULT_ELEMENT_STYLES as unknown as Record<string, unknown>,
+          content.elementStyles as Record<string, unknown>
+        ) as Record<string, ElementStyle>
+      );
     }
     if (Array.isArray(content.lineItems) && content.lineItems.length) {
       setLineItems(content.lineItems as LineItem[]);
@@ -1429,7 +1440,7 @@ function ProposalEditorContent() {
       const { data, error } = await supabase
         .from('proposals')
         .select(
-          'id, title, content, currency, amount, template_id, client_id, expires_at, status, sent_at, viewed_at, accepted_at, declined_at'
+          'id, title, content, currency, amount, template_id, client_id, project_id, expires_at, status, sent_at, viewed_at, accepted_at, declined_at'
         )
         .eq('id', proposalId)
         .maybeSingle();
@@ -1443,6 +1454,8 @@ function ProposalEditorContent() {
 
       setProposalTitle(data.title || 'Untitled proposal');
       setProposalStatus(data.status);
+      setLinkedProjectId(data.project_id || null);
+      setProposalClientId(data.client_id || null);
       if (data.status === 'draft') {
         setResumeStatus(
           resumeStatusFromTimestamps({
@@ -1531,6 +1544,26 @@ function ProposalEditorContent() {
           });
         }
       }
+
+      const meta = (content.meta || {}) as {
+        creationMode?: string;
+        aiBrief?: string;
+      };
+      const summaryText =
+        (
+          content.elementStyles as
+            | Record<string, { content?: string }>
+            | undefined
+        )?.["summary-text"]?.content || "";
+      const goalsCount = Array.isArray(content.projectGoals)
+        ? content.projectGoals.length
+        : 0;
+      const brief = typeof meta.aiBrief === "string" ? meta.aiBrief.trim() : "";
+      setNeedsAiGenerate(
+        meta.creationMode === "ai" &&
+          brief.length >= 40 &&
+          (!summaryText.trim() || goalsCount === 0)
+      );
 
       setContentReady(true);
     }
@@ -4006,6 +4039,14 @@ function ProposalEditorContent() {
           )}
           <button
             type="button"
+            disabled={!proposalId}
+            onClick={() => setAiWriteOpen(true)}
+            className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors disabled:opacity-50"
+          >
+            <Sparkles className="w-4 h-4 text-[#2563EB]" /> Write with AI
+          </button>
+          <button
+            type="button"
             onClick={() => {
               setTemplateName(proposalTitle ? `${proposalTitle} template` : '');
               setSaveTemplateOpen(true);
@@ -4032,9 +4073,31 @@ function ProposalEditorContent() {
               </button>
             </>
           )}
+          {proposalStatus === "accepted" && proposalId && !linkedProjectId && (
+            <button
+              type="button"
+              onClick={() => setConvertOpen(true)}
+              className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors"
+            >
+              <FolderKanban className="w-4 h-4 text-emerald-600" /> Convert to project
+            </button>
+          )}
+          {proposalStatus === "accepted" && linkedProjectId && (
+            <Link
+              href={
+                proposalClientId
+                  ? `/clients/${proposalClientId}`
+                  : "/tasks"
+              }
+              className="flex items-center gap-1.5 text-sm font-semibold text-emerald-700 hover:text-emerald-800 transition-colors"
+            >
+              <FolderKanban className="w-4 h-4" /> View project
+            </Link>
+          )}
           <ProposalSendMenu
             status={proposalStatus}
             clientUrl={clientShareUrl}
+            proposalId={proposalId}
             editingPreviouslySent={
               proposalStatus === "draft" && Boolean(resumeStatus)
             }
@@ -4133,9 +4196,102 @@ function ProposalEditorContent() {
                 setSendMenuBusy(false);
               }
             }}
+            onResendSigned={
+              proposalStatus === "accepted" && proposalId
+                ? async () => {
+                    setSendMenuBusy(true);
+                    setTemplateMessage(null);
+                    try {
+                      const res = await fetch(
+                        `/api/proposals/${proposalId}/resend-signed`,
+                        { method: "POST" }
+                      );
+                      const json = (await res.json()) as {
+                        error?: string;
+                        to?: string;
+                      };
+                      if (!res.ok) {
+                        setTemplateMessage(
+                          json.error || "Could not email signed PDF."
+                        );
+                      } else {
+                        setTemplateMessage(
+                          `Signed PDF emailed to ${json.to || "the signer"}.`
+                        );
+                      }
+                      window.setTimeout(() => setTemplateMessage(null), 4000);
+                    } finally {
+                      setSendMenuBusy(false);
+                    }
+                  }
+                : undefined
+            }
           />
         </div>
       </header>
+
+      {needsAiGenerate && (
+        <div className="shrink-0 border-b border-amber-100 bg-amber-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-[13px] font-medium text-amber-950">
+              AI copy was not generated for this proposal
+            </p>
+            <p className="text-[12px] text-amber-800/80 mt-0.5">
+              Your notes were saved. Open Write with AI to generate the full
+              proposal copy.
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={!proposalId}
+            onClick={() => setAiWriteOpen(true)}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-gray-900 px-3.5 py-2 text-[13px] font-medium text-white hover:bg-gray-800 disabled:opacity-50 shrink-0"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            Write with AI
+          </button>
+        </div>
+      )}
+
+      {aiWriteOpen && proposalId && (
+        <ProposalAiWriteModal
+          proposalId={proposalId}
+          onClose={() => setAiWriteOpen(false)}
+          onApplied={() => {
+            setAiWriteOpen(false);
+            setNeedsAiGenerate(false);
+            setTemplateMessage("AI proposal copy ready.");
+            window.setTimeout(() => setTemplateMessage(null), 3200);
+            window.location.reload();
+          }}
+        />
+      )}
+
+      {convertOpen && proposalId && (
+        <ConvertToProjectModal
+          proposalId={proposalId}
+          proposalTitle={proposalTitle}
+          proposalAmount={proposalAmount}
+          currency={currency}
+          pricingType={pricingType as ProjectBillingType}
+          proposalContent={{
+            pricingType,
+            paymentMilestones,
+          }}
+          clientName={clientName}
+          hasClient={Boolean(proposalClientId)}
+          onClose={() => setConvertOpen(false)}
+          onConverted={({ projectId, invoiceId, taskCount }) => {
+            setLinkedProjectId(projectId);
+            setConvertOpen(false);
+            const bits = ["Project created"];
+            if (invoiceId) bits.push("draft invoice ready");
+            if (taskCount > 0) bits.push(`${taskCount} tasks added`);
+            setTemplateMessage(bits.join(" · ") + ".");
+            window.setTimeout(() => setTemplateMessage(null), 4200);
+          }}
+        />
+      )}
 
       {sendOpen && proposalId && (
         <SendProposalModal

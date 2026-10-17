@@ -240,11 +240,9 @@ export default function TimeTrackingPage() {
     setError(null);
     try {
       const { nanoid } = await import("nanoid");
-      const { nextInvoiceNumber } = await import("@/lib/invoices/numbering");
       const { addDaysISO, todayISODate } = await import("@/lib/invoices/totals");
       const supabase = createClient();
       const issueDate = todayISODate();
-      const number = await nextInvoiceNumber(supabase, organizationId);
       const { data: orgTax } = await supabase
         .from("organizations")
         .select(
@@ -262,7 +260,7 @@ export default function TimeTrackingPage() {
         .insert({
           organization_id: organizationId,
           client_id: topUnbilledClientId,
-          number,
+          number: null,
           status: "draft",
           currency: orgTax?.currency || currency,
           issue_date: issueDate,

@@ -23,13 +23,14 @@ export async function requireOrgEntitlement(
 
   const { data: org } = await supabase
     .from("organizations")
-    .select("stripe_subscription_status, trial_ends_at")
+    .select("stripe_subscription_status, trial_ends_at, complimentary_pro")
     .eq("id", organizationId)
     .maybeSingle();
 
   const entitlement = computeEntitlement({
     subscriptionStatus: org?.stripe_subscription_status,
     trialEndsAt: org?.trial_ends_at,
+    complimentaryPro: org?.complimentary_pro,
   });
 
   if (!entitlement.entitled) {

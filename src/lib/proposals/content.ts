@@ -70,3 +70,35 @@ export function blockTypesFromContent(content: ProposalContentSnapshot): string[
     "signature",
   ];
 }
+
+/**
+ * Deep-merge per-element styles so AI/partial snapshots can override `content`
+ * without wiping typography (font, weight, color, size).
+ */
+export function mergeElementStyles(
+  base: Record<string, unknown>,
+  overrides: Record<string, unknown> | null | undefined
+): Record<string, unknown> {
+  if (!overrides || typeof overrides !== "object") return { ...base };
+
+  const merged: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(overrides)) {
+    const prev = merged[key];
+    if (
+      value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      prev &&
+      typeof prev === "object" &&
+      !Array.isArray(prev)
+    ) {
+      merged[key] = {
+        ...(prev as Record<string, unknown>),
+        ...(value as Record<string, unknown>),
+      };
+    } else {
+      merged[key] = value;
+    }
+  }
+  return merged;
+}

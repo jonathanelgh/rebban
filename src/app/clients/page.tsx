@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Plus,
@@ -10,6 +10,8 @@ import {
   MoreHorizontal,
   FolderKanban,
   Clock,
+  Eye,
+  Trash2,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "@/components/ProfileContext";
@@ -104,6 +106,8 @@ export default function ClientsPage() {
   const [filter, setFilter] = useState<"all" | ClientStatus>("all");
   const [modalOpen, setModalOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadClients = useCallback(async () => {
     if (!organizationId) {
@@ -263,6 +267,25 @@ export default function ClientsPage() {
     (sum, c) => sum + c.unbilledMinutes,
     0
   );
+
+  async function handleDeleteClient(client: ClientRow) {
+    setDeletingId(client.id);
+    setError(null);
+    const supabase = createClient();
+    const { error: deleteError } = await supabase
+      .from("clients")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("id", client.id)
+      .is("deleted_at", null);
+
+    setDeletingId(null);
+    setMenuOpenId(null);
+    if (deleteError) {
+      setError(deleteError.message);
+      return;
+    }
+    await loadClients();
+  }
 
   async function handleCreate(values: ClientFormValues, logoFile: File | null) {
     const supabase = createClient();
@@ -496,17 +519,19 @@ export default function ClientsPage() {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <div className="inline-flex items-center gap-2">
+                        <div className="inline-flex items-center gap-2 justify-end">
                           <span className="text-gray-400">
                             {formatRelativeActivity(client.lastActivityAt)}
                           </span>
-                          <button
-                            type="button"
-                            onClick={(e) => e.stopPropagation()}
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-                          >
-                            <MoreHorizontal className="w-4 h-4" />
-                          </button>
+                          <ClientRowMenu
+                            open={menuOpenId === client.id}
+                            busy={deletingId === client.id}
+                            onOpenChange={(next) =>
+                              setMenuOpenId(next ? client.id : null)
+                            }
+                            onView={() => router.push(`/clients/${client.id}`)}
+                            onDelete={() => void handleDeleteClient(client)}
+                          />
                         </div>
                       </td>
                     </tr>
@@ -563,6 +588,138 @@ function StatCard({
         {value}
       </h3>
       {hint && <p className="text-[13px] text-gray-400 mt-1.5">{hint}</p>}
+    </div>
+  );
+}
+
+function ClientRowMenu({
+  open,
+  busy,
+  onOpenChange,
+  onView,
+  onDelete,
+}: {
+  open: boolean;
+  busy: boolean;
+  onOpenChange: (open: boolean) => void;
+  onView: () => void;
+  onDelete: () => void;
+}) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      setConfirmingDelete(false);
+      return;
+    }
+
+    function handlePointerDown(event: MouseEvent) {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
+        onOpenChange(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        if (confirmingDelete) {
+          setConfirmingDelete(false);
+          return;
+        }
+        onOpenChange(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open, onOpenChange, confirmingDelete]);
+
+  return (
+    <div
+      ref={rootRef}
+      className="relative"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <button
+        type="button"
+        disabled={busy}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Client actions"
+        onClick={() => onOpenChange(!open)}
+        className={`p-1.5 rounded-lg transition-colors disabled:opacity-50 ${
+          open
+            ? "bg-gray-100 text-gray-800"
+            : "text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+        }`}
+      >
+        <MoreHorizontal className="w-4 h-4" />
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className={`absolute right-0 z-50 mt-1.5 rounded-xl border border-line bg-white shadow-[0_8px_24px_rgba(16,24,40,0.12)] ${
+            confirmingDelete ? "w-44 py-2 px-2" : "w-40 py-1"
+          }`}
+        >
+          {confirmingDelete ? (
+            <div className="space-y-2">
+              <p className="px-1 pt-0.5 text-[12px] leading-snug text-gray-600">
+                Delete this client?
+              </p>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={busy}
+                onClick={() => onDelete()}
+                className="flex w-full items-center justify-center rounded-lg bg-red-600 px-3 py-2 text-[13px] font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {busy ? "Deleting…" : "Yes, delete"}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={busy}
+                onClick={() => setConfirmingDelete(false)}
+                className="flex w-full items-center justify-center rounded-lg px-3 py-2 text-[13px] font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={busy}
+                onClick={() => {
+                  onOpenChange(false);
+                  onView();
+                }}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] font-medium text-gray-700 hover:bg-[#FAFBFC] disabled:opacity-50"
+              >
+                <Eye className="w-3.5 h-3.5 text-gray-400" />
+                View
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={busy}
+                onClick={() => setConfirmingDelete(true)}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Delete
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,9 +1,14 @@
 import PDFDocument from "pdfkit";
 import { formatInvoiceMoney } from "@/lib/invoices/totals";
+import {
+  formatInvoiceQuantity,
+  type InvoiceLineUnit,
+} from "@/lib/invoices/units";
 
 export type InvoicePdfLine = {
   description: string;
   quantity: number | string;
+  unit?: InvoiceLineUnit | null;
   unitPrice: number | string;
   amount: number;
 };
@@ -201,7 +206,7 @@ export async function buildInvoicePdf(input: InvoicePdfInput): Promise<Buffer> {
       const textY = y + 6;
       doc
         .fillColor(muted)
-        .text(String(line.quantity), colQty, textY, {
+        .text(formatInvoiceQuantity(line.quantity, line.unit), colQty, textY, {
           width: pageWidth * 0.12,
           align: "right",
         })

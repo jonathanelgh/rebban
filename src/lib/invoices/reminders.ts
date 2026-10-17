@@ -119,11 +119,25 @@ export const REMINDER_SEQUENCES: ReminderSequenceOption[] = [
   },
 ];
 
+/** Sequences selectable as an org default (excludes “none”). */
+export const ORG_REMINDER_SEQUENCES = REMINDER_SEQUENCES.filter(
+  (sequence) => sequence.key !== "none"
+);
+
 export function getReminderSequence(key: ReminderSequenceKey) {
   return (
     REMINDER_SEQUENCES.find((sequence) => sequence.key === key) ||
     REMINDER_SEQUENCES[0]
   );
+}
+
+export function asOrgReminderSequence(
+  raw: string | null | undefined
+): Exclude<ReminderSequenceKey, "none"> {
+  if (raw === "gentle" || raw === "standard" || raw === "persistent") {
+    return raw;
+  }
+  return "standard";
 }
 
 export function formatReminderOffsetLabel(offsetDays: number) {

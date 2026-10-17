@@ -44,6 +44,7 @@ import {
   type TaskProjectOption,
   type TaskMemberOption,
 } from "@/components/TaskModal";
+import { CreateProjectModal } from "@/components/CreateProjectModal";
 import { useProfile } from "@/components/ProfileContext";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -157,10 +158,24 @@ export default function TasksPage() {
   const [pickerSearch, setPickerSearch] = useState("");
   const [scope, setScope] = useState<Scope>({ type: "all" });
   const [modal, setModal] = useState<ModalState>(null);
+  const [createProjectOpen, setCreateProjectOpen] = useState(false);
+  const [createProjectClientId, setCreateProjectClientId] = useState<
+    string | null
+  >(null);
   const [showPicker, setShowPicker] = useState(true);
   const [expandedClients, setExpandedClients] = useState<Record<string, boolean>>(
     {}
   );
+
+  function openCreateProject(clientId?: string | null) {
+    setCreateProjectClientId(
+      clientId ||
+        (scope.type === "client" || scope.type === "project"
+          ? scope.clientId
+          : null)
+    );
+    setCreateProjectOpen(true);
+  }
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
@@ -823,13 +838,25 @@ export default function TasksPage() {
     return (
       <main className="h-full min-h-0 w-full flex">
         <aside className="w-full max-w-md border-r border-line flex flex-col min-h-0 bg-white">
-          <div className="px-6 pt-10 pb-4 pr-36">
-            <h1 className="text-3xl font-semibold text-gray-900 tracking-tight">
-              Tasks
-            </h1>
-            <p className="text-[15px] text-gray-500 mt-1.5">
-              Choose a client or project to open its board.
-            </p>
+          <div className="px-6 pt-10 pb-4 flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="text-3xl font-semibold text-gray-900 tracking-tight">
+                Tasks
+              </h1>
+              <p className="text-[15px] text-gray-500 mt-1.5">
+                Choose a client or project to open its board.
+              </p>
+            </div>
+            {clients.length > 0 && (
+              <button
+                type="button"
+                onClick={() => openCreateProject()}
+                className="shrink-0 inline-flex items-center gap-1.5 rounded-full border border-line bg-white px-3.5 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50"
+              >
+                <Plus className="w-4 h-4" />
+                Project
+              </button>
+            )}
           </div>
 
           <div className="px-5 pb-3">
@@ -922,38 +949,53 @@ export default function TasksPage() {
                       </button>
                     </div>
 
-                    {expanded &&
-                      (clientProjects.length === 0 ? (
-                        <p className="pl-10 pr-3 py-2 text-[12px] text-gray-400">
-                          No projects yet — create one when adding a task.
-                        </p>
-                      ) : (
-                        clientProjects.map(
-                          ({ projectId, projectName, count: projectCount }) => (
-                            <button
-                              key={projectId}
-                              type="button"
-                              onClick={() =>
-                                selectProject(
-                                  clientId,
-                                  clientName,
-                                  projectId,
-                                  projectName
-                                )
-                              }
-                              className="w-full flex items-center gap-2.5 pl-10 pr-3 py-2.5 rounded-xl text-left transition-colors text-gray-600 hover:bg-[#FAFBFC] border border-transparent"
-                            >
-                              <FolderKanban className="w-3.5 h-3.5 shrink-0 text-gray-400" />
-                              <span className="flex-1 text-[13px] font-medium truncate">
-                                {projectName}
-                              </span>
-                              <span className="text-[11px] font-semibold text-gray-400">
-                                {projectCount}
-                              </span>
-                            </button>
+                    {expanded && (
+                      <div className="space-y-0.5">
+                        {clientProjects.length === 0 ? (
+                          <p className="pl-10 pr-3 py-1.5 text-[12px] text-gray-400">
+                            No projects yet
+                          </p>
+                        ) : (
+                          clientProjects.map(
+                            ({
+                              projectId,
+                              projectName,
+                              count: projectCount,
+                            }) => (
+                              <button
+                                key={projectId}
+                                type="button"
+                                onClick={() =>
+                                  selectProject(
+                                    clientId,
+                                    clientName,
+                                    projectId,
+                                    projectName
+                                  )
+                                }
+                                className="w-full flex items-center gap-2.5 pl-10 pr-3 py-2.5 rounded-xl text-left transition-colors text-gray-600 hover:bg-[#FAFBFC] border border-transparent"
+                              >
+                                <FolderKanban className="w-3.5 h-3.5 shrink-0 text-gray-400" />
+                                <span className="flex-1 text-[13px] font-medium truncate">
+                                  {projectName}
+                                </span>
+                                <span className="text-[11px] font-semibold text-gray-400">
+                                  {projectCount}
+                                </span>
+                              </button>
+                            )
                           )
-                        )
-                      ))}
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => openCreateProject(clientId)}
+                          className="w-full flex items-center gap-2.5 pl-10 pr-3 py-2 rounded-xl text-left text-[13px] font-medium text-[#2563EB] hover:bg-[#EFF6FF] transition-colors"
+                        >
+                          <Plus className="w-3.5 h-3.5 shrink-0" />
+                          Create project
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })
@@ -963,6 +1005,37 @@ export default function TasksPage() {
         <div className="hidden md:flex flex-1 items-center justify-center text-sm text-gray-400 px-8">
           Select a client or project to view tasks
         </div>
+
+        {createProjectOpen && organizationId && userId && (
+          <CreateProjectModal
+            organizationId={organizationId}
+            userId={userId}
+            clients={clients}
+            initialClientId={createProjectClientId}
+            onClose={() => {
+              setCreateProjectOpen(false);
+              setCreateProjectClientId(null);
+            }}
+            onCreated={(project) => {
+              setProjects((prev) => [
+                ...prev,
+                {
+                  id: project.id,
+                  name: project.name,
+                  clientId: project.clientId,
+                },
+              ]);
+              setCreateProjectOpen(false);
+              setCreateProjectClientId(null);
+              selectProject(
+                project.clientId,
+                project.clientName,
+                project.id,
+                project.name
+              );
+            }}
+          />
+        )}
       </main>
     );
   }
@@ -1013,6 +1086,14 @@ export default function TasksPage() {
                 label="List"
               />
             </div>
+            <button
+              type="button"
+              onClick={() => openCreateProject()}
+              className="inline-flex items-center gap-2 rounded-full border border-line bg-white px-4 py-2.5 text-sm font-medium text-gray-800 hover:bg-gray-50"
+            >
+              <FolderKanban className="w-4 h-4 text-emerald-600" />
+              New project
+            </button>
             <button
               type="button"
               onClick={() => openCreate()}
@@ -1076,6 +1157,38 @@ export default function TasksPage() {
           )}
         </div>
       </div>
+
+      {createProjectOpen && organizationId && userId && (
+        <CreateProjectModal
+          organizationId={organizationId}
+          userId={userId}
+          clients={clients}
+          initialClientId={createProjectClientId}
+          onClose={() => {
+            setCreateProjectOpen(false);
+            setCreateProjectClientId(null);
+          }}
+          onCreated={(project) => {
+            setProjects((prev) => [
+              ...prev,
+              {
+                id: project.id,
+                name: project.name,
+                clientId: project.clientId,
+              },
+            ]);
+            setCreateProjectOpen(false);
+            setCreateProjectClientId(null);
+            selectProject(
+              project.clientId,
+              project.clientName,
+              project.id,
+              project.name
+            );
+            setShowPicker(false);
+          }}
+        />
+      )}
 
       {modal && (
         <TaskModal

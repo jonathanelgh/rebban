@@ -8,7 +8,6 @@ import {
   Users,
   FileText,
   FileSpreadsheet,
-  CreditCard,
   Settings,
   Timer,
   Kanban,
@@ -24,6 +23,7 @@ import {
   Shield,
   Mail,
   ChartColumn,
+  Headphones,
   type LucideIcon,
 } from "lucide-react";
 import { useTimeTracking, formatElapsed } from "@/components/TimeTrackingContext";
@@ -167,6 +167,13 @@ function SidebarInner({
               active={pathname.startsWith("/admin/leads/insights")}
               onNavigate={handleNavigate}
             />
+            <NavItem
+              href="/admin/support"
+              icon={Headphones}
+              label="Support"
+              active={pathname.startsWith("/admin/support")}
+              onNavigate={handleNavigate}
+            />
           </nav>
         ) : (
           <nav className="w-full space-y-0.5">
@@ -191,13 +198,6 @@ function SidebarInner({
               icon={FileSpreadsheet}
               label="Invoices"
               active={pathname.startsWith("/invoices")}
-              onNavigate={handleNavigate}
-            />
-            <NavItem
-              href="/payments"
-              icon={CreditCard}
-              label="Payments"
-              active={pathname === "/payments"}
               onNavigate={handleNavigate}
             />
             <NavItem

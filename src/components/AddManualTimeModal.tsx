@@ -22,6 +22,7 @@ import {
 } from "@/components/TimeTrackingContext";
 import { toISODateLocal } from "@/lib/time-entries";
 import { ModalOverlay, modalPanelClass } from "@/components/ModalFrame";
+import { TaskSuggestInput } from "@/components/TaskSuggestInput";
 
 const inputClass =
   "w-full rounded-xl border border-line bg-[#FAFBFC] px-3.5 py-2.5 text-sm text-gray-900 outline-none placeholder:text-gray-400 focus:border-gray-300 focus:bg-white";
@@ -502,6 +503,10 @@ export function AddManualTimeModal({
   const { defaultHourlyRate } = useTimeTracking();
   const now = new Date();
   const [description, setDescription] = useState("");
+  const [taskId, setTaskId] = useState<string | null>(null);
+  const [clientTasks, setClientTasks] = useState<
+    { id: string; title: string }[]
+  >([]);
   const [date, setDate] = useState(() => toISODateLocal(now));
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("10:00");
@@ -515,6 +520,34 @@ export function AddManualTimeModal({
     () => (clientId ? projects.filter((p) => p.clientId === clientId) : []),
     [projects, clientId]
   );
+
+  useEffect(() => {
+    if (!organizationId || !clientId) {
+      setClientTasks([]);
+      return;
+    }
+    let cancelled = false;
+    async function loadTasks() {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("tasks")
+        .select("id, title")
+        .eq("organization_id", organizationId!)
+        .eq("client_id", clientId)
+        .is("deleted_at", null)
+        .order("updated_at", { ascending: false })
+        .limit(40);
+      if (!cancelled) {
+        setClientTasks(
+          (data || []).map((t) => ({ id: t.id, title: t.title || "Untitled" }))
+        );
+      }
+    }
+    void loadTasks();
+    return () => {
+      cancelled = true;
+    };
+  }, [organizationId, clientId]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -550,11 +583,15 @@ export function AddManualTimeModal({
     setSaving(true);
     setError(null);
     const supabase = createClient();
+    const linkedTaskId =
+      taskId && clientTasks.some((t) => t.id === taskId) ? taskId : null;
+
     const { error: insertError } = await supabase.from("time_entries").insert({
       organization_id: organizationId,
       user_id: userId,
       client_id: clientId,
       project_id: projectValid,
+      task_id: linkedTaskId,
       description: description.trim(),
       started_at: startedAt,
       ended_at: endedAt,
@@ -602,14 +639,62 @@ export function AddManualTimeModal({
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto px-5 sm:px-6 py-5 space-y-4">
-          <Field label="Description">
-            <input
-              autoFocus
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="What did you work on?"
-              className={inputClass}
+          <Field label="Client">
+            <ClientPicker
+              clients={clients}
+              selectedId={clientId}
+              onChange={(id) => {
+                setClientId(id);
+                setProjectId("");
+                setTaskId(null);
+              }}
             />
+          </Field>
+
+          <Field
+            label="Project"
+            hint="Optional — leave blank if this was just for the client."
+          >
+            <ProjectPicker
+              projects={clientProjects}
+              selectedId={projectId}
+              onChange={setProjectId}
+              disabled={!clientId}
+              emptyLabel={
+                !clientId
+                  ? "Select a client first"
+                  : clientProjects.length === 0
+                    ? "No projects for this client"
+                    : "No project"
+              }
+            />
+          </Field>
+
+          <Field label="Description">
+            <div className={`${inputClass} py-0 min-h-[42px] flex items-center`}>
+              <TaskSuggestInput
+                value={description}
+                tasks={clientTasks}
+                onChange={(value) => {
+                  setDescription(value);
+                  setTaskId((prev) => {
+                    if (!prev) return null;
+                    const match = clientTasks.find((t) => t.id === prev);
+                    return match && match.title === value ? prev : null;
+                  });
+                }}
+                onSelectTask={(task) => {
+                  setDescription(task.title);
+                  setTaskId(task.id);
+                }}
+                placeholder={
+                  clientId
+                    ? "What did you work on? Pick a task or type…"
+                    : "What did you work on?"
+                }
+                className="text-sm py-2.5"
+              />
+            </div>
           </Field>
 
           <Field label="Date">
@@ -642,36 +727,6 @@ export function AddManualTimeModal({
               </div>
             </Field>
           </div>
-
-          <Field label="Client">
-            <ClientPicker
-              clients={clients}
-              selectedId={clientId}
-              onChange={(id) => {
-                setClientId(id);
-                setProjectId("");
-              }}
-            />
-          </Field>
-
-          <Field
-            label="Project"
-            hint="Optional — leave blank if this was just for the client."
-          >
-            <ProjectPicker
-              projects={clientProjects}
-              selectedId={projectId}
-              onChange={setProjectId}
-              disabled={!clientId}
-              emptyLabel={
-                !clientId
-                  ? "Select a client first"
-                  : clientProjects.length === 0
-                    ? "No projects for this client"
-                    : "No project"
-              }
-            />
-          </Field>
 
           <label className="flex items-center gap-2.5 text-sm text-gray-700">
             <input

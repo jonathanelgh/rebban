@@ -2,11 +2,20 @@
 
 import React from "react";
 import { formatInvoiceMoney, pricesTaxLabel } from "@/lib/invoices/totals";
+import {
+  formatInvoiceQuantity,
+  type InvoiceLineUnit,
+} from "@/lib/invoices/units";
+import {
+  formatIbanDisplay,
+  normalizeBankgiro,
+} from "@/lib/invoices/payment-details";
 
 export type InvoiceDocumentLine = {
   id?: string;
   description: string;
   quantity: number | string;
+  unit?: InvoiceLineUnit | null;
   unitPrice: number | string;
   amount: number;
 };
@@ -41,6 +50,8 @@ export type InvoiceDocumentProps = {
   lateFeeEnabled?: boolean;
   lateFeePercent?: number;
   notes?: string | null;
+  paymentIban?: string | null;
+  paymentBankgiro?: string | null;
   /** When true, hide interactive chrome for print/PDF */
   printMode?: boolean;
 };
@@ -88,12 +99,17 @@ export function InvoiceDocument({
   lateFeeEnabled,
   lateFeePercent,
   notes,
+  paymentIban,
+  paymentBankgiro,
 }: InvoiceDocumentProps) {
   const billTo =
     billToCompany && billToName && billToCompany !== billToName
       ? billToCompany
       : billToCompany || billToName || "—";
   const rateLabel = pricesTaxLabel({ taxEnabled, pricesIncludeTax });
+  const ibanDisplay = formatIbanDisplay(paymentIban);
+  const bankgiroDisplay = normalizeBankgiro(paymentBankgiro);
+  const hasBankDetails = Boolean(ibanDisplay || bankgiroDisplay);
 
   return (
     <article
@@ -220,7 +236,7 @@ export function InvoiceDocument({
                 </div>
                 <div className="sm:text-right text-gray-600">
                   <span className="sm:hidden text-gray-400 mr-1">Qty</span>
-                  {line.quantity}
+                  {formatInvoiceQuantity(line.quantity, line.unit)}
                 </div>
                 <div className="sm:text-right text-gray-600">
                   <span className="sm:hidden text-gray-400 mr-1">Rate</span>
@@ -258,12 +274,42 @@ export function InvoiceDocument({
           </div>
         </div>
 
-        {notes && (
-          <div className="mt-8 pt-6 border-t border-line">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
-              Notes
-            </div>
-            <p className="text-[13px] text-gray-600 whitespace-pre-line">{notes}</p>
+        {(hasBankDetails || notes) && (
+          <div className="mt-8 pt-6 border-t border-line space-y-5">
+            {hasBankDetails && (
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
+                  Bank transfer
+                </div>
+                <div className="text-[13px] text-gray-700 space-y-1">
+                  {ibanDisplay && (
+                    <p>
+                      <span className="text-gray-500">IBAN</span>{" "}
+                      <span className="font-medium tracking-wide">{ibanDisplay}</span>
+                    </p>
+                  )}
+                  {bankgiroDisplay && (
+                    <p>
+                      <span className="text-gray-500">Bankgiro</span>{" "}
+                      <span className="font-medium">{bankgiroDisplay}</span>
+                    </p>
+                  )}
+                  {number && (
+                    <p className="text-[12px] text-gray-500 pt-0.5">
+                      Use invoice {number} as the payment reference.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+            {notes && (
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
+                  Notes
+                </div>
+                <p className="text-[13px] text-gray-600 whitespace-pre-line">{notes}</p>
+              </div>
+            )}
           </div>
         )}
       </div>

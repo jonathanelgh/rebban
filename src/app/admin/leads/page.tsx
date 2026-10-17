@@ -62,11 +62,7 @@ export default function AdminLeadsPage() {
   const [status, setStatus] = useState<"" | OutreachStatus>("");
   const [temperature, setTemperature] = useState<"" | OutreachTemperature>("");
   const [tier, setTier] = useState<"" | OutreachLeadTier>("");
-  const [ready, setReady] = useState("");
-  const [replied, setReplied] = useState("");
-  const [followUpDue, setFollowUpDue] = useState(false);
-  const [dnc, setDnc] = useState("");
-  const [signedUp, setSignedUp] = useState("");
+  const [quickFilter, setQuickFilter] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -84,11 +80,34 @@ export default function AdminLeadsPage() {
     if (status) params.set("status", status);
     if (temperature) params.set("temperature", temperature);
     if (tier) params.set("tier", tier);
-    if (ready) params.set("ready", ready);
-    if (replied) params.set("replied", replied);
-    if (followUpDue) params.set("followUpDue", "1");
-    if (dnc) params.set("doNotContact", dnc);
-    if (signedUp) params.set("signedUp", signedUp);
+    switch (quickFilter) {
+      case "ready":
+        params.set("ready", "1");
+        break;
+      case "replied":
+        params.set("replied", "1");
+        break;
+      case "no_reply":
+        params.set("replied", "0");
+        break;
+      case "follow_up_due":
+        params.set("followUpDue", "1");
+        break;
+      case "do_not_contact":
+        params.set("doNotContact", "1");
+        break;
+      case "signed_up":
+        params.set("signedUp", "1");
+        break;
+      case "not_signed_up":
+        params.set("signedUp", "0");
+        break;
+      case "paying":
+        params.set("paying", "1");
+        break;
+      default:
+        break;
+    }
 
     const res = await fetch(`/api/admin/leads?${params.toString()}`);
     const json = await res.json().catch(() => ({}));
@@ -101,18 +120,7 @@ export default function AdminLeadsPage() {
     setTotal(json.total || 0);
     setError(null);
     setLoading(false);
-  }, [
-    page,
-    q,
-    status,
-    temperature,
-    tier,
-    ready,
-    replied,
-    followUpDue,
-    dnc,
-    signedUp,
-  ]);
+  }, [page, q, status, temperature, tier, quickFilter]);
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
@@ -124,7 +132,7 @@ export default function AdminLeadsPage() {
   useEffect(() => {
     setPage(1);
     setSelected(new Set());
-  }, [q, status, temperature, tier, ready, replied, followUpDue, dnc, signedUp]);
+  }, [q, status, temperature, tier, quickFilter]);
 
   async function bulk(action: string, extra?: Record<string, string>) {
     if (!selected.size) return;
@@ -266,43 +274,21 @@ export default function AdminLeadsPage() {
             <option value="b">Tier B</option>
             <option value="c">Tier C</option>
           </select>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <FilterChip
-            active={ready === "1"}
-            onClick={() => setReady(ready === "1" ? "" : "1")}
-            label="Ready to send"
-          />
-          <FilterChip
-            active={replied === "1"}
-            onClick={() => setReplied(replied === "1" ? "" : "1")}
-            label="Replied"
-          />
-          <FilterChip
-            active={replied === "0"}
-            onClick={() => setReplied(replied === "0" ? "" : "0")}
-            label="No reply"
-          />
-          <FilterChip
-            active={followUpDue}
-            onClick={() => setFollowUpDue(!followUpDue)}
-            label="Follow-up due"
-          />
-          <FilterChip
-            active={dnc === "1"}
-            onClick={() => setDnc(dnc === "1" ? "" : "1")}
-            label="Do not contact"
-          />
-          <FilterChip
-            active={signedUp === "1"}
-            onClick={() => setSignedUp(signedUp === "1" ? "" : "1")}
-            label="Signed up"
-          />
-          <FilterChip
-            active={signedUp === "0"}
-            onClick={() => setSignedUp(signedUp === "0" ? "" : "0")}
-            label="Not signed up"
-          />
+          <select
+            value={quickFilter}
+            onChange={(e) => setQuickFilter(e.target.value)}
+            className="border border-line rounded-xl px-3 py-2.5 text-sm bg-white min-w-[160px]"
+          >
+            <option value="">All leads</option>
+            <option value="ready">Ready to send</option>
+            <option value="replied">Replied</option>
+            <option value="no_reply">No reply</option>
+            <option value="follow_up_due">Follow-up due</option>
+            <option value="do_not_contact">Do not contact</option>
+            <option value="signed_up">Signed up</option>
+            <option value="not_signed_up">Not signed up</option>
+            <option value="paying">Paying</option>
+          </select>
         </div>
       </div>
 
@@ -419,15 +405,23 @@ export default function AdminLeadsPage() {
                       />
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-2 min-w-0">
+                      <div className="flex items-center gap-2 min-w-0 flex-wrap">
                         <div className="font-medium text-gray-900 truncate">
                           {leadName(lead)}
                         </div>
-                        {lead.signup?.signedUp && (
+                        {lead.signup?.paying ? (
+                          <span className="shrink-0 inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-50 text-violet-700">
+                            Paying
+                          </span>
+                        ) : lead.signup?.onTrial ? (
+                          <span className="shrink-0 inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-700">
+                            Trial
+                          </span>
+                        ) : lead.signup?.signedUp ? (
                           <span className="shrink-0 inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700">
                             Signed up
                           </span>
-                        )}
+                        ) : null}
                       </div>
                       <div className="text-[12px] text-gray-400">{lead.email}</div>
                     </td>
@@ -519,26 +513,3 @@ export default function AdminLeadsPage() {
   );
 }
 
-function FilterChip({
-  active,
-  onClick,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`px-3 py-1.5 rounded-lg text-[13px] font-medium border transition-colors ${
-        active
-          ? "bg-gray-900 text-white border-gray-900"
-          : "bg-white text-gray-600 border-line hover:bg-gray-50"
-      }`}
-    >
-      {label}
-    </button>
-  );
-}

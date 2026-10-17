@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { Sidebar } from "@/components/Sidebar";
 import { CreateMenu } from "@/components/CreateMenu";
+import { SupportChat } from "@/components/SupportChat";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { useBilling } from "@/components/BillingContext";
 import { isBillingExemptPath } from "@/lib/billing/plan";
@@ -19,6 +20,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
     openUpgradeModal,
     closeUpgradeModal,
   } = useBilling();
+  const isPrintLayout = pathname.includes("/print");
   const isFocusedLayout =
     pathname.includes("/edit") ||
     pathname.includes("/template") ||
@@ -60,7 +62,9 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
     return (
       <div
         className={`h-full w-full min-h-0 ${
-          pathname.startsWith("/p/") || pathname.startsWith("/pay/")
+          isPrintLayout
+            ? "overflow-y-auto bg-white"
+            : pathname.startsWith("/p/") || pathname.startsWith("/pay/")
             ? "overflow-y-auto bg-[#F3F4F6]"
             : isAuthLayout
               ? "overflow-y-auto bg-[#F0F1F3]"
@@ -133,6 +137,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
         </div>
       </div>
       <UpgradeModal open={upgradeModalOpen} onClose={closeUpgradeModal} />
+      <SupportChat />
     </div>
   );
 }

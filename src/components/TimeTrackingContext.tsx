@@ -28,13 +28,22 @@ export type TimerProject = {
   clientId: string;
 };
 
+export type TimerTask = {
+  id: string;
+  title: string;
+  clientId: string | null;
+};
+
 type TimeTrackingContextValue = {
   clients: TimerClient[];
   projects: TimerProject[];
+  clientTasks: TimerTask[];
   selectedClient: TimerClient | null;
   setSelectedClient: (client: TimerClient | null) => void;
   selectedProject: TimerProject | null;
   setSelectedProject: (project: TimerProject | null) => void;
+  selectedTask: TimerTask | null;
+  setSelectedTask: (task: TimerTask | null) => void;
   workDescription: string;
   setWorkDescription: (value: string) => void;
   isTracking: boolean;
@@ -67,7 +76,9 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
   const [selectedProject, setSelectedProject] = useState<TimerProject | null>(
     null
   );
-  const [workDescription, setWorkDescription] = useState("");
+  const [selectedTask, setSelectedTaskState] = useState<TimerTask | null>(null);
+  const [clientTasks, setClientTasks] = useState<TimerTask[]>([]);
+  const [workDescription, setWorkDescriptionState] = useState("");
   const [activeEntryId, setActiveEntryId] = useState<string | null>(null);
   const [startedAtMs, setStartedAtMs] = useState<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -146,7 +157,7 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
       const { data, error: resumeError } = await supabase
         .from("time_entries")
         .select(
-          "id, description, started_at, client_id, project_id, clients(id, name, company), projects(id, name, client_id)"
+          "id, description, started_at, client_id, project_id, task_id, clients(id, name, company), projects(id, name, client_id), tasks(id, title, client_id)"
         )
         .eq("organization_id", organizationId)
         .eq("user_id", userId)
@@ -179,6 +190,10 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
         | { id: string; name: string; client_id: string }
         | null
         | undefined;
+      const taskRel = data.tasks as
+        | { id: string; title: string; client_id: string | null }
+        | null
+        | undefined;
 
       if (clientRel) {
         setSelectedClientState({
@@ -204,7 +219,17 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
         setSelectedProject(null);
       }
 
-      setWorkDescription(data.description || "");
+      if (taskRel) {
+        setSelectedTaskState({
+          id: taskRel.id,
+          title: taskRel.title || "Untitled",
+          clientId: taskRel.client_id,
+        });
+      } else {
+        setSelectedTaskState(null);
+      }
+
+      setWorkDescriptionState(data.description || "");
       setActiveEntryId(data.id);
       const startMs = new Date(data.started_at).getTime();
       setStartedAtMs(Number.isFinite(startMs) ? startMs : Date.now());
@@ -242,8 +267,57 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
     setSelectedProject((prev) =>
       prev && client && prev.clientId === client.id ? prev : null
     );
+    setSelectedTaskState((prev) =>
+      prev && client && prev.clientId === client.id ? prev : null
+    );
     setError(null);
   }
+
+  function setWorkDescription(value: string) {
+    setWorkDescriptionState(value);
+    setSelectedTaskState((prev) => {
+      if (!prev) return null;
+      return prev.title === value ? prev : null;
+    });
+  }
+
+  function setSelectedTask(task: TimerTask | null) {
+    setSelectedTaskState(task);
+    if (task) setWorkDescriptionState(task.title);
+  }
+
+  useEffect(() => {
+    if (!organizationId || !selectedClient?.id) {
+      setClientTasks([]);
+      return;
+    }
+    const orgId = organizationId;
+    const clientId = selectedClient.id;
+    let cancelled = false;
+    async function loadClientTasks() {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("tasks")
+        .select("id, title, client_id")
+        .eq("organization_id", orgId)
+        .eq("client_id", clientId)
+        .is("deleted_at", null)
+        .order("updated_at", { ascending: false })
+        .limit(40);
+      if (cancelled) return;
+      setClientTasks(
+        (data || []).map((t) => ({
+          id: t.id,
+          title: t.title || "Untitled",
+          clientId: t.client_id,
+        }))
+      );
+    }
+    void loadClientTasks();
+    return () => {
+      cancelled = true;
+    };
+  }, [organizationId, selectedClient?.id]);
 
   const startTimer = useCallback(async () => {
     if (actionLock.current) return;
@@ -289,6 +363,13 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
           ? selectedProject.id
           : null;
 
+      const taskId =
+        selectedTask &&
+        selectedClient &&
+        selectedTask.clientId === selectedClient.id
+          ? selectedTask.id
+          : null;
+
       const { data, error: insertError } = await supabase
         .from("time_entries")
         .insert({
@@ -296,6 +377,7 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
           user_id: userId,
           client_id: selectedClient?.id ?? null,
           project_id: projectId,
+          task_id: taskId,
           description: workDescription.trim(),
           started_at: nowIso,
           ended_at: null,
@@ -325,6 +407,7 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
     userId,
     selectedClient,
     selectedProject,
+    selectedTask,
     workDescription,
     defaultHourlyRate,
   ]);
@@ -344,6 +427,13 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
       const supabase = createClient();
       const endedAt = new Date().toISOString();
 
+      const taskId =
+        selectedTask &&
+        selectedClient &&
+        selectedTask.clientId === selectedClient.id
+          ? selectedTask.id
+          : null;
+
       const { error: updateError } = await supabase
         .from("time_entries")
         .update({
@@ -357,6 +447,7 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
             selectedProject.clientId === selectedClient.id
               ? selectedProject.id
               : null,
+          task_id: taskId,
         })
         .eq("id", activeEntryId)
         .eq("organization_id", organizationId)
@@ -370,7 +461,8 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
       setActiveEntryId(null);
       setStartedAtMs(null);
       setElapsedSeconds(0);
-      setWorkDescription("");
+      setWorkDescriptionState("");
+      setSelectedTaskState(null);
       setEntriesVersion((v) => v + 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not stop timer.");
@@ -386,6 +478,7 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
     workDescription,
     selectedClient,
     selectedProject,
+    selectedTask,
   ]);
 
   const canStart = Boolean(
@@ -396,10 +489,13 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
     () => ({
       clients,
       projects,
+      clientTasks,
       selectedClient,
       setSelectedClient,
       selectedProject,
       setSelectedProject,
+      selectedTask,
+      setSelectedTask,
       workDescription,
       setWorkDescription,
       isTracking,
@@ -417,8 +513,10 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
     [
       clients,
       projects,
+      clientTasks,
       selectedClient,
       selectedProject,
+      selectedTask,
       workDescription,
       isTracking,
       elapsedSeconds,

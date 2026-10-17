@@ -9,11 +9,64 @@ import { analyzeInboundReply, isOutreachAiConfigured } from "@/lib/outreach/anal
 import { normalizeEmail } from "@/lib/outreach/safety-core";
 
 type Db = SupabaseClient<Database>;
+type Lead = Database["public"]["Tables"]["outreach_leads"]["Row"];
+type Message = Database["public"]["Tables"]["outreach_messages"]["Row"];
 
 function extractEmail(fromHeader: string | null) {
   if (!fromHeader) return null;
   const match = fromHeader.match(/<([^>]+)>/);
   return normalizeEmail(match?.[1] || fromHeader);
+}
+
+async function analyzeUnprocessedInbound(options: {
+  db: Db;
+  lead: Lead;
+  errors: string[];
+}) {
+  const { db, lead, errors } = options;
+  const { data: history, error } = await db
+    .from("outreach_messages")
+    .select("*")
+    .eq("lead_id", lead.id)
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(error.message);
+
+  const pending = (history || []).filter(
+    (m) => m.direction === "inbound" && !m.ai_processed_at
+  );
+  if (!pending.length) return 0;
+
+  // One new suggestion per sync: always score the newest inbound with full thread.
+  const inbound = pending[pending.length - 1] as Message;
+  try {
+    await analyzeInboundReply({
+      db,
+      lead,
+      inbound,
+      history: history || [],
+    });
+
+    // Older unprocessed inbounds are covered by this thread-level suggestion.
+    const olderIds = pending
+      .filter((m) => m.id !== inbound.id)
+      .map((m) => m.id);
+    if (olderIds.length) {
+      await db
+        .from("outreach_messages")
+        .update({ ai_processed_at: new Date().toISOString() })
+        .in("id", olderIds);
+    }
+
+    return 1;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "AI analysis failed";
+    console.error("[outreach] AI analysis failed", {
+      leadId: lead.id,
+      error: message,
+    });
+    errors.push(`${lead.email}: ${message}`);
+    return 0;
+  }
 }
 
 export async function syncOutreachReplies(options: {
@@ -24,6 +77,8 @@ export async function syncOutreachReplies(options: {
   analyze?: boolean;
 }) {
   const { db } = options;
+  const wantAnalyze = options.analyze !== false;
+  const aiConfigured = isOutreachAiConfigured();
   const connections = await listActiveOutreachGmailConnections(db);
   if (!connections.length) {
     return {
@@ -31,6 +86,7 @@ export async function syncOutreachReplies(options: {
       error: "No outreach Gmail connection found.",
       imported: 0,
       analyzed: 0,
+      aiConfigured,
       errors: [] as string[],
     };
   }
@@ -54,6 +110,7 @@ export async function syncOutreachReplies(options: {
 
   let imported = 0;
   let analyzed = 0;
+  let pendingAnalysis = 0;
   const errors: string[] = [];
 
   for (const lead of leads || []) {
@@ -139,31 +196,33 @@ export async function syncOutreachReplies(options: {
             })
             .eq("lead_id", lead.id)
             .in("status", ["scheduled", "due"]);
+        }
+      }
 
-          if (options.analyze !== false && isOutreachAiConfigured()) {
-            const { data: history } = await db
-              .from("outreach_messages")
+      // Analyze any inbound that still lacks AI (new or previously skipped).
+      if (wantAnalyze) {
+        const { count } = await db
+          .from("outreach_messages")
+          .select("id", { count: "exact", head: true })
+          .eq("lead_id", lead.id)
+          .eq("direction", "inbound")
+          .is("ai_processed_at", null);
+        const needsAi = (count || 0) > 0;
+        if (needsAi) {
+          if (!aiConfigured) {
+            pendingAnalysis += 1;
+          } else {
+            // Reload lead in case status fields changed above.
+            const { data: freshLead } = await db
+              .from("outreach_leads")
               .select("*")
-              .eq("lead_id", lead.id)
-              .order("created_at", { ascending: true });
-
-            try {
-              await analyzeInboundReply({
-                db,
-                lead,
-                inbound: inserted,
-                history: history || [],
-              });
-              analyzed += 1;
-            } catch (err) {
-              const message =
-                err instanceof Error ? err.message : "AI analysis failed";
-              console.error("[outreach] AI analysis failed", {
-                leadId: lead.id,
-                error: message,
-              });
-              errors.push(`${lead.email}: ${message}`);
-            }
+              .eq("id", lead.id)
+              .maybeSingle();
+            analyzed += await analyzeUnprocessedInbound({
+              db,
+              lead: freshLead || lead,
+              errors,
+            });
           }
         }
       }
@@ -177,12 +236,20 @@ export async function syncOutreachReplies(options: {
     }
   }
 
+  if (wantAnalyze && !aiConfigured && pendingAnalysis > 0) {
+    errors.push(
+      "OPENAI_API_KEY is not configured — replies imported but not analyzed."
+    );
+  }
+
   await markOutreachGmailSynced(db, connection.id);
 
   return {
     ok: true as const,
     imported,
     analyzed,
+    pendingAnalysis,
+    aiConfigured,
     errors,
     connectionEmail: connection.email,
   };

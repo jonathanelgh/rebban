@@ -21,6 +21,8 @@ type PayPayload = {
     notes: string | null;
     paidAt: string | null;
     payable: boolean;
+    stripePayable?: boolean;
+    bankTransferAvailable?: boolean;
     showLogo: boolean;
     bannerUrl: string | null;
     lateFeeEnabled: boolean;
@@ -39,6 +41,8 @@ type PayPayload = {
     name: string;
     logoUrl: string | null;
     address: string | null;
+    paymentIban?: string | null;
+    paymentBankgiro?: string | null;
   };
   client: {
     name: string | null;
@@ -206,7 +210,10 @@ export default function PublicInvoicePayPage() {
 
   const paid = paidOptimistic || data.invoice.status === "paid";
 
-  const showPaymentColumn = !paid && data.invoice.payable;
+  const stripePayable = Boolean(data.invoice.stripePayable);
+  const bankTransferAvailable = Boolean(data.invoice.bankTransferAvailable);
+  const showPaymentColumn =
+    !paid && (stripePayable || bankTransferAvailable || data.invoice.payable);
 
   return (
     <div className="min-h-screen bg-[#F7F8FA] px-4 py-8 sm:py-10 print:bg-white print:p-0">
@@ -299,19 +306,58 @@ export default function PublicInvoicePayPage() {
               lateFeeEnabled={data.invoice.lateFeeEnabled}
               lateFeePercent={data.invoice.lateFeePercent}
               notes={data.invoice.notes}
+              paymentIban={data.business.paymentIban}
+              paymentBankgiro={data.business.paymentBankgiro}
             />
           </div>
 
           {showPaymentColumn && (
             <aside
               ref={checkoutRef}
-              className="print:hidden lg:sticky lg:top-6 order-first lg:order-none"
+              className="print:hidden lg:sticky lg:top-6 order-first lg:order-none space-y-4"
             >
-              <EmbeddedInvoiceCheckout
-                token={token}
-                amountLabel={data.invoice.totalFormatted}
-                onComplete={handleCheckoutComplete}
-              />
+              {stripePayable && (
+                <EmbeddedInvoiceCheckout
+                  token={token}
+                  amountLabel={data.invoice.totalFormatted}
+                  onComplete={handleCheckoutComplete}
+                />
+              )}
+              {bankTransferAvailable && (
+                <div className="rounded-2xl border border-line bg-white px-5 py-5 shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
+                  <div className="text-[15px] font-semibold text-gray-900">
+                    {stripePayable ? "Or pay by bank transfer" : "Pay by bank transfer"}
+                  </div>
+                  <p className="text-[13px] text-gray-500 mt-1 leading-snug">
+                    Transfer {data.invoice.totalFormatted}
+                    {data.invoice.number
+                      ? ` and use ${data.invoice.number} as the reference.`
+                      : "."}
+                  </p>
+                  <div className="mt-4 space-y-3 text-[13px]">
+                    {data.business.paymentIban && (
+                      <div>
+                        <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                          IBAN
+                        </div>
+                        <div className="mt-1 font-medium text-gray-900 tracking-wide break-all">
+                          {data.business.paymentIban}
+                        </div>
+                      </div>
+                    )}
+                    {data.business.paymentBankgiro && (
+                      <div>
+                        <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                          Bankgiro
+                        </div>
+                        <div className="mt-1 font-medium text-gray-900">
+                          {data.business.paymentBankgiro}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </aside>
           )}
 

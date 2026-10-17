@@ -33,6 +33,10 @@ import {
   type OnboardingStepId,
 } from "@/lib/onboarding";
 import { TAX_RATE_PRESETS } from "@/lib/invoices/totals";
+import {
+  normalizeBankgiro,
+  normalizeIban,
+} from "@/lib/invoices/payment-details";
 
 const INDUSTRY_SELECT_OPTIONS = INDUSTRY_OPTIONS.map((option) => ({
   value: option.value,
@@ -97,6 +101,8 @@ export default function OnboardingPage() {
   const [taxEnabled, setTaxEnabled] = useState(false);
   const [taxRate, setTaxRate] = useState(25);
   const [taxRateDraft, setTaxRateDraft] = useState("25");
+  const [paymentIban, setPaymentIban] = useState("");
+  const [paymentBankgiro, setPaymentBankgiro] = useState("");
 
   const [stripeConnected, setStripeConnected] = useState(false);
   const [stripeReady, setStripeReady] = useState(false);
@@ -149,7 +155,7 @@ export default function OnboardingPage() {
       const { data } = await supabase
         .from("organizations")
         .select(
-          "address, country, tax_id, currency, default_tax_enabled, default_tax_rate, description, website, stripe_account_id, stripe_charges_enabled, stripe_details_submitted"
+          "address, country, tax_id, currency, default_tax_enabled, default_tax_rate, description, website, stripe_account_id, stripe_charges_enabled, stripe_details_submitted, payment_iban, payment_bankgiro"
         )
         .eq("id", organizationId)
         .maybeSingle();
@@ -168,6 +174,8 @@ export default function OnboardingPage() {
       }
       setBio(data.description || "");
       setWebsite(data.website || "");
+      setPaymentIban(data.payment_iban || "");
+      setPaymentBankgiro(data.payment_bankgiro || "");
       setStripeConnected(Boolean(data.stripe_account_id));
       setStripeReady(
         Boolean(data.stripe_charges_enabled && data.stripe_details_submitted)
@@ -329,6 +337,8 @@ export default function OnboardingPage() {
         address: address.trim() || null,
         country: country || null,
         currency,
+        payment_iban: normalizeIban(paymentIban),
+        payment_bankgiro: normalizeBankgiro(paymentBankgiro),
         updated_at: new Date().toISOString(),
       })
       .eq("id", organizationId);
@@ -795,6 +805,54 @@ export default function OnboardingPage() {
                       </span>
                     )}
                   </div>
+                </div>
+
+                <div className="rounded-2xl border border-line p-4 space-y-3">
+                  <div>
+                    <div className="text-[14px] font-semibold text-gray-900">
+                      Bank transfer
+                    </div>
+                    <p className="text-[13px] text-gray-500 mt-0.5 leading-snug">
+                      Add your account details so clients can pay without Stripe.
+                      You can change this later in Settings.
+                    </p>
+                  </div>
+                  <label className="block">
+                    <span className="block text-[12px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
+                      IBAN
+                      <span className="font-medium normal-case tracking-normal text-gray-300">
+                        {" "}
+                        · optional
+                      </span>
+                    </span>
+                    <input
+                      className={inputClass}
+                      value={paymentIban}
+                      onChange={(e) => setPaymentIban(e.target.value)}
+                      placeholder="SE45 5000 0000 0583 9825 7466"
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                  </label>
+                  {(country === "SE" || paymentBankgiro) && (
+                    <label className="block">
+                      <span className="block text-[12px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
+                        Bankgiro
+                        <span className="font-medium normal-case tracking-normal text-gray-300">
+                          {" "}
+                          · optional
+                        </span>
+                      </span>
+                      <input
+                        className={inputClass}
+                        value={paymentBankgiro}
+                        onChange={(e) => setPaymentBankgiro(e.target.value)}
+                        placeholder="123-4567"
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                    </label>
+                  )}
                 </div>
               </div>
             )}

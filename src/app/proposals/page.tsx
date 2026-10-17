@@ -19,12 +19,19 @@ import {
   PenTool,
   UploadCloud,
   Send,
+  MoreHorizontal,
+  FolderKanban,
+  Receipt,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "@/components/ProfileContext";
 import { MenuSelect } from "@/components/MenuSelect";
+import { ConvertToProjectModal } from "@/components/ConvertToProjectModal";
 import { asProposalContent } from "@/lib/proposals/content";
-import { nextInvoiceNumber } from "@/lib/invoices/numbering";
+import {
+  billingTypeFromProposalContent,
+  type ProjectBillingType,
+} from "@/lib/projects/billing";
 import {
   addDaysISO,
   lineAmount,
@@ -56,6 +63,9 @@ type ProposalRowData = {
   clientId: string | null;
   clientName: string;
   clientCompany: string | null;
+  projectId: string | null;
+  pricingType: ProjectBillingType;
+  content: unknown;
 };
 
 const CATEGORY_OPTIONS = [
@@ -104,7 +114,7 @@ function actionForStatus(status: ProposalStatus) {
     case "viewed":
       return "Follow up";
     case "accepted":
-      return "Convert to Invoice";
+      return "Actions";
     case "declined":
       return "View";
     default:
@@ -124,7 +134,11 @@ export default function ProposalsPage() {
   const [proposals, setProposals] = useState<ProposalRowData[]>([]);
   const [clients, setClients] = useState<ClientOption[]>([]);
   const [loading, setLoading] = useState(true);
-  const [convertingId, setConvertingId] = useState<string | null>(null);
+  const [convertProposal, setConvertProposal] =
+    useState<ProposalRowData | null>(null);
+  const [creatingInvoiceId, setCreatingInvoiceId] = useState<string | null>(
+    null
+  );
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | ProposalStatus>("all");
@@ -159,7 +173,7 @@ export default function ProposalsPage() {
       supabase
         .from("proposals")
         .select(
-          "id, title, amount, currency, status, sent_at, updated_at, client_id"
+          "id, title, amount, currency, status, sent_at, updated_at, client_id, project_id, content"
         )
         .eq("organization_id", organizationId)
         .is("deleted_at", null)
@@ -198,6 +212,9 @@ export default function ProposalsPage() {
           clientId: row.client_id,
           clientName: client?.name || "No client",
           clientCompany: client?.company ?? null,
+          projectId: row.project_id,
+          pricingType: billingTypeFromProposalContent(row.content),
+          content: row.content,
         };
       });
       setProposals(rows);
@@ -206,25 +223,25 @@ export default function ProposalsPage() {
     setLoading(false);
   }, [organizationId, organizationCurrency]);
 
-  async function convertToInvoice(proposal: ProposalRowData) {
+  async function createInvoiceFromProposal(proposal: ProposalRowData) {
     if (!organizationId || !proposal.clientId) {
-      setError("This proposal needs a client before converting to an invoice.");
+      setError("This proposal needs a client before creating an invoice.");
       return;
     }
-    setConvertingId(proposal.id);
+    setCreatingInvoiceId(proposal.id);
     setError(null);
     const supabase = createClient();
 
     const { data: full, error: loadError } = await supabase
       .from("proposals")
-      .select("id, title, amount, currency, content, client_id")
+      .select("id, title, amount, currency, content, client_id, project_id")
       .eq("id", proposal.id)
       .eq("organization_id", organizationId)
       .maybeSingle();
 
     if (loadError || !full?.client_id) {
       setError(loadError?.message || "Could not load proposal.");
-      setConvertingId(null);
+      setCreatingInvoiceId(null);
       return;
     }
 
@@ -239,9 +256,15 @@ export default function ProposalsPage() {
           quantity?: number;
           price?: number;
           unit_price?: number;
+          unit?: string;
         };
         const quantity = Number(item.qty ?? item.quantity ?? 1) || 1;
         const unitPrice = Number(item.price ?? item.unit_price ?? 0) || 0;
+        const unitRaw = String(item.unit || "").toLowerCase();
+        const unit: "qty" | "hr" | "day" | "flat" =
+          unitRaw === "hr" || unitRaw === "day" || unitRaw === "flat"
+            ? unitRaw
+            : "qty";
         const description =
           item.name?.trim() ||
           item.description?.trim() ||
@@ -250,6 +273,7 @@ export default function ProposalsPage() {
         return {
           description,
           quantity,
+          unit,
           unit_price: unitPrice,
           amount: lineAmount(quantity, unitPrice),
           position: index,
@@ -261,6 +285,7 @@ export default function ProposalsPage() {
       mappedLines.push({
         description: full.title || "Proposal work",
         quantity: 1,
+        unit: "qty" as const,
         unit_price: Number(full.amount || 0),
         amount: Number(full.amount || 0),
         position: 0,
@@ -269,15 +294,15 @@ export default function ProposalsPage() {
 
     const subtotal = mappedLines.reduce((sum, line) => sum + line.amount, 0);
     const issueDate = todayISODate();
-    const number = await nextInvoiceNumber(supabase, organizationId);
 
     const { data: invoice, error: invoiceError } = await supabase
       .from("invoices")
       .insert({
         organization_id: organizationId,
         client_id: full.client_id,
+        project_id: full.project_id || null,
         proposal_id: full.id,
-        number,
+        number: null,
         status: "draft",
         currency: full.currency || organizationCurrency || "USD",
         issue_date: issueDate,
@@ -285,7 +310,7 @@ export default function ProposalsPage() {
         subtotal,
         tax_total: 0,
         total: subtotal,
-        notes: `Converted from proposal: ${full.title}`,
+        notes: `Created from proposal: ${full.title}`,
         created_by: userId,
       })
       .select("id")
@@ -293,26 +318,28 @@ export default function ProposalsPage() {
 
     if (invoiceError || !invoice) {
       setError(invoiceError?.message || "Could not create invoice.");
-      setConvertingId(null);
+      setCreatingInvoiceId(null);
       return;
     }
 
     if (mappedLines.length > 0) {
-      const { error: linesError } = await supabase.from("invoice_line_items").insert(
-        mappedLines.map((line) => ({
-          ...line,
-          organization_id: organizationId,
-          invoice_id: invoice.id,
-        }))
-      );
+      const { error: linesError } = await supabase
+        .from("invoice_line_items")
+        .insert(
+          mappedLines.map((line) => ({
+            ...line,
+            organization_id: organizationId,
+            invoice_id: invoice.id,
+          }))
+        );
       if (linesError) {
         setError(linesError.message);
-        setConvertingId(null);
+        setCreatingInvoiceId(null);
         return;
       }
     }
 
-    setConvertingId(null);
+    setCreatingInvoiceId(null);
     router.push(`/invoices/${invoice.id}/edit`);
   }
 
@@ -480,17 +507,30 @@ export default function ProposalsPage() {
                     status={statusLabel(proposal.status)}
                     statusKey={proposal.status}
                     sentDate={formatSentDate(proposal.sentAt)}
-                    action={
-                      convertingId === proposal.id
-                        ? "Converting…"
-                        : actionForStatus(proposal.status)
-                    }
+                    action={actionForStatus(proposal.status)}
+                    hasProject={Boolean(proposal.projectId)}
+                    creatingInvoice={creatingInvoiceId === proposal.id}
                     onOpen={() =>
                       router.push(`/proposals/${proposal.id}/edit`)
                     }
-                    onConvert={
+                    onCreateProject={
+                      proposal.status === "accepted" && !proposal.projectId
+                        ? () => setConvertProposal(proposal)
+                        : undefined
+                    }
+                    onViewProject={
+                      proposal.status === "accepted" && proposal.projectId
+                        ? () =>
+                            router.push(
+                              proposal.clientId
+                                ? `/clients/${proposal.clientId}`
+                                : "/tasks"
+                            )
+                        : undefined
+                    }
+                    onCreateInvoice={
                       proposal.status === "accepted"
-                        ? () => void convertToInvoice(proposal)
+                        ? () => void createInvoiceFromProposal(proposal)
                         : undefined
                     }
                   />
@@ -528,6 +568,26 @@ export default function ProposalsPage() {
             router.push(`/proposals/${id}/template`);
           }}
           onClientsChanged={() => void load()}
+        />
+      )}
+
+      {convertProposal && (
+        <ConvertToProjectModal
+          proposalId={convertProposal.id}
+          proposalTitle={convertProposal.title}
+          proposalAmount={convertProposal.amount}
+          currency={convertProposal.currency}
+          pricingType={convertProposal.pricingType}
+          proposalContent={convertProposal.content}
+          clientName={
+            convertProposal.clientCompany || convertProposal.clientName
+          }
+          hasClient={Boolean(convertProposal.clientId)}
+          onClose={() => setConvertProposal(null)}
+          onConverted={() => {
+            setConvertProposal(null);
+            void load();
+          }}
         />
       )}
 
@@ -597,8 +657,12 @@ function ProposalRow({
   statusKey,
   sentDate,
   action,
+  hasProject,
+  creatingInvoice,
   onOpen,
-  onConvert,
+  onCreateProject,
+  onViewProject,
+  onCreateInvoice,
 }: {
   client: string;
   project: string;
@@ -607,9 +671,34 @@ function ProposalRow({
   statusKey: ProposalStatus;
   sentDate: string;
   action: string;
+  hasProject?: boolean;
+  creatingInvoice?: boolean;
   onOpen: () => void;
-  onConvert?: () => void;
+  onCreateProject?: () => void;
+  onViewProject?: () => void;
+  onCreateInvoice?: () => void;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (!menuRef.current?.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setMenuOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [menuOpen]);
+
   const getStatusBadge = (key: ProposalStatus, label: string) => {
     switch (key) {
       case "accepted":
@@ -649,6 +738,10 @@ function ProposalRow({
     }
   };
 
+  const showAcceptedMenu =
+    statusKey === "accepted" &&
+    Boolean(onCreateProject || onViewProject || onCreateInvoice);
+
   return (
     <tr
       onClick={onOpen}
@@ -662,18 +755,77 @@ function ProposalRow({
       <td className="px-6 py-4">{getStatusBadge(statusKey, status)}</td>
       <td className="px-6 py-4 text-gray-400">{sentDate}</td>
       <td className="px-6 py-4 text-right">
-        {action === "Convert to Invoice" || action === "Converting…" ? (
-          <button
-            type="button"
-            disabled={action === "Converting…" || !onConvert}
-            onClick={(e) => {
-              e.stopPropagation();
-              onConvert?.();
-            }}
-            className="text-sm font-medium text-emerald-600 hover:text-emerald-800 transition-colors disabled:opacity-50"
+        {showAcceptedMenu ? (
+          <div
+            ref={menuRef}
+            className="relative inline-flex justify-end"
+            onClick={(e) => e.stopPropagation()}
           >
-            {action}
-          </button>
+            <button
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              aria-label="Proposal actions"
+              disabled={creatingInvoice}
+              onClick={() => setMenuOpen((open) => !open)}
+              className={`p-2 rounded-lg border transition-colors disabled:opacity-50 ${
+                menuOpen
+                  ? "border-gray-300 bg-gray-50 text-gray-900"
+                  : "border-transparent text-gray-400 hover:text-gray-900 hover:bg-gray-50 hover:border-gray-200"
+              }`}
+            >
+              <MoreHorizontal className="w-4 h-4" />
+            </button>
+            {menuOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 z-50 mt-1.5 w-[220px] rounded-2xl border border-gray-200 bg-white py-1.5 shadow-[0_12px_40px_rgba(16,24,40,0.14)]"
+              >
+                {hasProject && onViewProject ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onViewProject();
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50"
+                  >
+                    <FolderKanban className="w-4 h-4 text-emerald-600 shrink-0" />
+                    View project
+                  </button>
+                ) : onCreateProject ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onCreateProject();
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50"
+                  >
+                    <FolderKanban className="w-4 h-4 text-emerald-600 shrink-0" />
+                    Create project
+                  </button>
+                ) : null}
+                {onCreateInvoice ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={creatingInvoice}
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onCreateInvoice();
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    <Receipt className="w-4 h-4 text-blue-600 shrink-0" />
+                    {creatingInvoice ? "Creating invoice…" : "Create invoice"}
+                  </button>
+                ) : null}
+              </div>
+            )}
+          </div>
         ) : action === "Follow up" ? (
           <button
             type="button"
@@ -1011,8 +1163,10 @@ function CreateProposalModal({
   const [selectedClient, setSelectedClient] = useState<ClientOption | null>(null);
   const [clientOptions, setClientOptions] = useState(clients);
   const [aiText, setAiText] = useState("");
+  const [aiFile, setAiFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     setClientOptions(clients);
@@ -1031,9 +1185,49 @@ function CreateProposalModal({
       setFormError("Add a proposal title to continue.");
       return;
     }
+    if (creationMode === "ai" && !aiText.trim() && !aiFile) {
+      setFormError("Paste notes or upload a file so AI can write the proposal.");
+      return;
+    }
 
     setSaving(true);
     setFormError(null);
+
+    if (creationMode === "ai") {
+      try {
+        const form = new FormData();
+        form.set("notes", aiText);
+        form.set("clientId", selectedClient.id);
+        form.set("category", category);
+        form.set("currency", currency);
+        form.set("pricingHint", pricingModel.toLowerCase());
+        form.set("create", "true");
+        if (aiFile) form.set("file", aiFile);
+
+        const res = await fetch("/api/proposals/generate", {
+          method: "POST",
+          body: form,
+        });
+        const json = await res.json().catch(() => ({}));
+        setSaving(false);
+        if (!res.ok) {
+          setFormError(json.error || "Could not generate proposal with AI.");
+          return;
+        }
+        if (!json.id) {
+          setFormError("AI did not create a proposal. Try again.");
+          return;
+        }
+        onCreated(String(json.id));
+        return;
+      } catch (err) {
+        setSaving(false);
+        setFormError(
+          err instanceof Error ? err.message : "Could not generate proposal."
+        );
+        return;
+      }
+    }
 
     const supabase = createClient();
     const {
@@ -1043,14 +1237,12 @@ function CreateProposalModal({
     const proposalTitle =
       title.trim() ||
       `${selectedClient.company || selectedClient.name} proposal`;
-
     const parsedAmount = Number(amount.replace(/,/g, ""));
     const content: Json = {
       meta: {
         pricingModel: pricingModel.toLowerCase(),
         category,
         creationMode,
-        aiBrief: creationMode === "ai" ? aiText.trim() || null : null,
       },
       blocks: [],
     };
@@ -1145,27 +1337,79 @@ function CreateProposalModal({
                 <div className="flex items-start gap-3 text-sm text-gray-600 mb-4">
                   <Sparkles className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
                   <p>
-                    Paste notes or a brief below. We&apos;ll create a draft
-                    proposal you can refine in the editor.
+                    Upload a brief or paste notes. AI writes the full proposal
+                    copy (summary, scope, timeline, pricing, terms). You pick a
+                    template look next, then refine in the editor.
                   </p>
                 </div>
 
-                <div className="border-2 border-dashed rounded-xl p-6 text-center border-gray-200 bg-white">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".txt,.md,.markdown,.csv,.json,.docx,.pdf,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    setAiFile(file);
+                    e.target.value = "";
+                  }}
+                />
+
+                <div
+                  className={`w-full border-2 border-dashed rounded-xl p-6 text-center transition-colors ${
+                    aiFile
+                      ? "border-blue-200 bg-white"
+                      : "border-gray-200 bg-white"
+                  }`}
+                >
                   <div className="w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-3 text-blue-500">
                     <UploadCloud className="w-5 h-5" />
                   </div>
-                  <div className="text-sm font-medium text-gray-900 mb-1">
-                    Document upload coming soon
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    Paste text below for now
-                  </div>
+                  {aiFile ? (
+                    <>
+                      <div className="text-sm font-medium text-gray-900 mb-1 truncate px-2">
+                        {aiFile.name}
+                      </div>
+                      <div className="flex items-center justify-center gap-3 text-xs">
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="font-medium text-blue-600 hover:text-blue-700"
+                        >
+                          Replace
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAiFile(null)}
+                          className="font-medium text-gray-500 hover:text-gray-700"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-sm font-medium text-gray-900 mb-1">
+                        Upload notes or a brief
+                      </div>
+                      <div className="text-xs text-gray-500 mb-3">
+                        .txt, .md, .docx, or .pdf · up to 8MB
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="inline-flex items-center rounded-lg border border-line bg-white px-3 py-1.5 text-[13px] font-medium text-gray-700 hover:bg-gray-50"
+                      >
+                        Choose file
+                      </button>
+                    </>
+                  )}
                 </div>
 
                 <textarea
                   value={aiText}
                   onChange={(e) => setAiText(e.target.value)}
-                  placeholder="Paste client emails, call notes, or project requirements here..."
+                  placeholder="Or paste client emails, call notes, or project requirements here..."
                   className="w-full mt-4 bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-100 outline-none resize-none min-h-[120px]"
                 />
               </div>
@@ -1281,7 +1525,11 @@ function CreateProposalModal({
             className="btn-primary px-6 py-2.5 rounded-xl text-sm flex items-center justify-center gap-2 disabled:opacity-50"
           >
             {saving ? (
-              "Creating…"
+              creationMode === "ai" ? (
+                "Writing with AI… (~20s)"
+              ) : (
+                "Creating…"
+              )
             ) : creationMode === "ai" ? (
               <>
                 Generate Proposal <Sparkles className="w-4 h-4 fill-current" />

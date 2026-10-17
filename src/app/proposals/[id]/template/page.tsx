@@ -11,6 +11,7 @@ import {
   toProposalContentJson,
   type ProposalContentSnapshot,
 } from "@/lib/proposals/content";
+import { mergeTemplateWithExistingContent } from "@/lib/proposals/ai-schema";
 import type { Tables } from "@/types/database";
 
 type TemplateRow = Tables<"proposal_templates">;
@@ -115,16 +116,33 @@ export default function TemplateSelectionPage() {
     setError(null);
 
     const supabase = createClient();
-    const templateContent = asProposalContent(template.content);
+    const [{ data: proposal }, templateContent] = await Promise.all([
+      supabase
+        .from("proposals")
+        .select("content")
+        .eq("id", proposalId)
+        .maybeSingle(),
+      Promise.resolve(asProposalContent(template.content)),
+    ]);
+
+    const existing = asProposalContent(proposal?.content ?? null);
+    const headerTheme =
+      (template.header_theme as ProposalContentSnapshot["headerTheme"]) ||
+      templateContent.headerTheme ||
+      "pastel";
+
+    const merged = mergeTemplateWithExistingContent(
+      existing,
+      templateContent,
+      headerTheme
+    );
+
     const nextContent: ProposalContentSnapshot = {
-      ...templateContent,
+      ...merged,
       version: 1,
-      headerTheme:
-        (template.header_theme as ProposalContentSnapshot["headerTheme"]) ||
-        templateContent.headerTheme ||
-        "pastel",
+      headerTheme,
       meta: {
-        ...(templateContent.meta || {}),
+        ...(merged.meta || {}),
         templateId: template.id,
         templateSlug: template.slug,
         templateName: template.name,

@@ -7,9 +7,25 @@ import {
   summarizeUnbilled,
   type UnbilledTimeEntry,
 } from "@/lib/invoices/unbilled";
-import { formatDurationMinutes } from "@/lib/time-entries";
+import { formatDurationMinutes, toISODateLocal } from "@/lib/time-entries";
 import { formatInvoiceMoney } from "@/lib/invoices/totals";
 import { ModalOverlay, modalPanelClass } from "@/components/ModalFrame";
+
+function entryDay(startedAt: string) {
+  try {
+    return toISODateLocal(new Date(startedAt));
+  } catch {
+    return "";
+  }
+}
+
+function inDateRange(startedAt: string, fromDate: string, toDate: string) {
+  const day = entryDay(startedAt);
+  if (!day) return true;
+  if (fromDate && day < fromDate) return false;
+  if (toDate && day > toDate) return false;
+  return true;
+}
 
 export function AddUnbilledTimeModal({
   open,
@@ -29,18 +45,33 @@ export function AddUnbilledTimeModal({
   onConfirm: (selected: UnbilledTimeEntry[]) => void | Promise<void>;
 }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
 
   useEffect(() => {
     if (!open) return;
-    setSelectedIds(new Set(entries.map((e) => e.id)));
-  }, [open, entries]);
+    setFromDate("");
+    setToDate("");
+  }, [open]);
+
+  const filtered = useMemo(
+    () =>
+      entries.filter((e) => inDateRange(e.startedAt, fromDate, toDate)),
+    [entries, fromDate, toDate]
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    setSelectedIds(new Set(filtered.map((e) => e.id)));
+  }, [open, filtered]);
 
   const selected = useMemo(
-    () => entries.filter((e) => selectedIds.has(e.id)),
-    [entries, selectedIds]
+    () => filtered.filter((e) => selectedIds.has(e.id)),
+    [filtered, selectedIds]
   );
   const summary = summarizeUnbilled(selected);
-  const allSelected = entries.length > 0 && selectedIds.size === entries.length;
+  const allSelected =
+    filtered.length > 0 && selectedIds.size === filtered.length;
 
   if (!open) return null;
 
@@ -55,7 +86,17 @@ export function AddUnbilledTimeModal({
 
   function toggleAll() {
     if (allSelected) setSelectedIds(new Set());
-    else setSelectedIds(new Set(entries.map((e) => e.id)));
+    else setSelectedIds(new Set(filtered.map((e) => e.id)));
+  }
+
+  function updateFrom(value: string) {
+    setFromDate(value);
+    if (toDate && value && toDate < value) setToDate(value);
+  }
+
+  function updateTo(value: string) {
+    setToDate(value);
+    if (fromDate && value && fromDate > value) setFromDate(value);
   }
 
   return (
@@ -87,11 +128,44 @@ export function AddUnbilledTimeModal({
           </button>
         </div>
 
+        {entries.length > 0 && !loading && (
+          <div className="px-5 sm:px-6 py-3 border-b border-line shrink-0">
+            <div className="flex flex-wrap items-center gap-2 text-[13px] text-gray-500">
+              <span className="shrink-0">From</span>
+              <input
+                type="date"
+                value={fromDate}
+                onChange={(e) => updateFrom(e.target.value)}
+                className="border border-line rounded-lg px-2 py-1 text-gray-800 bg-white"
+              />
+              <span className="shrink-0">to</span>
+              <input
+                type="date"
+                value={toDate}
+                onChange={(e) => updateTo(e.target.value)}
+                className="border border-line rounded-lg px-2 py-1 text-gray-800 bg-white"
+              />
+              {(fromDate || toDate) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFromDate("");
+                    setToDate("");
+                  }}
+                  className="text-[12px] font-medium text-[#2563EB] hover:text-[#1d4ed8] ml-1"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="px-5 sm:px-6 py-3 border-b border-line flex items-center justify-between gap-3 shrink-0 bg-[#FAFBFC]">
           <button
             type="button"
             onClick={toggleAll}
-            disabled={entries.length === 0 || loading}
+            disabled={filtered.length === 0 || loading}
             className="text-[13px] font-medium text-[#2563EB] hover:text-[#1d4ed8] disabled:opacity-40"
           >
             {allSelected ? "Deselect all" : "Select all"}
@@ -114,9 +188,13 @@ export function AddUnbilledTimeModal({
             <div className="px-6 py-12 text-center text-sm text-gray-500">
               No unbilled billable hours for this client.
             </div>
+          ) : filtered.length === 0 ? (
+            <div className="px-6 py-12 text-center text-sm text-gray-500">
+              No entries in this date range.
+            </div>
           ) : (
             <ul className="divide-y divide-line">
-              {entries.map((entry) => {
+              {filtered.map((entry) => {
                 const checked = selectedIds.has(entry.id);
                 const dateLabel = new Date(entry.startedAt).toLocaleDateString(
                   undefined,

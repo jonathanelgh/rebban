@@ -16,6 +16,7 @@ import {
   type TimerClient,
   type TimerProject,
 } from "@/components/TimeTrackingContext";
+import { TaskSuggestInput } from "@/components/TaskSuggestInput";
 
 type TimerStartFormProps = {
   variant?: "compact" | "page" | "sidebar";
@@ -31,10 +32,12 @@ export function TimerStartForm({
   const {
     clients,
     projects,
+    clientTasks,
     selectedClient,
     setSelectedClient,
     selectedProject,
     setSelectedProject,
+    setSelectedTask,
     workDescription,
     setWorkDescription,
     isTracking,
@@ -54,6 +57,11 @@ export function TimerStartForm({
         ? projects.filter((p) => p.clientId === selectedClient.id)
         : [],
     [projects, selectedClient]
+  );
+
+  const taskOptions = useMemo(
+    () => clientTasks.map((t) => ({ id: t.id, title: t.title })),
+    [clientTasks]
   );
 
   async function handleToggle() {
@@ -89,20 +97,26 @@ export function TimerStartForm({
           />
         )}
 
-        <input
-          type="text"
-          value={workDescription}
-          onChange={(e) => setWorkDescription(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !isTracking && workDescription.trim()) {
-              e.preventDefault();
-              void startTimer();
+        <div className="w-full rounded-xl border border-line bg-[#FAFBFC] px-3 py-2.5 focus-within:border-gray-300 focus-within:bg-white">
+          <TaskSuggestInput
+            value={workDescription}
+            tasks={taskOptions}
+            onChange={setWorkDescription}
+            onSelectTask={(task) =>
+              setSelectedTask({
+                id: task.id,
+                title: task.title,
+                clientId: selectedClient?.id ?? null,
+              })
             }
-          }}
-          placeholder="What are you working on?"
-          disabled={isTracking || busy}
-          className="w-full rounded-xl border border-line bg-[#FAFBFC] px-3 py-2.5 text-sm text-gray-900 outline-none placeholder:text-gray-400 focus:border-gray-300 focus:bg-white disabled:text-gray-700"
-        />
+            onEnter={() => {
+              if (!isTracking && workDescription.trim()) void startTimer();
+            }}
+            placeholder="What are you working on?"
+            disabled={isTracking || busy}
+            className="text-sm"
+          />
+        </div>
 
         {isTracking && (
           <div className="flex items-center justify-between px-0.5">
@@ -198,20 +212,24 @@ export function TimerStartForm({
         />
       )}
 
-      <input
-        type="text"
+      <TaskSuggestInput
         value={workDescription}
-        onChange={(e) => setWorkDescription(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !isTracking && workDescription.trim()) {
-            e.preventDefault();
-            void startTimer();
-          }
+        tasks={taskOptions}
+        onChange={setWorkDescription}
+        onSelectTask={(task) =>
+          setSelectedTask({
+            id: task.id,
+            title: task.title,
+            clientId: selectedClient?.id ?? null,
+          })
+        }
+        onEnter={() => {
+          if (!isTracking && workDescription.trim()) void startTimer();
         }}
         placeholder="What are you working on?"
         disabled={isTracking || busy}
-        className={`flex-1 bg-transparent border-none outline-none text-gray-900 min-w-0 disabled:text-gray-700 ${
-          isPage ? "text-base py-2.5 px-1" : "text-sm py-2.5 placeholder-gray-500"
+        className={`flex-1 min-w-0 ${
+          isPage ? "text-base py-2.5 px-1" : "text-sm py-2.5"
         }`}
       />
 

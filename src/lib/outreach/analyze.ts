@@ -9,9 +9,16 @@ type Db = SupabaseClient<Database>;
 type Lead = Database["public"]["Tables"]["outreach_leads"]["Row"];
 type Message = Database["public"]["Tables"]["outreach_messages"]["Row"];
 
+const SIGNUP_URL = "https://app.rebban.com/signup";
+
 const SYSTEM_PROMPT = `You are helping Jonathan, founder of Rebban, analyze replies from freelance prospects.
 
 Rebban helps freelancers manage proposals, time tracking, invoices, payments and follow-ups.
+Signup / get started: ${SIGNUP_URL}
+Pricing:
+- 7-day free trial
+- No card required at signup
+- Then $29.99 USD / month
 
 Return ONLY valid JSON matching this schema:
 {
@@ -39,20 +46,28 @@ Temperature scoring:
 If they ask not to be contacted, intent must be "unsubscribe".
 
 Suggested reply style:
-- Sound like Jonathan, founder of Rebban
-- Friendly, concise, curious, conversational
+- Sound like Jonathan texting a fellow freelancer: personal, warm, human
+- Continue the conversation: read the full thread and pick up where it left off
+- Never re-thank or re-acknowledge something already covered (e.g. do not say "thanks for your interest" again if we already welcomed them)
+- Answer the newest question first; skip preamble
+- Short: usually 2-5 sentences. One clear next step.
 - Learning first, selling second
-- Respond directly to what they said
-- No corporate tone, no fake compliments, no pressure, no em dashes
+- No corporate tone, no fake compliments, no pressure, no "I hope this email finds you well"
+- Never use em dashes (—). Use commas, periods, or colons instead.
 - Do not dump a feature list
-- If they mention a tool, ask why they chose it or what they like/dislike`;
+- If they mention a tool, ask why they chose it or what they like/dislike
+- If they want to try / get started / sign up, include the signup link ${SIGNUP_URL} (do not invent other URLs or say you will "send a link later")
+- If they ask about pricing, trial, or cost: 7-day free trial, no card needed to sign up, then $29.99 USD/month. Say it casually; do not invent other prices or plans
+- Emojis: rare and optional, but use a real Unicode emoji (e.g. 😊), never text emoticons like :) or :-)
+- At most one soft smile emoji near the end of a friendly line; never mid-sentence with pricing/links, never stacked, never hype emojis like 🚀🎉🔥`
 
 export function isOutreachAiConfigured() {
-  return Boolean(process.env.OPENAI_API_KEY);
+  const key = process.env.OPENAI_API_KEY?.trim();
+  return Boolean(key);
 }
 
 async function callOpenAiJson(prompt: string): Promise<unknown> {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) throw new Error("OPENAI_API_KEY is not set.");
 
   const model = process.env.OPENAI_OUTREACH_MODEL || "gpt-4o-mini";
@@ -79,7 +94,13 @@ async function callOpenAiJson(prompt: string): Promise<unknown> {
   };
 
   if (!res.ok) {
-    throw new Error(json.error?.message || `OpenAI error (${res.status}).`);
+    const detail = json.error?.message || `OpenAI error (${res.status}).`;
+    if (res.status === 401) {
+      throw new Error(
+        `OpenAI rejected the API key (${detail}). Check OPENAI_API_KEY in .env.local / Vercel.`
+      );
+    }
+    throw new Error(detail);
   }
 
   const content = json.choices?.[0]?.message?.content;
@@ -111,13 +132,14 @@ Website summary: ${lead.website_summary || "—"}
 Personalized opener: ${lead.personalized_opener || "—"}
 Why Rebban fits: ${lead.rebban_fit || "—"}
 
-Conversation so far:
+Full email thread (oldest → newest):
 ${historyText || "(none)"}
 
-Newest inbound reply:
+Newest inbound reply (focus analysis on this):
 ${inbound.body_text || ""}
 
-Analyze the newest inbound reply and draft Jonathan's next reply.`;
+Analyze the newest inbound reply in context of the full thread, and draft Jonathan's next reply.
+If they ask how to get started / try Rebban, include ${SIGNUP_URL}.`;
 
   const raw = await callOpenAiJson(prompt);
   const parsed = parseOutreachAiAnalysis(raw);
@@ -208,8 +230,8 @@ export async function generateFollowUpDraft(options: {
         : `Re: ${lead.subject_line || `Quick question, ${firstName}`}`;
     const body =
       followUpNumber === 1
-        ? `Hi ${firstName},\n\nJust floating this back up in case it got buried.\n\nCurious what you use today for proposals, time tracking, invoices and follow-ups — totally fine if now isn't a good time.\n\nBest,\nJonathan\nFounder, Rebban\nrebban.com`
-        : `Hi ${firstName},\n\nLast note from me — if managing proposals/time/invoices across tools is still a pain, I'd love to hear what setup you're on.\n\nEither way, appreciate your time.\n\nBest,\nJonathan\nFounder, Rebban\nrebban.com`;
+        ? `Hi ${firstName},\n\nJust floating this back up in case it got buried.\n\nCurious what you use today for proposals, time tracking, invoices and follow-ups. Totally fine if now isn't a good time.\n\nBest,\nJonathan\nFounder, Rebban\nrebban.com`
+        : `Hi ${firstName},\n\nLast note from me. If managing proposals/time/invoices across tools is still a pain, I'd love to hear what setup you're on.\n\nEither way, appreciate your time.\n\nBest,\nJonathan\nFounder, Rebban\nrebban.com`;
     return { subject, body };
   }
 

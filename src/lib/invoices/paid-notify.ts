@@ -59,7 +59,7 @@ export async function notifyInvoicePaid(options: {
         .maybeSingle(),
       admin
         .from("invoice_line_items")
-        .select("description, quantity, unit_price, amount, position")
+        .select("description, quantity, unit, unit_price, amount, position")
         .eq("invoice_id", invoice.id)
         .order("position", { ascending: true }),
       invoice.client_id
@@ -101,6 +101,7 @@ export async function notifyInvoicePaid(options: {
   const pdfLines = (lines || []).map((line) => ({
     description: line.description || "Item",
     quantity: line.quantity,
+    unit: line.unit,
     unitPrice: line.unit_price,
     amount:
       Number(line.amount) ||

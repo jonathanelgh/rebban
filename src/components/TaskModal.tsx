@@ -305,11 +305,6 @@ export function TaskModal({
                   <select
                     value={values.projectId}
                     onChange={(e) => {
-                      if (e.target.value === "__new__") {
-                        setCreatingProject(true);
-                        update("projectId", "");
-                        return;
-                      }
                       const projectId = e.target.value;
                       const project = projects.find((p) => p.id === projectId);
                       setValues((prev) => ({
@@ -326,11 +321,19 @@ export function TaskModal({
                         {project.name}
                       </option>
                     ))}
-                    <option value="__new__" disabled={!values.clientId}>
-                      + Create new project
-                    </option>
                   </select>
-                  {!values.clientId && (
+                  {values.clientId ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCreatingProject(true);
+                        update("projectId", "");
+                      }}
+                      className="text-[12px] font-medium text-[#2563EB]"
+                    >
+                      + Create new project
+                    </button>
+                  ) : (
                     <p className="text-[12px] text-gray-400">
                       Select a client to create a project.
                     </p>

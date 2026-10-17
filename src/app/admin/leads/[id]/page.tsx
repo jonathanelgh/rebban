@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
@@ -73,6 +73,12 @@ function initials(name: string) {
   return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
 }
 
+/** Only suggest a reply when the prospect spoke last. */
+function awaitingOurReply(messages: Message[]) {
+  if (!messages.length) return false;
+  return messages[messages.length - 1].direction === "inbound";
+}
+
 export default function AdminLeadDetailPage() {
   const params = useParams();
   const id = String(params.id || "");
@@ -100,48 +106,77 @@ export default function AdminLeadDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const autoAnalyzeAttempted = useRef<string | null>(null);
 
-  const load = useCallback(async () => {
-    if (!id) return;
-    setLoading(true);
-    const res = await fetch(`/api/admin/leads/${id}`);
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setError(json.error || "Could not load lead.");
-      setLoading(false);
-      return;
-    }
-    const nextMessages = (json.messages || []) as Message[];
-    setLead(json.lead as Lead);
-    setSignup((json.signup as LeadSignupInfo) || null);
-    setDraft(json.lead as Lead);
-    setMessages(nextMessages);
-    const nextAnalyses = (json.analyses || []) as Analysis[];
-    const nextFollowups = (json.followups || []) as Followup[];
-    setAnalyses(nextAnalyses);
-    setFollowups(nextFollowups);
-    setSuggestedReply(nextAnalyses[0]?.suggested_reply || "");
-    const due = nextFollowups.find((f) => f.status === "due");
-    setFollowupDraft(
-      due
-        ? {
-            id: due.id,
-            subject: due.subject || "",
-            body: due.body || "",
-          }
-        : null
-    );
-    // Expand the latest message by default (Gmail-style).
-    if (nextMessages.length) {
-      setExpandedIds(new Set([nextMessages[nextMessages.length - 1].id]));
-    }
-    setError(null);
-    setLoading(false);
-  }, [id]);
+  const load = useCallback(
+    async (options?: { quiet?: boolean; keepSuggestedReply?: boolean }) => {
+      if (!id) return;
+      if (!options?.quiet) setLoading(true);
+      const res = await fetch(`/api/admin/leads/${id}`);
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(json.error || "Could not load lead.");
+        if (!options?.quiet) setLoading(false);
+        return;
+      }
+      const nextMessages = (json.messages || []) as Message[];
+      setLead(json.lead as Lead);
+      setSignup((json.signup as LeadSignupInfo) || null);
+      setDraft(json.lead as Lead);
+      setMessages(nextMessages);
+      const nextAnalyses = (json.analyses || []) as Analysis[];
+      const nextFollowups = (json.followups || []) as Followup[];
+      setAnalyses(nextAnalyses);
+      setFollowups(nextFollowups);
+      if (!options?.keepSuggestedReply) {
+        setSuggestedReply(
+          awaitingOurReply(nextMessages)
+            ? nextAnalyses[0]?.suggested_reply || ""
+            : ""
+        );
+      }
+      const due = nextFollowups.find((f) => f.status === "due");
+      setFollowupDraft(
+        due
+          ? {
+              id: due.id,
+              subject: due.subject || "",
+              body: due.body || "",
+            }
+          : null
+      );
+      // Expand the latest message by default (Gmail-style).
+      if (nextMessages.length) {
+        setExpandedIds((prev) => {
+          const latestId = nextMessages[nextMessages.length - 1].id;
+          if (prev.has(latestId)) return prev;
+          return new Set([latestId]);
+        });
+      }
+      if (!options?.quiet) setError(null);
+      if (!options?.quiet) setLoading(false);
+    },
+    [id]
+  );
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // If sync imported a reply but cron skipped AI (e.g. missing key on Vercel),
+  // generate a suggestion once when opening the lead.
+  useEffect(() => {
+    if (loading || regenerating || !id) return;
+    const latestInbound = [...messages]
+      .reverse()
+      .find((m) => m.direction === "inbound");
+    if (!latestInbound || latestInbound.ai_processed_at) return;
+    if (analyses.some((a) => a.message_id === latestInbound.id)) return;
+    if (autoAnalyzeAttempted.current === latestInbound.id) return;
+    autoAnalyzeAttempted.current = latestInbound.id;
+    void regenerateAnalysis();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot per unprocessed inbound
+  }, [loading, id, messages, analyses, regenerating]);
 
   async function save(patch?: Partial<Lead>) {
     if (!id) return;
@@ -187,7 +222,7 @@ export default function AdminLeadDetailPage() {
         : "Email sent via Gmail."
     );
     setTab("conversation");
-    void load();
+    void load({ quiet: true });
   }
 
   async function syncThread() {
@@ -195,36 +230,71 @@ export default function AdminLeadDetailPage() {
     setSyncing(true);
     setNotice(null);
     setError(null);
-    const res = await fetch("/api/admin/leads/sync", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ leadId: id, analyze: true }),
-    });
-    const json = await res.json().catch(() => ({}));
-    setSyncing(false);
-    if (!res.ok) {
-      setError(json.error || "Sync failed.");
-      return;
+    try {
+      const res = await fetch("/api/admin/leads/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leadId: id, analyze: true }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(json.error || "Sync failed.");
+        return;
+      }
+      const syncErrors = Array.isArray(json.errors)
+        ? (json.errors as string[])
+        : [];
+      if (syncErrors.length) {
+        setError(syncErrors[0]);
+      }
+      const imported = Number(json.imported ?? 0);
+      const analyzed = Number(json.analyzed ?? 0);
+      setNotice(
+        `Synced · ${imported} new message(s) · ${analyzed} analyzed` +
+          (json.pendingAnalysis
+            ? ` · ${json.pendingAnalysis} waiting on OPENAI_API_KEY`
+            : "")
+      );
+      // Soft refresh conversation/status only — no full-page loading flash.
+      await load({ quiet: true });
+      // Sync may import without AI (cron/prod missing key). Generate after.
+      if (analyzed === 0) {
+        await regenerateAnalysis();
+      }
+    } finally {
+      setSyncing(false);
     }
-    setNotice(
-      `Synced · ${json.imported ?? 0} new message(s) · ${json.analyzed ?? 0} analyzed`
-    );
-    void load();
   }
 
   async function regenerateAnalysis() {
     if (!id) return;
     setRegenerating(true);
+    setNotice(null);
     setError(null);
-    const res = await fetch(`/api/admin/leads/${id}/reply`, { method: "PUT" });
-    const json = await res.json().catch(() => ({}));
-    setRegenerating(false);
-    if (!res.ok) {
-      setError(json.error || "Regenerate failed.");
-      return;
+    try {
+      const res = await fetch(`/api/admin/leads/${id}/analyze`, {
+        method: "POST",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // No inbound yet is fine after a sync that only refreshed outbound.
+        if (res.status === 400 && /no inbound/i.test(String(json.error || ""))) {
+          await load({ quiet: true });
+          return;
+        }
+        setError(json.error || "Regenerate failed.");
+        return;
+      }
+      const draftText =
+        (json.analysis?.suggested_reply as string | undefined) || "";
+      if (draftText) setSuggestedReply(draftText);
+      setNotice("AI analysis ready.");
+      await load({ quiet: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Regenerate failed.");
+    } finally {
+      setRegenerating(false);
     }
-    setNotice("AI analysis regenerated.");
-    void load();
   }
 
   async function approveAndSendReply() {
@@ -245,7 +315,7 @@ export default function AdminLeadDetailPage() {
     }
     setNotice("Reply sent in Gmail thread.");
     setSuggestedReply("");
-    void load();
+    void load({ quiet: true });
   }
 
   async function approveAndSendFollowup() {
@@ -271,7 +341,7 @@ export default function AdminLeadDetailPage() {
     }
     setNotice("Follow-up sent.");
     setFollowupDraft(null);
-    void load();
+    void load({ quiet: true });
   }
 
   function setField<K extends keyof Lead>(key: K, value: Lead[K]) {
@@ -355,12 +425,20 @@ export default function AdminLeadDetailPage() {
                   Do not contact
                 </span>
               )}
-              {signup?.signedUp && (
+              {signup?.paying ? (
+                <span className="inline-flex px-2 py-0.5 rounded-md text-[11px] font-medium bg-violet-50 text-violet-700">
+                  Paying
+                </span>
+              ) : signup?.onTrial ? (
+                <span className="inline-flex px-2 py-0.5 rounded-md text-[11px] font-medium bg-amber-50 text-amber-700">
+                  Trial
+                </span>
+              ) : signup?.signedUp ? (
                 <span className="inline-flex px-2 py-0.5 rounded-md text-[11px] font-medium bg-emerald-50 text-emerald-700">
                   Signed up
                   {signup.onboardingCompletedAt ? " · onboarded" : ""}
                 </span>
-              )}
+              ) : null}
               <span className="inline-flex px-2 py-0.5 rounded-md text-[11px] font-medium bg-gray-100 text-gray-600">
                 Tier {TIER_LABELS[lead.lead_tier]}
               </span>
@@ -606,20 +684,42 @@ export default function AdminLeadDetailPage() {
                 </div>
                 <button
                   type="button"
-                  disabled={regenerating || !messages.some((m) => m.direction === "inbound")}
+                  disabled={regenerating || !awaitingOurReply(messages)}
                   onClick={() => void regenerateAnalysis()}
                   className="text-[12px] font-medium text-[#2563EB] disabled:opacity-40"
                 >
-                  {regenerating ? "Regenerating…" : "Regenerate"}
+                  {regenerating
+                    ? "Generating…"
+                    : latestAnalysis
+                      ? "Regenerate"
+                      : "Generate with AI"}
                 </button>
               </div>
+              {!suggestedReply &&
+                awaitingOurReply(messages) &&
+                !latestAnalysis && (
+                  <p className="mb-3 text-[13px] text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
+                    Reply synced, but AI hasn&apos;t scored it yet. Click{" "}
+                    <button
+                      type="button"
+                      disabled={regenerating}
+                      onClick={() => void regenerateAnalysis()}
+                      className="font-medium underline underline-offset-2 disabled:opacity-40"
+                    >
+                      Generate with AI
+                    </button>
+                    . Needs a valid <code className="text-[12px]">OPENAI_API_KEY</code>.
+                  </p>
+                )}
               <textarea
                 value={suggestedReply}
                 onChange={(e) => setSuggestedReply(e.target.value)}
                 placeholder={
-                  messages.some((m) => m.direction === "inbound")
-                    ? "AI suggested reply will appear here after sync/analysis. You can edit before sending."
-                    : "Sync replies after the prospect responds, then AI will draft a reply here."
+                  awaitingOurReply(messages)
+                    ? "AI suggested reply will appear here after analysis. You can edit before sending."
+                    : messages.length
+                      ? "Waiting on their reply — suggestion stays empty until they write back."
+                      : "Sync replies after the prospect responds, then AI will draft a reply here."
                 }
                 rows={7}
                 className="w-full border border-line rounded-xl px-3.5 py-3 text-sm bg-white text-gray-700 resize-y"
@@ -657,9 +757,23 @@ export default function AdminLeadDetailPage() {
                 AI analysis
               </h3>
               {!latestAnalysis ? (
-                <p className="text-[13px] text-gray-400 leading-relaxed">
-                  Reply analysis will appear here after sync + scoring.
-                </p>
+                <div className="space-y-3">
+                  <p className="text-[13px] text-gray-400 leading-relaxed">
+                    {messages.some((m) => m.direction === "inbound")
+                      ? "No score yet for this reply."
+                      : "Reply analysis will appear here after sync + scoring."}
+                  </p>
+                  {messages.some((m) => m.direction === "inbound") && (
+                    <button
+                      type="button"
+                      disabled={regenerating}
+                      onClick={() => void regenerateAnalysis()}
+                      className="px-3 py-1.5 rounded-lg text-[13px] font-medium border border-line bg-white hover:bg-gray-50 disabled:opacity-40"
+                    >
+                      {regenerating ? "Generating…" : "Generate with AI"}
+                    </button>
+                  )}
+                </div>
               ) : (
                 <div className="space-y-3 text-sm">
                   <div className="flex flex-wrap gap-2">

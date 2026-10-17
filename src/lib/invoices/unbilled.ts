@@ -152,6 +152,7 @@ export async function addTimeEntriesToInvoice(
         invoice_id: options.invoiceId,
         description,
         quantity,
+        unit: "hr",
         unit_price: unitPrice,
         amount,
         position: options.startPosition + i,

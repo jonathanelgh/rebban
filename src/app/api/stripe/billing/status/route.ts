@@ -32,6 +32,7 @@ export async function GET() {
   const entitlement = computeEntitlement({
     subscriptionStatus: status,
     trialEndsAt: org?.trial_ends_at,
+    complimentaryPro: org?.complimentary_pro,
   });
   const pricing = await fetchPlatformPricing();
 
@@ -48,6 +49,7 @@ export async function GET() {
     trialExpired: entitlement.trialExpired,
     entitled: entitlement.entitled,
     active: entitlement.paid,
+    complimentaryPro: entitlement.complimentaryPro,
     planLabel: entitlement.planLabel,
     pricing,
   });

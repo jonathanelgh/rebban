@@ -14,8 +14,19 @@ import {
   Sparkles,
   ImageIcon,
   Percent,
+  Trash2,
 } from "lucide-react";
 import { TAX_RATE_PRESETS } from "@/lib/invoices/totals";
+import {
+  normalizeBankgiro,
+  normalizeIban,
+} from "@/lib/invoices/payment-details";
+import {
+  ORG_REMINDER_SEQUENCES,
+  asOrgReminderSequence,
+  formatReminderOffsetLabel,
+  type ReminderSequenceKey,
+} from "@/lib/invoices/reminders";
 import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "@/components/ProfileContext";
 import { useBilling } from "@/components/BillingContext";
@@ -127,7 +138,7 @@ function SettingsPageInner() {
     {
       id: "preferences",
       label: "Preferences",
-      description: "Defaults for time tracking",
+      description: "Time tracking and invoice defaults",
       icon: Palette,
     },
     {
@@ -180,6 +191,9 @@ function SettingsPageInner() {
   const [billingStatus, setBillingStatus] = useState<string | null>(null);
   const [billingBusy, setBillingBusy] = useState(false);
   const [billingNotice, setBillingNotice] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [profile, setProfile] = useState({
     name: "",
@@ -200,6 +214,8 @@ function SettingsPageInner() {
     country: "SE",
     currency: "USD",
     taxId: "",
+    paymentIban: "",
+    paymentBankgiro: "",
   });
 
   const [notifications, setNotifications] = useState({
@@ -211,6 +227,7 @@ function SettingsPageInner() {
 
   const [preferences, setPreferences] = useState({
     defaultHourlyRate: "95",
+    reminderSequence: "standard" as Exclude<ReminderSequenceKey, "none">,
   });
 
   const [taxSettings, setTaxSettings] = useState({
@@ -272,7 +289,7 @@ function SettingsPageInner() {
       const { data } = await supabase
         .from("organizations")
         .select(
-          "name, legal_name, address, country, website, org_number, default_tax_rate, default_tax_enabled, default_prices_include_tax, custom_tax_rates, tax_id, currency, default_hourly_rate"
+          "name, legal_name, address, country, website, org_number, default_tax_rate, default_tax_enabled, default_prices_include_tax, custom_tax_rates, tax_id, currency, default_hourly_rate, default_reminder_sequence, payment_iban, payment_bankgiro"
         )
         .eq("id", organizationId!)
         .maybeSingle();
@@ -292,6 +309,8 @@ function SettingsPageInner() {
         country: data.country || "SE",
         taxId: data.tax_id || prev.taxId,
         currency: data.currency || prev.currency,
+        paymentIban: data.payment_iban || "",
+        paymentBankgiro: data.payment_bankgiro || "",
       }));
       setBranding((prev) => ({
         ...prev,
@@ -299,6 +318,7 @@ function SettingsPageInner() {
       }));
       setPreferences({
         defaultHourlyRate: String(Number(data.default_hourly_rate || 95)),
+        reminderSequence: asOrgReminderSequence(data.default_reminder_sequence),
       });
     }
     void loadOrgSettings();
@@ -628,6 +648,36 @@ function SettingsPageInner() {
     flashSaved();
   }
 
+  async function handleDeleteAccount() {
+    if (deleteConfirm.trim().toLowerCase() !== "delete") {
+      setDeleteError('Type "delete" to confirm.');
+      return;
+    }
+    setDeletingAccount(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch("/api/account/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmation: deleteConfirm.trim() }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+      };
+      if (!res.ok) {
+        setDeleteError(json.error || "Could not delete your account.");
+        setDeletingAccount(false);
+        return;
+      }
+      const supabase = createClient();
+      await supabase.auth.signOut();
+      router.replace("/login");
+    } catch {
+      setDeleteError("Could not delete your account.");
+      setDeletingAccount(false);
+    }
+  }
+
   async function handleSave() {
     setSaving(true);
     setError(null);
@@ -676,6 +726,8 @@ function SettingsPageInner() {
           country: business.country || null,
           currency: business.currency || "USD",
           tax_id: business.taxId.trim() || null,
+          payment_iban: normalizeIban(business.paymentIban),
+          payment_bankgiro: normalizeBankgiro(business.paymentBankgiro),
           updated_at: new Date().toISOString(),
           ...(!isSolo
             ? {
@@ -725,6 +777,7 @@ function SettingsPageInner() {
         .from("organizations")
         .update({
           default_hourly_rate: Math.round(rate * 100) / 100,
+          default_reminder_sequence: preferences.reminderSequence,
           updated_at: new Date().toISOString(),
         })
         .eq("id", organizationId);
@@ -919,6 +972,42 @@ function SettingsPageInner() {
                     </Field>
                   </div>
                 </div>
+
+                <div className="mt-10 rounded-2xl border border-red-100 bg-red-50/60 p-4">
+                  <div className="text-[14px] font-semibold text-red-900">
+                    Delete account
+                  </div>
+                  <p className="text-[13px] text-red-800/80 mt-1 leading-relaxed">
+                    Permanently delete your account and personal data. Workspaces
+                    you own are soft-deleted and any active subscription is
+                    canceled. This cannot be undone.
+                  </p>
+                  {deleteError && (
+                    <p className="mt-2 text-[13px] text-red-700">{deleteError}</p>
+                  )}
+                  <label className="block mt-3">
+                    <span className="block text-[12px] font-medium text-red-900 mb-1.5">
+                      Type delete to confirm
+                    </span>
+                    <input
+                      value={deleteConfirm}
+                      onChange={(e) => setDeleteConfirm(e.target.value)}
+                      className="w-full border border-red-200 rounded-xl px-3 py-2.5 text-sm bg-white outline-none focus:border-red-300"
+                      placeholder="delete"
+                      autoComplete="off"
+                      disabled={deletingAccount}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    disabled={deletingAccount || !userId}
+                    onClick={() => void handleDeleteAccount()}
+                    className="mt-3 w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    {deletingAccount ? "Deleting…" : "Delete my account"}
+                  </button>
+                </div>
               </Section>
             )}
 
@@ -1085,6 +1174,53 @@ function SettingsPageInner() {
                         placeholder="Select currency"
                       />
                     </Field>
+                  </div>
+                  <div className="pt-2 border-t border-line">
+                    <div className="text-[13px] font-medium text-gray-900 mb-1">
+                      Bank transfer details
+                    </div>
+                    <p className="text-[12px] text-gray-400 mb-3">
+                      Shown on invoices when Stripe isn’t connected, so clients
+                      can pay by transfer.
+                    </p>
+                    <div className="space-y-4">
+                      <Field label="IBAN">
+                        <input
+                          value={business.paymentIban}
+                          onChange={(e) =>
+                            setBusiness({
+                              ...business,
+                              paymentIban: e.target.value,
+                            })
+                          }
+                          className={inputClass}
+                          placeholder="SE45 5000 0000 0583 9825 7466"
+                          autoComplete="off"
+                          spellCheck={false}
+                        />
+                      </Field>
+                      {(business.country === "SE" ||
+                        business.paymentBankgiro) && (
+                        <Field label="Bankgiro">
+                          <input
+                            value={business.paymentBankgiro}
+                            onChange={(e) =>
+                              setBusiness({
+                                ...business,
+                                paymentBankgiro: e.target.value,
+                              })
+                            }
+                            className={inputClass}
+                            placeholder="123-4567"
+                            autoComplete="off"
+                            spellCheck={false}
+                          />
+                          <p className="text-[12px] text-gray-400 mt-1.5">
+                            Optional — common for Swedish freelancers.
+                          </p>
+                        </Field>
+                      )}
+                    </div>
                   </div>
                 </div>
               </Section>
@@ -1361,9 +1497,9 @@ function SettingsPageInner() {
             {section === "preferences" && (
               <Section
                 title="Preferences"
-                subtitle="Defaults for tracking time and new work."
+                subtitle="Defaults for tracking time and sending invoices."
               >
-                <div className="space-y-4">
+                <div className="space-y-6">
                   <Field label="Default hourly rate">
                     <div className="relative">
                       <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-gray-400">
@@ -1376,6 +1512,7 @@ function SettingsPageInner() {
                         value={preferences.defaultHourlyRate}
                         onChange={(e) =>
                           setPreferences({
+                            ...preferences,
                             defaultHourlyRate: e.target.value,
                           })
                         }
@@ -1386,6 +1523,65 @@ function SettingsPageInner() {
                       Used when you start a timer or add time without a custom rate.
                     </p>
                   </Field>
+
+                  <div>
+                    <div className="text-[13px] font-medium text-gray-700 mb-1.5">
+                      Invoice payment reminders
+                    </div>
+                    <p className="text-[12px] text-gray-400 mb-3">
+                      Used when you turn automation on while sending an invoice.
+                      New accounts start on Standard.
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                      {ORG_REMINDER_SEQUENCES.map((option) => {
+                        const selected =
+                          preferences.reminderSequence === option.key;
+                        return (
+                          <button
+                            key={option.key}
+                            type="button"
+                            onClick={() =>
+                              setPreferences({
+                                ...preferences,
+                                reminderSequence: asOrgReminderSequence(
+                                  option.key
+                                ),
+                              })
+                            }
+                            className={`text-left rounded-2xl border p-3.5 transition-all ${
+                              selected
+                                ? "border-emerald-500 bg-emerald-50/50 ring-1 ring-emerald-200"
+                                : "border-gray-200 hover:border-gray-300 bg-white"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="text-[14px] font-semibold text-gray-900">
+                                {option.label}
+                              </div>
+                              {selected && (
+                                <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0">
+                                  <Check
+                                    className="w-3 h-3"
+                                    strokeWidth={2.5}
+                                  />
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[12px] text-gray-500 mt-1 leading-snug">
+                              {option.description}
+                            </p>
+                            <p className="text-[11px] font-medium text-gray-400 mt-2">
+                              {option.steps
+                                .map((s) =>
+                                  formatReminderOffsetLabel(s.offsetDays)
+                                )
+                                .join(" · ")}
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               </Section>
             )}

@@ -41,15 +41,21 @@ export function isPaidSubscriptionStatus(status: string | null | undefined) {
 export function computeEntitlement(options: {
   subscriptionStatus?: string | null;
   trialEndsAt?: string | null;
+  complimentaryPro?: boolean | null;
   now?: Date;
 }) {
   const now = options.now ?? new Date();
-  const paid = isPaidSubscriptionStatus(options.subscriptionStatus);
+  const stripePaid = isPaidSubscriptionStatus(options.subscriptionStatus);
+  const complimentaryPro = Boolean(options.complimentaryPro);
+  const paid = stripePaid || complimentaryPro;
   const trialEnds = options.trialEndsAt
     ? new Date(options.trialEndsAt)
     : null;
   const trialActive = Boolean(
-    trialEnds && !Number.isNaN(trialEnds.getTime()) && trialEnds.getTime() > now.getTime()
+    trialEnds &&
+      !Number.isNaN(trialEnds.getTime()) &&
+      trialEnds.getTime() > now.getTime() &&
+      !paid
   );
   const entitled = paid || trialActive;
 
@@ -64,6 +70,8 @@ export function computeEntitlement(options: {
   return {
     entitled,
     paid,
+    stripePaid,
+    complimentaryPro,
     trialActive,
     trialExpired: Boolean(trialEnds && !trialActive && !paid),
     trialEndsAt: trialEnds?.toISOString() ?? null,

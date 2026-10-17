@@ -49,6 +49,7 @@ export function BillingProvider({ children }: { children: React.ReactNode }) {
     null
   );
   const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
+  const [complimentaryPro, setComplimentaryPro] = useState(false);
   const [pricing, setPricing] = useState<PlatformPricing | null>(null);
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
 
@@ -58,6 +59,7 @@ export function BillingProvider({ children }: { children: React.ReactNode }) {
       setYearlyConfigured(false);
       setSubscriptionStatus(null);
       setTrialEndsAt(null);
+      setComplimentaryPro(false);
       setPricing(null);
       setLoading(false);
       return;
@@ -72,6 +74,7 @@ export function BillingProvider({ children }: { children: React.ReactNode }) {
         setYearlyConfigured(false);
         setSubscriptionStatus(null);
         setTrialEndsAt(null);
+        setComplimentaryPro(false);
         setPricing(null);
         return;
       }
@@ -79,6 +82,7 @@ export function BillingProvider({ children }: { children: React.ReactNode }) {
       setYearlyConfigured(Boolean(json.yearlyConfigured));
       setSubscriptionStatus(json.status ?? null);
       setTrialEndsAt(json.trialEndsAt ?? null);
+      setComplimentaryPro(Boolean(json.complimentaryPro));
       setPricing((json.pricing as PlatformPricing | null) ?? EMPTY_PRICING);
     } finally {
       setLoading(false);
@@ -95,8 +99,9 @@ export function BillingProvider({ children }: { children: React.ReactNode }) {
       computeEntitlement({
         subscriptionStatus,
         trialEndsAt,
+        complimentaryPro,
       }),
-    [subscriptionStatus, trialEndsAt]
+    [subscriptionStatus, trialEndsAt, complimentaryPro]
   );
 
   const value = useMemo<BillingState>(

@@ -364,6 +364,76 @@ export async function sendProposalAcceptedEmail(options: {
   });
 }
 
+export async function sendProposalSignedClientEmail(options: {
+  to: string;
+  signerName: string;
+  organizationName: string;
+  proposalTitle: string;
+  amountLabel?: string | null;
+  signedAt: string;
+  documentHash: string;
+  proposalUrl: string;
+  pdf: Buffer;
+  pdfFilename: string;
+}) {
+  const esc = brandEscapeHtml;
+  const signerFirst = firstName(options.signerName);
+  const greeting = signerFirst ? `Hi ${signerFirst},` : "Hi,";
+  const title = options.proposalTitle?.trim() || "your proposal";
+  const biz = options.organizationName.trim() || "the sender";
+  const signedAtLabel = formatEmailTimestamp(options.signedAt);
+
+  const detailRows = [
+    { label: "Proposal", value: title },
+    { label: "From", value: biz },
+    { label: "Signed", value: signedAtLabel },
+    {
+      label: "Document hash",
+      value: `${options.documentHash.slice(0, 16)}…`,
+    },
+  ];
+  if (options.amountLabel?.trim()) {
+    detailRows.splice(2, 0, {
+      label: "Amount",
+      value: options.amountLabel.trim(),
+    });
+  }
+
+  const bodyHtml = `
+    <p style="margin:0 0 12px;">${esc(greeting)}</p>
+    <p style="margin:0;">
+      This confirms that you electronically signed
+      <strong>${esc(title)}</strong> from <strong>${esc(biz)}</strong>.
+      A PDF copy with Rebban’s verification certificate and signing audit log is attached for your records.
+    </p>
+    ${emailDetailCard(detailRows)}
+    <p style="margin:20px 0 0;font-size:14px;color:#6B7280;">
+      Keep the attached PDF with your records. The certificate page includes the document fingerprint, consent statement, and signing activity log.
+    </p>`;
+
+  const html = rebbanEmailLayout({
+    preheader: `Signed confirmation for ${title}`,
+    title: "Proposal signed",
+    bodyHtml,
+    cta: { label: "View proposal", url: options.proposalUrl },
+    footerNote: `Signed copy from ${biz}`,
+  });
+
+  return sendHtmlEmail({
+    to: options.to,
+    subject: `Signed: ${title}`,
+    html,
+    fromName: biz,
+    attachments: [
+      {
+        filename: options.pdfFilename,
+        content: options.pdf,
+        contentType: "application/pdf",
+      },
+    ],
+  });
+}
+
 export async function sendInvoicePaidFreelancerEmail(options: {
   to: string;
   freelancerName?: string | null;

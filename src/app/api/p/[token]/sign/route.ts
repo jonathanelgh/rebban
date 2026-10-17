@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import {
   getAppUrl,
   sendProposalAcceptedEmail,
 } from "@/lib/email/resend";
 import { formatMoneyLabel } from "@/lib/proposals/documentHash";
+import { sendSignedProposalConfirmation } from "@/lib/proposals/send-signed-confirmation";
+
+export const runtime = "nodejs";
+export const maxDuration = 60;
 
 function clientMeta(request: Request) {
   const forwarded = request.headers.get("x-forwarded-for");
@@ -14,6 +19,14 @@ function clientMeta(request: Request) {
     null;
   const userAgent = request.headers.get("user-agent");
   return { ip, userAgent };
+}
+
+function tryAdminClient() {
+  try {
+    return createAdminClient();
+  } catch {
+    return null;
+  }
 }
 
 export async function POST(
@@ -72,6 +85,13 @@ export async function POST(
       organization_name?: string | null;
     };
 
+    const amountLabel = formatMoneyLabel(
+      Number(result.amount || 0),
+      result.currency || "USD"
+    );
+    const signedAt = result.accepted_at || new Date().toISOString();
+    const editorUrl = `${getAppUrl()}/proposals/${result.proposal_id}/edit`;
+
     if (result.notify_email) {
       try {
         await sendProposalAcceptedEmail({
@@ -81,17 +101,29 @@ export async function POST(
           signerEmail: result.signer_email,
           proposalTitle: result.title,
           organizationName: result.organization_name || "Your workspace",
-          amountLabel: formatMoneyLabel(
-            Number(result.amount || 0),
-            result.currency || "USD"
-          ),
-          signedAt: result.accepted_at || new Date().toISOString(),
+          amountLabel,
+          signedAt,
           documentHash: result.document_hash,
-          proposalUrl: `${getAppUrl()}/proposals/${result.proposal_id}/edit`,
+          proposalUrl: editorUrl,
         });
-      } catch {
-        // Signature already saved.
+      } catch (err) {
+        console.error(
+          "[proposal sign] owner notify failed",
+          err instanceof Error ? err.message : err
+        );
       }
+    }
+
+    try {
+      await sendSignedProposalConfirmation(supabase, result.proposal_id, {
+        storeWith: tryAdminClient(),
+        request,
+      });
+    } catch (err) {
+      console.error(
+        "[proposal sign] signer confirmation failed",
+        err instanceof Error ? err.message : err
+      );
     }
 
     return NextResponse.json({

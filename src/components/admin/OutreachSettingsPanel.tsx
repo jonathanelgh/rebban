@@ -131,8 +131,17 @@ export function OutreachSettingsPanel() {
       setError(json.error || "Sync failed.");
       return;
     }
+    const syncErrors = Array.isArray(json.errors)
+      ? (json.errors as string[])
+      : [];
+    if (syncErrors.length) {
+      setError(syncErrors[0]);
+    }
     setNotice(
-      `Sync complete · ${json.imported ?? 0} new · ${json.analyzed ?? 0} analyzed`
+      `Sync complete · ${json.imported ?? 0} new · ${json.analyzed ?? 0} analyzed` +
+        (json.pendingAnalysis
+          ? ` · ${json.pendingAnalysis} waiting on OPENAI_API_KEY`
+          : "")
     );
     setError(null);
     // Refresh status for last sync time

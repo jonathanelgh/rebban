@@ -1,6 +1,14 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
@@ -19,6 +27,7 @@ import {
   ImageIcon,
   Info,
   Clock,
+  ListTodo,
 } from "lucide-react";
 import { nanoid } from "nanoid";
 import { createClient } from "@/lib/supabase/client";
@@ -36,6 +45,11 @@ import {
   TAX_RATE_PRESETS,
 } from "@/lib/invoices/totals";
 import {
+  INVOICE_LINE_UNIT_OPTIONS,
+  type InvoiceLineUnit,
+} from "@/lib/invoices/units";
+import { ensureInvoiceNumber } from "@/lib/invoices/numbering";
+import {
   invoiceBannerStoragePath,
   ORG_ASSETS_BUCKET,
   publicOrgAssetUrl,
@@ -48,6 +62,20 @@ import {
   unlockTimeEntriesForInvoice,
   type UnbilledTimeEntry,
 } from "@/lib/invoices/unbilled";
+import { asOrgReminderSequence } from "@/lib/invoices/reminders";
+import {
+  formatIbanDisplay,
+  hasBankPaymentDetails,
+  normalizeBankgiro,
+} from "@/lib/invoices/payment-details";
+import {
+  firstRecurrenceAt,
+  isMonthInterval,
+  isWeekInterval,
+  RECURRENCE_INTERVAL_OPTIONS,
+  WEEKDAY_OPTIONS,
+  type InvoiceRecurrenceInterval,
+} from "@/lib/invoices/recurrence";
 import type { Enums } from "@/types/database";
 
 type InvoiceStatus = Enums<"invoice_status">;
@@ -56,6 +84,7 @@ type LineItem = {
   id: string;
   description: string;
   quantity: string;
+  unit: InvoiceLineUnit;
   unitPrice: string;
   timeEntryId?: string | null;
   isNew?: boolean;
@@ -69,7 +98,7 @@ type ClientInfo = {
   address?: string | null;
 };
 
-type ProjectOption = { id: string; name: string };
+type ProjectOption = { id: string; name: string; clientId: string };
 
 const STATUS_STYLES: Record<InvoiceStatus, string> = {
   draft: "bg-gray-100 text-gray-700",
@@ -96,9 +125,17 @@ function emptyLine(): LineItem {
     id: `new-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     description: "",
     quantity: "1",
+    unit: "qty",
     unitPrice: "0",
     isNew: true,
   };
+}
+
+function asLineUnit(raw: unknown): InvoiceLineUnit {
+  if (raw === "hr" || raw === "day" || raw === "flat" || raw === "qty") {
+    return raw;
+  }
+  return "qty";
 }
 
 export default function InvoiceEditorPage() {
@@ -118,6 +155,15 @@ export default function InvoiceEditorPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [recurrenceEnabled, setRecurrenceEnabled] = useState(false);
+  const [recurrenceInterval, setRecurrenceInterval] =
+    useState<InvoiceRecurrenceInterval>("monthly");
+  const [recurrenceWeekday, setRecurrenceWeekday] = useState(1);
+  const [recurrenceDayOfMonth, setRecurrenceDayOfMonth] = useState(1);
+  const [recurrenceNextAt, setRecurrenceNextAt] = useState<string | null>(null);
+  const [recurrenceSourceId, setRecurrenceSourceId] = useState<string | null>(
+    null
+  );
   const [error, setError] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState(false);
   const [setupOpen, setSetupOpen] = useState(true);
@@ -139,6 +185,9 @@ export default function InvoiceEditorPage() {
   const [clients, setClients] = useState<ClientInfo[]>([]);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [projectId, setProjectId] = useState<string | null>(null);
+  const [clientTasks, setClientTasks] = useState<
+    { id: string; title: string }[]
+  >([]);
   const [paymentToken, setPaymentToken] = useState<string | null>(null);
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
   const [paymentBusy, setPaymentBusy] = useState(false);
@@ -146,6 +195,8 @@ export default function InvoiceEditorPage() {
   const [stripeReady, setStripeReady] = useState(false);
   const [stripeConnected, setStripeConnected] = useState(false);
   const [stripeBusy, setStripeBusy] = useState(false);
+  const [paymentIban, setPaymentIban] = useState<string | null>(null);
+  const [paymentBankgiro, setPaymentBankgiro] = useState<string | null>(null);
   const [bannerUploading, setBannerUploading] = useState(false);
 
   // Setup options
@@ -171,8 +222,8 @@ export default function InvoiceEditorPage() {
   const [sendModalOpen, setSendModalOpen] = useState(false);
   const [activityRefreshKey, setActivityRefreshKey] = useState(0);
   const [defaultReminderSequence, setDefaultReminderSequence] = useState<
-    "none" | "gentle" | "standard" | "persistent" | null
-  >(null);
+    "gentle" | "standard" | "persistent"
+  >("standard");
 
   const totals = useMemo(
     () =>
@@ -213,6 +264,8 @@ export default function InvoiceEditorPage() {
              payment_token, project_id, show_logo, banner_url, late_fee_enabled, late_fee_percent,
              tax_enabled, tax_rate, prices_include_tax, show_tax_id, tax_id,
              show_shipping_address, shipping_address, show_reference, reference_number,
+             recurrence_enabled, recurrence_interval, recurrence_weekday,
+             recurrence_day_of_month, recurrence_next_at, recurrence_source_id,
              clients(id, name, company, email)`
           )
           .eq("id", invoiceId)
@@ -221,7 +274,9 @@ export default function InvoiceEditorPage() {
           .maybeSingle(),
         supabase
           .from("invoice_line_items")
-          .select("id, description, quantity, unit_price, position, time_entry_id")
+          .select(
+            "id, description, quantity, unit, unit_price, position, time_entry_id"
+          )
           .eq("invoice_id", invoiceId)
           .eq("organization_id", organizationId)
           .order("position", { ascending: true }),
@@ -234,13 +289,13 @@ export default function InvoiceEditorPage() {
         supabase
           .from("organizations")
           .select(
-            "name, legal_name, address, tax_id, default_tax_rate, default_tax_enabled, default_prices_include_tax, custom_tax_rates, default_reminder_sequence"
+            "name, legal_name, address, tax_id, default_tax_rate, default_tax_enabled, default_prices_include_tax, custom_tax_rates, default_reminder_sequence, payment_iban, payment_bankgiro"
           )
           .eq("id", organizationId)
           .maybeSingle(),
         supabase
           .from("projects")
-          .select("id, name")
+          .select("id, name, client_id")
           .eq("organization_id", organizationId)
           .is("deleted_at", null)
           .order("name"),
@@ -285,6 +340,20 @@ export default function InvoiceEditorPage() {
     setShippingAddress(row.shipping_address || "");
     setShowReference(Boolean(row.show_reference));
     setReferenceNumber(row.reference_number || "");
+    setRecurrenceSourceId(row.recurrence_source_id || null);
+    setRecurrenceEnabled(
+      Boolean(row.recurrence_enabled) && !row.recurrence_source_id
+    );
+    setRecurrenceInterval(
+      (row.recurrence_interval as InvoiceRecurrenceInterval) || "monthly"
+    );
+    setRecurrenceWeekday(
+      row.recurrence_weekday === 0 || row.recurrence_weekday
+        ? row.recurrence_weekday
+        : 1
+    );
+    setRecurrenceDayOfMonth(row.recurrence_day_of_month || 1);
+    setRecurrenceNextAt(row.recurrence_next_at || null);
     setClient(
       clientRel
         ? {
@@ -301,29 +370,30 @@ export default function InvoiceEditorPage() {
         id: line.id,
         description: line.description,
         quantity: String(line.quantity ?? 1),
+        unit: asLineUnit(line.unit),
         unitPrice: String(line.unit_price ?? 0),
         timeEntryId: line.time_entry_id,
       })) || [];
     setLines(loadedLines.length ? loadedLines : [emptyLine()]);
     setOriginalLineIds(loadedLines.map((l) => l.id));
     setClients(clientsRes.data ?? []);
-    setProjects(projectsRes.data ?? []);
+    setProjects(
+      (projectsRes.data ?? []).map((p) => ({
+        id: p.id,
+        name: p.name,
+        clientId: p.client_id,
+      }))
+    );
     setOrgName(orgRes.data?.name || "Your business");
     setOrgLegalName(orgRes.data?.legal_name || null);
     setOrgAddress(orgRes.data?.address || null);
     setOrgTaxId(orgRes.data?.tax_id || null);
     setCustomTaxRates((orgRes.data?.custom_tax_rates || []).map((n) => Number(n)));
-    {
-      const seq = orgRes.data?.default_reminder_sequence;
-      setDefaultReminderSequence(
-        seq === "none" ||
-          seq === "gentle" ||
-          seq === "standard" ||
-          seq === "persistent"
-          ? seq
-          : "standard"
-      );
-    }
+    setPaymentIban(formatIbanDisplay(orgRes.data?.payment_iban));
+    setPaymentBankgiro(normalizeBankgiro(orgRes.data?.payment_bankgiro));
+    setDefaultReminderSequence(
+      asOrgReminderSequence(orgRes.data?.default_reminder_sequence)
+    );
     setLoading(false);
   }, [organizationId, invoiceId, organizationCurrency]);
 
@@ -357,6 +427,36 @@ export default function InvoiceEditorPage() {
   }, [refreshUnbilled]);
 
   useEffect(() => {
+    if (!organizationId || !client?.id) {
+      setClientTasks([]);
+      return;
+    }
+    const orgId: string = organizationId;
+    const clientId: string = client.id;
+    let cancelled = false;
+    async function loadClientTasks() {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("tasks")
+        .select("id, title")
+        .eq("organization_id", orgId)
+        .eq("client_id", clientId)
+        .is("deleted_at", null)
+        .order("updated_at", { ascending: false })
+        .limit(40);
+      if (!cancelled) {
+        setClientTasks(
+          (data || []).map((t) => ({ id: t.id, title: t.title || "Untitled" }))
+        );
+      }
+    }
+    void loadClientTasks();
+    return () => {
+      cancelled = true;
+    };
+  }, [organizationId, client?.id]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("addUnbilled") !== "1") return;
@@ -364,6 +464,15 @@ export default function InvoiceEditorPage() {
     setUnbilledModalOpen(true);
     router.replace(`/invoices/${invoiceId}/edit`, { scroll: false });
   }, [client?.id, loading, invoiceId, router]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("send") !== "1") return;
+    if (loading || !client?.id || status === "void" || status === "paid") return;
+    setSendModalOpen(true);
+    router.replace(`/invoices/${invoiceId}/edit`, { scroll: false });
+  }, [client?.id, loading, invoiceId, router, status]);
 
   useEffect(() => {
     let cancelled = false;
@@ -434,6 +543,7 @@ export default function InvoiceEditorPage() {
           id: c.id,
           description: c.description,
           quantity: String(c.quantity),
+          unit: "hr" as const,
           unitPrice: String(c.unitPrice),
           timeEntryId: c.timeEntryId,
         })),
@@ -502,8 +612,43 @@ export default function InvoiceEditorPage() {
       setPaymentToken(token);
     }
 
+    let numberToSave = number.trim() || null;
+    // Issuing (leaving draft) without a number assigns the next sequential one.
+    if (statusToSave !== "draft" && !numberToSave) {
+      try {
+        numberToSave = await ensureInvoiceNumber(supabase, {
+          invoiceId,
+          organizationId,
+          currentNumber: null,
+        });
+        setNumber(numberToSave);
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Could not assign invoice number."
+        );
+        setSaving(false);
+        return false;
+      }
+    }
+
+    const canEditRecurrence = !recurrenceSourceId;
+    let nextAtToSave: string | null = null;
+    if (canEditRecurrence && recurrenceEnabled) {
+      // Already activated (has a next send) → recompute from current settings.
+      // Still a draft schedule → leave null until first send.
+      nextAtToSave = recurrenceNextAt
+        ? firstRecurrenceAt({
+            interval: recurrenceInterval,
+            weekday: recurrenceWeekday,
+            dayOfMonth: recurrenceDayOfMonth,
+          }).toISOString()
+        : null;
+    }
+
     const updatePayload = {
-      number: number.trim() || null,
+      number: numberToSave,
       status: statusToSave,
       currency,
       issue_date: issueDate || null,
@@ -528,6 +673,23 @@ export default function InvoiceEditorPage() {
       shipping_address: shippingAddress.trim() || null,
       show_reference: showReference,
       reference_number: referenceNumber.trim() || null,
+      ...(canEditRecurrence
+        ? {
+            recurrence_enabled: recurrenceEnabled,
+            recurrence_interval: recurrenceEnabled
+              ? recurrenceInterval
+              : null,
+            recurrence_weekday:
+              recurrenceEnabled && isWeekInterval(recurrenceInterval)
+                ? recurrenceWeekday
+                : null,
+            recurrence_day_of_month:
+              recurrenceEnabled && isMonthInterval(recurrenceInterval)
+                ? recurrenceDayOfMonth
+                : null,
+            recurrence_next_at: recurrenceEnabled ? nextAtToSave : null,
+          }
+        : {}),
       sent_at:
         (statusToSave === "sent" || statusToSave === "viewed") && status === "draft"
           ? new Date().toISOString()
@@ -580,6 +742,7 @@ export default function InvoiceEditorPage() {
             invoice_id: invoiceId,
             description,
             quantity: qty,
+            unit: line.unit || "qty",
             unit_price: price,
             amount,
             position: index,
@@ -602,6 +765,7 @@ export default function InvoiceEditorPage() {
           .update({
             description,
             quantity: qty,
+            unit: line.unit || "qty",
             unit_price: price,
             amount,
             position: index,
@@ -628,6 +792,9 @@ export default function InvoiceEditorPage() {
     setLines([...lines]);
     setOriginalLineIds(lines.map((l) => l.id));
     if (nextStatus) setStatus(nextStatus);
+    if (canEditRecurrence) {
+      setRecurrenceNextAt(recurrenceEnabled ? nextAtToSave : null);
+    }
     setSaving(false);
     flash("Saved");
     if (statusToSave === "void" || removedIds.length > 0) {
@@ -649,23 +816,24 @@ export default function InvoiceEditorPage() {
   function handleInvoiceSent(result: {
     url: string;
     recipientEmail: string;
+    number?: string;
     status?: string;
     paymentToken?: string;
   }) {
     setSendModalOpen(false);
-    if (result.status) setStatus(result.status as InvoiceStatus);
-    else if (status === "draft") setStatus("sent");
-    if (result.paymentToken) setPaymentToken(result.paymentToken);
-    setPaymentUrl(result.url);
-    setActivityRefreshKey((k) => k + 1);
-    flash(`Invoice sent to ${result.recipientEmail}`);
+    const assigned = result.number?.trim() || number.trim();
+    if (assigned) setNumber(assigned);
+    const qs = new URLSearchParams({ sent: "1" });
+    if (result.recipientEmail) qs.set("to", result.recipientEmail);
+    qs.set("number", assigned || "Invoice");
+    router.push(`/invoices?${qs.toString()}`);
   }
 
   const canSendInvoice =
     status !== "void" && status !== "paid" && Boolean(client);
   const invoiceLabel = number.trim()
     ? `Invoice ${number.trim()}`
-    : "Invoice";
+    : "Draft invoice";
 
   async function logInvoiceEvent(eventType: string) {
     if (!organizationId || !invoiceId) return;
@@ -796,6 +964,7 @@ export default function InvoiceEditorPage() {
     id: l.id,
     description: l.description,
     quantity: l.quantity,
+    unit: l.unit,
     unitPrice: l.unitPrice,
     amount: lineAmount(l.quantity, l.unitPrice),
   }));
@@ -901,6 +1070,8 @@ export default function InvoiceEditorPage() {
                 lateFeeEnabled={lateFeeEnabled}
                 lateFeePercent={Number(lateFeePercent) || 0}
                 notes={notes}
+                paymentIban={paymentIban}
+                paymentBankgiro={paymentBankgiro}
               />
             </div>
           ) : (
@@ -961,8 +1132,16 @@ export default function InvoiceEditorPage() {
                     <input
                       value={number}
                       onChange={(e) => setNumber(e.target.value)}
-                      placeholder="INV-0001"
-                      className="mt-1 w-full sm:w-40 sm:text-right text-xl font-semibold text-gray-900 tracking-tight bg-transparent outline-none border-b border-transparent focus:border-gray-300"
+                      placeholder={
+                        status === "draft" ? "Draft" : "INV-0001"
+                      }
+                      readOnly={status === "draft" && !number.trim()}
+                      title={
+                        status === "draft" && !number.trim()
+                          ? "Number is assigned when you send the invoice"
+                          : undefined
+                      }
+                      className="mt-1 w-full sm:w-40 sm:text-right text-xl font-semibold text-gray-900 tracking-tight bg-transparent outline-none border-b border-transparent focus:border-gray-300 read-only:text-gray-400"
                     />
                     <div className="mt-3 text-[13px] text-gray-500 space-y-1">
                       <div className="flex sm:justify-end items-center gap-2">
@@ -1009,6 +1188,7 @@ export default function InvoiceEditorPage() {
                     onChange={(e) => {
                       const next = clients.find((c) => c.id === e.target.value) || null;
                       setClient(next);
+                      setProjectId(null);
                     }}
                     className="w-full border border-line rounded-xl px-3 py-2.5 text-sm font-medium text-gray-900 bg-white outline-none focus:border-gray-300"
                   >
@@ -1120,11 +1300,12 @@ export default function InvoiceEditorPage() {
                   </button>
                 </div>
 
-                <div className="rounded-2xl border border-line overflow-hidden">
-                  <div className="hidden sm:grid grid-cols-[24px_minmax(0,1.8fr)_90px_110px_110px_36px] gap-2 px-3 py-2.5 bg-[#FAFBFC] border-b border-line text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                <div className="rounded-2xl border border-line overflow-visible">
+                  <div className="hidden sm:grid grid-cols-[24px_minmax(0,1.6fr)_64px_76px_110px_110px_36px] gap-2 px-3 py-2.5 bg-[#FAFBFC] border-b border-line rounded-t-2xl text-[11px] font-semibold uppercase tracking-wider text-gray-400">
                     <span />
                     <span>Description</span>
                     <span className="text-right">Qty</span>
+                    <span>Unit</span>
                     <span className="text-right">
                       Rate
                       {linePricesLabel ? (
@@ -1136,19 +1317,20 @@ export default function InvoiceEditorPage() {
                     <span className="text-right">Amount</span>
                     <span />
                   </div>
-                  {lines.map((line) => (
+                  {lines.map((line, lineIndex) => (
                     <div
                       key={line.id}
-                      className="grid grid-cols-1 sm:grid-cols-[24px_minmax(0,1.8fr)_90px_110px_110px_36px] gap-2 px-3 py-2.5 border-b border-line last:border-b-0 items-center"
+                      className={`grid grid-cols-1 sm:grid-cols-[24px_minmax(0,1.6fr)_64px_76px_110px_110px_36px] gap-2 px-3 py-2.5 border-b border-line last:border-b-0 items-center ${
+                        lineIndex === lines.length - 1 ? "rounded-b-2xl" : ""
+                      }`}
                     >
                       <GripVertical className="hidden sm:block w-4 h-4 text-gray-300" />
-                      <input
+                      <LineDescriptionInput
                         value={line.description}
-                        onChange={(e) =>
-                          updateLine(line.id, { description: e.target.value })
+                        tasks={clientTasks}
+                        onChange={(description) =>
+                          updateLine(line.id, { description })
                         }
-                        placeholder="Description"
-                        className="w-full text-sm text-gray-900 outline-none bg-transparent"
                       />
                       <input
                         value={line.quantity}
@@ -1157,6 +1339,25 @@ export default function InvoiceEditorPage() {
                         }
                         className="w-full sm:text-right text-sm border border-line sm:border-0 rounded-lg sm:rounded-none px-2 py-1.5 sm:px-0 sm:py-0 outline-none"
                       />
+                      <div className="relative inline-flex w-fit max-w-full items-center justify-self-start">
+                        <select
+                          value={line.unit}
+                          onChange={(e) =>
+                            updateLine(line.id, {
+                              unit: e.target.value as InvoiceLineUnit,
+                            })
+                          }
+                          className="appearance-none w-auto text-sm border border-line sm:border-0 rounded-lg sm:rounded-none pl-2 pr-5 sm:pl-0 sm:pr-[1.1rem] py-1.5 sm:py-0 outline-none bg-transparent text-gray-700 cursor-pointer"
+                          aria-label="Unit"
+                        >
+                          {INVOICE_LINE_UNIT_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown className="pointer-events-none absolute right-1.5 sm:right-0 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                      </div>
                       <input
                         value={line.unitPrice}
                         onChange={(e) =>
@@ -1204,6 +1405,30 @@ export default function InvoiceEditorPage() {
                     <span>{formatInvoiceMoney(totals.total, currency)}</span>
                   </div>
                 </div>
+
+                {(paymentIban || paymentBankgiro) && (
+                  <div className="mt-8 pt-6 border-t border-line">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
+                      Bank transfer
+                    </div>
+                    <div className="text-[13px] text-gray-700 space-y-1">
+                      {paymentIban && (
+                        <p>
+                          <span className="text-gray-500">IBAN</span>{" "}
+                          <span className="font-medium tracking-wide">
+                            {paymentIban}
+                          </span>
+                        </p>
+                      )}
+                      {paymentBankgiro && (
+                        <p>
+                          <span className="text-gray-500">Bankgiro</span>{" "}
+                          <span className="font-medium">{paymentBankgiro}</span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 <div className="mt-8">
                   <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
@@ -1266,14 +1491,17 @@ export default function InvoiceEditorPage() {
                 <select
                   value={projectId || ""}
                   onChange={(e) => setProjectId(e.target.value || null)}
-                  className="w-full text-[13px] text-gray-800 bg-transparent outline-none truncate"
+                  disabled={!client}
+                  className="w-full text-[13px] text-gray-800 bg-transparent outline-none truncate disabled:text-gray-400"
                 >
                   <option value="">No project</option>
-                  {projects.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
+                  {projects
+                    .filter((p) => p.clientId === client?.id)
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
                 </select>
               </OverviewRow>
               <OverviewRow label="Currency">
@@ -1289,6 +1517,131 @@ export default function InvoiceEditorPage() {
                   {formatInvoiceMoney(totals.total, currency)}
                 </span>
               </OverviewRow>
+
+              {recurrenceSourceId ? (
+                <OverviewRow label="Billing">
+                  <span className="text-[13px] text-gray-600">
+                    Retainer installment
+                  </span>
+                </OverviewRow>
+              ) : (
+                <>
+                  <div className="pt-1">
+                    <div className="text-[12px] text-gray-500 mb-1.5">
+                      Billing
+                    </div>
+                    <div className="inline-flex w-full rounded-xl border border-line p-0.5 bg-[#FAFBFC]">
+                      <button
+                        type="button"
+                        onClick={() => setRecurrenceEnabled(false)}
+                        className={`flex-1 px-2.5 py-1.5 rounded-[10px] text-[12px] font-medium ${
+                          !recurrenceEnabled
+                            ? "bg-white text-gray-900 shadow-sm border border-line"
+                            : "text-gray-500"
+                        }`}
+                      >
+                        One-time
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRecurrenceEnabled(true)}
+                        className={`flex-1 px-2.5 py-1.5 rounded-[10px] text-[12px] font-medium ${
+                          recurrenceEnabled
+                            ? "bg-white text-gray-900 shadow-sm border border-line"
+                            : "text-gray-500"
+                        }`}
+                      >
+                        Retainer
+                      </button>
+                    </div>
+                  </div>
+
+                  {recurrenceEnabled && (
+                    <div className="space-y-2.5 pt-0.5">
+                      <div>
+                        <div className="text-[12px] text-gray-500 mb-1">
+                          Interval
+                        </div>
+                        <select
+                          value={recurrenceInterval}
+                          onChange={(e) =>
+                            setRecurrenceInterval(
+                              e.target.value as InvoiceRecurrenceInterval
+                            )
+                          }
+                          className="w-full border border-line rounded-xl px-3 py-2 text-[13px] outline-none focus:border-gray-300 bg-white"
+                        >
+                          {RECURRENCE_INTERVAL_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {isWeekInterval(recurrenceInterval) ? (
+                        <div>
+                          <div className="text-[12px] text-gray-500 mb-1">
+                            Day of week
+                          </div>
+                          <select
+                            value={recurrenceWeekday}
+                            onChange={(e) =>
+                              setRecurrenceWeekday(Number(e.target.value))
+                            }
+                            className="w-full border border-line rounded-xl px-3 py-2 text-[13px] outline-none focus:border-gray-300 bg-white"
+                          >
+                            {WEEKDAY_OPTIONS.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="text-[12px] text-gray-500 mb-1">
+                            Day of month
+                          </div>
+                          <select
+                            value={recurrenceDayOfMonth}
+                            onChange={(e) =>
+                              setRecurrenceDayOfMonth(
+                                Number(e.target.value) || 1
+                              )
+                            }
+                            className="w-full border border-line rounded-xl px-3 py-2 text-[13px] outline-none focus:border-gray-300 bg-white"
+                          >
+                            {Array.from({ length: 28 }, (_, i) => i + 1).map(
+                              (day) => (
+                                <option key={day} value={day}>
+                                  {day}
+                                </option>
+                              )
+                            )}
+                          </select>
+                        </div>
+                      )}
+
+                      <p className="text-[12px] text-gray-500">
+                        Next automatic send:{" "}
+                        <span className="font-medium text-gray-700">
+                          {recurrenceNextAt
+                            ? new Date(recurrenceNextAt).toLocaleDateString(
+                                undefined,
+                                {
+                                  weekday: "short",
+                                  month: "short",
+                                  day: "numeric",
+                                }
+                              )
+                            : "After you send this invoice"}
+                        </span>
+                      </p>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
 
@@ -1472,19 +1825,25 @@ export default function InvoiceEditorPage() {
 
           <div className="p-5 space-y-3">
             {!stripeReady && (
-              <div className="rounded-2xl border border-line bg-[#FAFBFC] p-4">
-                <div className="text-[14px] font-semibold text-gray-900">
-                  Collect payments with Stripe
+              <div className="rounded-2xl border border-line bg-[#FAFBFC] p-4 space-y-3">
+                <div>
+                  <div className="text-[14px] font-semibold text-gray-900">
+                    Collect payments
+                  </div>
+                  <p className="text-[12px] text-gray-500 mt-1 leading-relaxed">
+                    {hasBankPaymentDetails({
+                      iban: paymentIban,
+                      bankgiro: paymentBankgiro,
+                    })
+                      ? "Bank details are on this invoice. Connect Stripe if you also want card payments."
+                      : "Connect Stripe for card payments, or add an IBAN / Bankgiro in Settings for bank transfer."}
+                  </p>
                 </div>
-                <p className="text-[12px] text-gray-500 mt-1 leading-relaxed">
-                  Connect your Stripe account so clients can pay this invoice by
-                  card.
-                </p>
                 <button
                   type="button"
                   onClick={() => void handleStripeConnect()}
                   disabled={stripeBusy || !stripeConfigured}
-                  className="mt-3 w-full btn-primary px-4 py-2.5 rounded-xl text-sm disabled:opacity-50"
+                  className="w-full btn-primary px-4 py-2.5 rounded-xl text-sm disabled:opacity-50"
                 >
                   {stripeBusy
                     ? "Opening Stripe…"
@@ -1494,6 +1853,17 @@ export default function InvoiceEditorPage() {
                         ? "Continue Stripe setup"
                         : "Connect Stripe"}
                 </button>
+                {!hasBankPaymentDetails({
+                  iban: paymentIban,
+                  bankgiro: paymentBankgiro,
+                }) && (
+                  <Link
+                    href="/settings?section=business"
+                    className="block text-center text-[13px] font-medium text-[#2563EB] hover:text-[#1d4ed8]"
+                  >
+                    Add bank transfer details
+                  </Link>
+                )}
               </div>
             )}
 
@@ -1605,12 +1975,162 @@ export default function InvoiceEditorPage() {
           invoiceLabel={invoiceLabel}
           dueDate={dueDate}
           defaultEmail={client?.email}
-          defaultName={client?.company || client?.name}
+          defaultName={client?.name || client?.company}
           defaultReminderSequence={defaultReminderSequence}
           onClose={() => setSendModalOpen(false)}
           onSent={handleInvoiceSent}
         />
       )}
+    </div>
+  );
+}
+
+function LineDescriptionInput({
+  value,
+  tasks,
+  onChange,
+}: {
+  value: string;
+  tasks: { id: string; title: string }[];
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState<{
+    top: number;
+    left: number;
+    width: number;
+  } | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const blurTimer = useRef<number | null>(null);
+
+  const filtered = useMemo(() => {
+    const q = value.trim().toLowerCase();
+    if (!q) return tasks.slice(0, 8);
+    return tasks
+      .filter((t) => t.title.toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [tasks, value]);
+
+  const updatePosition = useCallback(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setCoords({
+      top: rect.bottom + 6,
+      left: rect.left,
+      width: Math.max(rect.width, 220),
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    updatePosition();
+  }, [open, value, updatePosition]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onScrollOrResize() {
+      updatePosition();
+    }
+    window.addEventListener("resize", onScrollOrResize);
+    window.addEventListener("scroll", onScrollOrResize, true);
+    return () => {
+      window.removeEventListener("resize", onScrollOrResize);
+      window.removeEventListener("scroll", onScrollOrResize, true);
+    };
+  }, [open, updatePosition]);
+
+  useEffect(() => {
+    return () => {
+      if (blurTimer.current) window.clearTimeout(blurTimer.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      const target = e.target as Node;
+      if (rootRef.current?.contains(target)) return;
+      if (menuRef.current?.contains(target)) return;
+      setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const canSuggest = tasks.length > 0;
+
+  const menu =
+    open && canSuggest && coords
+      ? createPortal(
+          <div
+            ref={menuRef}
+            style={{
+              position: "fixed",
+              top: coords.top,
+              left: coords.left,
+              width: coords.width,
+              zIndex: 80,
+            }}
+            className="rounded-xl border border-line bg-white shadow-[0_12px_32px_rgba(16,24,40,0.16)] overflow-hidden"
+          >
+            <div className="px-3 py-2 border-b border-line flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+              <ListTodo className="w-3.5 h-3.5" />
+              Add task
+            </div>
+            {filtered.length === 0 ? (
+              <p className="px-3 py-2.5 text-[12px] text-gray-400">
+                No matching tasks — keep typing freely.
+              </p>
+            ) : (
+              <ul className="max-h-48 overflow-y-auto py-1">
+                {filtered.map((task) => (
+                  <li key={task.id}>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        onChange(task.title);
+                        setOpen(false);
+                      }}
+                      className="w-full text-left px-3 py-2 text-[13px] text-gray-800 hover:bg-[#FAFBFC] truncate"
+                    >
+                      {task.title}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>,
+          document.body
+        )
+      : null;
+
+  return (
+    <div ref={rootRef} className="relative min-w-0">
+      <input
+        ref={inputRef}
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value);
+          if (canSuggest) setOpen(true);
+        }}
+        onFocus={() => {
+          if (canSuggest) setOpen(true);
+        }}
+        onBlur={() => {
+          blurTimer.current = window.setTimeout(() => setOpen(false), 120);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") setOpen(false);
+        }}
+        placeholder="Description"
+        className="w-full text-sm text-gray-900 outline-none bg-transparent"
+        autoComplete="off"
+      />
+      {menu}
     </div>
   );
 }

@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { formatInvoiceMoney, lineAmount } from "@/lib/invoices/totals";
+import {
+  formatIbanDisplay,
+  hasBankPaymentDetails,
+  normalizeBankgiro,
+} from "@/lib/invoices/payment-details";
 
 type RouteContext = { params: Promise<{ token: string }> };
 
@@ -58,6 +63,8 @@ type PublicInvoicePayload = {
     address: string | null;
     tax_id: string | null;
     stripe_charges_enabled: boolean | null;
+    payment_iban: string | null;
+    payment_bankgiro: string | null;
   } | null;
   client: {
     name: string | null;
@@ -103,6 +110,18 @@ export async function GET(_request: Request, context: RouteContext) {
       amount: line.amount ?? lineAmount(line.quantity, line.unit_price),
     }));
 
+    const openStatus = ["sent", "viewed", "overdue"].includes(invoice.status);
+    const stripePayable =
+      openStatus && Boolean(org?.stripe_charges_enabled);
+    const bankIban = formatIbanDisplay(org?.payment_iban);
+    const bankBankgiro = normalizeBankgiro(org?.payment_bankgiro);
+    const bankTransferAvailable =
+      openStatus &&
+      hasBankPaymentDetails({
+        iban: org?.payment_iban,
+        bankgiro: org?.payment_bankgiro,
+      });
+
     return NextResponse.json({
       invoice: {
         number: invoice.number,
@@ -116,9 +135,9 @@ export async function GET(_request: Request, context: RouteContext) {
         issueDate: invoice.issue_date,
         notes: invoice.notes,
         paidAt: invoice.paid_at,
-        payable:
-          ["sent", "viewed", "overdue"].includes(invoice.status) &&
-          Boolean(org?.stripe_charges_enabled),
+        payable: stripePayable || bankTransferAvailable,
+        stripePayable,
+        bankTransferAvailable,
         showLogo: invoice.show_logo ?? true,
         bannerUrl: publicAssetUrl(invoice.banner_url),
         lateFeeEnabled: Boolean(invoice.late_fee_enabled),
@@ -137,6 +156,8 @@ export async function GET(_request: Request, context: RouteContext) {
         name: org?.legal_name || org?.name || "Business",
         logoUrl: publicAssetUrl(org?.logo_url),
         address: org?.address || null,
+        paymentIban: bankIban,
+        paymentBankgiro: bankBankgiro,
       },
       client: {
         name: client?.name || null,
