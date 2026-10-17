@@ -11,7 +11,7 @@ import {
   Columns, CreditCard, BoxSelect, AppWindow, GalleryHorizontalEnd,
   Layout, Users, Calendar, ScrollText, ListChecks,
   Target, Package, Route, Ban, UserCheck, RefreshCw, ArrowRight, PenLine, BookmarkPlus, X,
-  UploadCloud, Loader2, Send, Sparkles, FolderKanban
+  UploadCloud, Loader2, Send, Sparkles, FolderKanban, PanelRight
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "@/components/ProfileContext";
@@ -26,7 +26,11 @@ import {
   resumeStatusFromTimestamps,
 } from "@/components/ProposalSendMenu";
 import type { ProjectBillingType } from "@/lib/projects/billing";
-import { DEFAULT_PROPOSAL_SEND_MESSAGE } from "@/lib/proposals/followups";
+import {
+  DEFAULT_PROPOSAL_SEND_MESSAGE,
+  asOrgFollowUpSequence,
+  type FollowUpSequenceKey,
+} from "@/lib/proposals/followups";
 import type { Enums } from "@/types/database";
 import { ModalOverlay, modalPanelClass } from "@/components/ModalFrame";
 import {
@@ -868,6 +872,9 @@ function ProposalEditorContent() {
   const [linkedProjectId, setLinkedProjectId] = useState<string | null>(null);
   const [proposalClientId, setProposalClientId] = useState<string | null>(null);
   const [sendOpen, setSendOpen] = useState(false);
+  const [defaultFollowUpSequence, setDefaultFollowUpSequence] = useState<
+    Exclude<FollowUpSequenceKey, "none">
+  >("standard");
   const [sendAgainFeedback, setSendAgainFeedback] = useState<{
     to: string;
   } | null>(null);
@@ -930,6 +937,7 @@ function ProposalEditorContent() {
       setEditingItemId(null);
       setIsAddingItem(false);
     }
+    setMobileInspectorOpen(true);
   };
 
   // Helper to handle element clicks
@@ -942,6 +950,7 @@ function ProposalEditorContent() {
     setEditingItemId(null);
     setIsAddingItem(false);
     setEditingEntry(null);
+    setMobileInspectorOpen(true);
   };
 
   const deleteActiveElement = () => {
@@ -1058,7 +1067,8 @@ function ProposalEditorContent() {
   };
 
   const renderElementPalette = () => (
-    <div className="mb-5">
+    // Desktop only — on mobile, add via the canvas + button (no drag palette).
+    <div className="mb-5 hidden md:block">
       <label className="block text-xs font-bold text-gray-900 mb-1">Elements</label>
       <p className="text-[11px] text-gray-500 mb-3">Drag an element into this section</p>
       <div className="grid grid-cols-3 gap-2">
@@ -1312,6 +1322,7 @@ function ProposalEditorContent() {
   const [overviewOpen, setOverviewOpen] = useState(true);
   const [styleOpen, setStyleOpen] = useState(true);
   const [addSectionOpen, setAddSectionOpen] = useState(true);
+  const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
 
   const [lineItems, setLineItems] = useState<LineItem[]>([
     {
@@ -1427,6 +1438,27 @@ function ProposalEditorContent() {
       setSectionElements(content.sectionElements as Record<string, InSectionElement[]>);
     }
   }, [templateId]);
+
+  useEffect(() => {
+    if (!organizationId) return;
+    let cancelled = false;
+    async function loadOrgFollowUpDefault() {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("organizations")
+        .select("default_proposal_followup_sequence")
+        .eq("id", organizationId!)
+        .maybeSingle();
+      if (cancelled || !data) return;
+      setDefaultFollowUpSequence(
+        asOrgFollowUpSequence(data.default_proposal_followup_sequence)
+      );
+    }
+    void loadOrgFollowUpDefault();
+    return () => {
+      cancelled = true;
+    };
+  }, [organizationId]);
 
   useEffect(() => {
     if (!proposalId) {
@@ -2505,7 +2537,7 @@ function ProposalEditorContent() {
           setActiveBlockId(blockId);
           addApproachStep();
         }}
-        className="mt-4 opacity-0 group-hover/list:opacity-100 focus:opacity-100 transition-opacity text-emerald-600 hover:text-emerald-700 font-semibold text-sm inline-flex items-center gap-1.5"
+        className="mt-4 opacity-100 md:opacity-0 md:group-hover/list:opacity-100 focus:opacity-100 transition-opacity text-emerald-600 hover:text-emerald-700 font-semibold text-sm inline-flex items-center gap-1.5"
       >
         <Plus className="w-4 h-4" /> Add step
       </button>
@@ -2532,7 +2564,7 @@ function ProposalEditorContent() {
           setActiveBlockId(blockId);
           onAdd();
         }}
-        className="mt-4 opacity-0 group-hover/list:opacity-100 focus:opacity-100 transition-opacity text-emerald-600 hover:text-emerald-700 font-semibold text-sm inline-flex items-center gap-1.5"
+        className="mt-4 opacity-100 md:opacity-0 md:group-hover/list:opacity-100 focus:opacity-100 transition-opacity text-emerald-600 hover:text-emerald-700 font-semibold text-sm inline-flex items-center gap-1.5"
       >
         <Plus className="w-4 h-4" /> {addLabel}
       </button>
@@ -3452,7 +3484,7 @@ function ProposalEditorContent() {
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); addTimelinePhase(); }}
-          className="mt-5 hidden group-hover/list:inline-flex text-emerald-600 hover:text-emerald-700 font-semibold text-sm items-center gap-1.5"
+          className="mt-5 inline-flex opacity-100 md:opacity-0 md:group-hover/list:opacity-100 focus:opacity-100 transition-opacity text-emerald-600 hover:text-emerald-700 font-semibold text-sm items-center gap-1.5"
         >
           <Plus className="w-4 h-4" /> Add phase
         </button>
@@ -3571,7 +3603,7 @@ function ProposalEditorContent() {
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); addPaymentMilestone(); }}
-          className="mb-8 hidden group-hover/list:inline-flex text-emerald-600 hover:text-emerald-700 font-semibold text-sm items-center gap-1.5"
+          className="mb-8 inline-flex opacity-100 md:opacity-0 md:group-hover/list:opacity-100 focus:opacity-100 transition-opacity text-emerald-600 hover:text-emerald-700 font-semibold text-sm items-center gap-1.5"
         >
           <Plus className="w-4 h-4" /> Add milestone
         </button>
@@ -3688,7 +3720,7 @@ function ProposalEditorContent() {
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); addTermEntry(); }}
-          className="mt-5 hidden group-hover/list:inline-flex text-emerald-600 hover:text-emerald-700 font-semibold text-sm items-center gap-1.5"
+          className="mt-5 inline-flex opacity-100 md:opacity-0 md:group-hover/list:opacity-100 focus:opacity-100 transition-opacity text-emerald-600 hover:text-emerald-700 font-semibold text-sm items-center gap-1.5"
         >
           <Plus className="w-4 h-4" /> Add term
         </button>
@@ -3906,7 +3938,7 @@ function ProposalEditorContent() {
                 </td>
               </tr>
             ) : (
-              <tr className="hidden group-hover/pricing:table-row">
+              <tr className="table-row md:hidden md:group-hover/pricing:table-row">
                 <td colSpan={4} className="pt-4 border-t-0">
                   <button
                     type="button"
@@ -4020,20 +4052,20 @@ function ProposalEditorContent() {
     <div className="h-full min-h-0 bg-[#F7F8FA] flex flex-col font-sans">
       
       {/* Top Navbar */}
-      <header className="h-16 bg-white border-b border-line px-4 flex items-center justify-between shrink-0 z-20">
-        <div className="flex items-center gap-6">
-          <Link href="/proposals" className="flex items-center gap-1.5 text-sm font-semibold text-gray-600 hover:text-gray-900 transition-colors">
+      <header className="h-14 md:h-16 bg-white border-b border-line px-3 md:px-4 flex items-center justify-between gap-2 shrink-0 z-20">
+        <div className="flex items-center gap-3 md:gap-6 min-w-0">
+          <Link href="/proposals" className="flex items-center gap-1.5 text-sm font-semibold text-gray-600 hover:text-gray-900 transition-colors shrink-0">
             <ChevronLeft className="w-4 h-4" />
-            Proposals
+            <span className="hidden sm:inline">Proposals</span>
           </Link>
           <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 min-w-0">
             <Folder className="w-4 h-4 text-emerald-500 shrink-0" />
-            <span className="truncate max-w-[280px]">{proposalTitle}</span>
+            <span className="truncate max-w-[140px] sm:max-w-[220px] md:max-w-[280px]">{proposalTitle}</span>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5 md:gap-3 shrink-0">
           {templateMessage && (
-            <span className="text-[13px] font-medium text-emerald-600">
+            <span className="hidden lg:inline text-[13px] font-medium text-emerald-600">
               {templateMessage}
             </span>
           )}
@@ -4041,7 +4073,7 @@ function ProposalEditorContent() {
             type="button"
             disabled={!proposalId}
             onClick={() => setAiWriteOpen(true)}
-            className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors disabled:opacity-50"
+            className="hidden md:flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors disabled:opacity-50"
           >
             <Sparkles className="w-4 h-4 text-[#2563EB]" /> Write with AI
           </button>
@@ -4051,14 +4083,14 @@ function ProposalEditorContent() {
               setTemplateName(proposalTitle ? `${proposalTitle} template` : '');
               setSaveTemplateOpen(true);
             }}
-            className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors"
+            className="hidden md:flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors"
           >
             <BookmarkPlus className="w-4 h-4 text-[#2563EB]" /> Save as template
           </button>
           <button
             type="button"
             onClick={() => void persistProposalContent()}
-            className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors"
+            className="hidden sm:flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors"
           >
             <Eye className="w-4 h-4 text-emerald-500" /> Preview
           </button>
@@ -4177,6 +4209,28 @@ function ProposalEditorContent() {
               setTemplateMessage("Editing unlocked. Close when you are done.");
               window.setTimeout(() => setTemplateMessage(null), 3200);
             }}
+            onCancelAutomation={async () => {
+              if (!proposalId) return;
+              setSendMenuBusy(true);
+              setTemplateMessage(null);
+              try {
+                const supabase = createClient();
+                const { error } = await supabase.rpc("cancel_proposal_followups", {
+                  p_proposal_id: proposalId,
+                });
+                if (error) {
+                  setTemplateMessage(
+                    error.message || "Could not cancel automation."
+                  );
+                } else {
+                  setTemplateMessage("Follow-up automation cancelled.");
+                  setActivityRefreshKey((k) => k + 1);
+                }
+                window.setTimeout(() => setTemplateMessage(null), 3200);
+              } finally {
+                setSendMenuBusy(false);
+              }
+            }}
             onCloseEditing={async () => {
               if (!proposalId || !resumeStatus) return;
               setSendMenuBusy(true);
@@ -4227,6 +4281,19 @@ function ProposalEditorContent() {
                 : undefined
             }
           />
+          <button
+            type="button"
+            onClick={() => setMobileInspectorOpen((open) => !open)}
+            aria-expanded={mobileInspectorOpen}
+            aria-label={mobileInspectorOpen ? "Hide editor panel" : "Show editor panel"}
+            className={`md:hidden inline-flex items-center justify-center w-10 h-10 rounded-full border transition-colors ${
+              mobileInspectorOpen
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : "border-line bg-white text-gray-700 hover:bg-gray-50"
+            }`}
+          >
+            <PanelRight className="w-5 h-5" strokeWidth={1.75} />
+          </button>
         </div>
       </header>
 
@@ -4299,6 +4366,7 @@ function ProposalEditorContent() {
           proposalTitle={proposalTitle}
           defaultEmail={clientEmail}
           defaultName={clientPersonName || clientName}
+          defaultFollowUpSequence={defaultFollowUpSequence}
           onClose={() => setSendOpen(false)}
           onSent={({ url, recipientEmail }) => {
             setSendOpen(false);
@@ -4583,16 +4651,16 @@ function ProposalEditorContent() {
       )}
 
       {/* Editor Layout */}
-      <div className="flex-1 flex min-h-0 overflow-hidden">
+      <div className="flex-1 flex min-h-0 overflow-hidden relative">
         
         {/* Main Canvas Area */}
         <main 
-          className="flex-1 min-h-0 overflow-y-auto p-12 relative custom-scrollbar block"
+          className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-6 md:p-12 relative custom-scrollbar block"
           onClick={handleCanvasClick}
         >
           {/* The "Paper" Document */}
           <div 
-            className={`w-full max-w-[850px] mx-auto bg-white shadow-sm border min-h-[1100px] mb-32 flex flex-col h-fit transition-colors ${
+            className={`w-full max-w-[850px] mx-auto bg-white shadow-sm border min-h-[min(1100px,100%)] mb-24 md:mb-32 flex flex-col h-fit transition-colors ${
               draggingType && dropTarget === 'end' ? 'border-emerald-400 ring-2 ring-emerald-100' : 'border-line'
             }`}
             onClick={(e) => e.stopPropagation()}
@@ -4609,7 +4677,7 @@ function ProposalEditorContent() {
 
             {/* End-of-document drop / add zone */}
             <div
-              className={`px-16 py-6 flex items-center justify-center transition-colors ${
+              className={`px-4 sm:px-8 md:px-16 py-6 flex items-center justify-center transition-colors ${
                 dropTarget === 'end' && draggingType ? 'bg-emerald-50' : ''
               }`}
               onDragOver={(e) => {
@@ -4626,10 +4694,10 @@ function ProposalEditorContent() {
                     e.stopPropagation();
                     setAddMenuFor((prev) => (prev === 'end' ? null : 'end'));
                   }}
-                  className="bg-white border border-blue-200 text-blue-500 hover:bg-blue-50 hover:text-blue-600 rounded-full p-1.5 shadow-sm transition-colors"
+                  className="bg-white border border-blue-200 text-blue-500 hover:bg-blue-50 hover:text-blue-600 rounded-full p-2 md:p-1.5 shadow-sm transition-colors"
                   title="Add section"
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className="w-5 h-5 md:w-4 md:h-4" />
                 </button>
                 {addMenuFor === 'end' && (
                   <SectionAddMenu
@@ -4642,11 +4710,37 @@ function ProposalEditorContent() {
           </div>
         </main>
 
-        {/* Right Settings Sidebar */}
+        {/* Mobile inspector backdrop */}
+        {mobileInspectorOpen && (
+          <button
+            type="button"
+            aria-label="Close editor panel"
+            className="md:hidden absolute inset-0 z-20 bg-gray-900/40"
+            onClick={() => setMobileInspectorOpen(false)}
+          />
+        )}
+
+        {/* Right Settings Sidebar — drawer on mobile, fixed column on md+ */}
         <aside 
-          className="w-[340px] bg-[#FAFBFC] border-l border-line overflow-y-auto min-h-0 shrink-0 flex flex-col z-10"
+          className={`bg-[#FAFBFC] border-l border-line overflow-y-auto min-h-0 flex flex-col z-30 transition-transform duration-300 ease-out
+            absolute inset-y-0 right-0 w-[min(100vw,340px)] shadow-[0_0_40px_rgba(16,24,40,0.18)]
+            md:static md:w-[340px] md:shrink-0 md:shadow-none md:translate-x-0 md:pointer-events-auto
+            ${mobileInspectorOpen ? "translate-x-0 pointer-events-auto" : "translate-x-full pointer-events-none md:translate-x-0"}`}
           onClick={(e) => e.stopPropagation()}
         >
+          <div className="md:hidden flex items-center justify-between gap-3 px-4 py-3 border-b border-line bg-white shrink-0">
+            <div className="text-[15px] font-semibold text-gray-900">
+              {activeSection === "global" ? "Proposal settings" : "Section settings"}
+            </div>
+            <button
+              type="button"
+              onClick={() => setMobileInspectorOpen(false)}
+              className="p-2 -mr-1 rounded-full text-gray-500 hover:bg-gray-100"
+              aria-label="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
           {isProposalAlreadySent(proposalStatus) && proposalId ? (
             <ProposalActivityLog
               proposalId={proposalId}
@@ -4776,8 +4870,8 @@ function ProposalEditorContent() {
                 )}
               </div>
 
-              {/* Add Section */}
-              <div className="bg-white">
+              {/* Add Section — desktop only; on mobile use the canvas + button */}
+              <div className="bg-white hidden md:block">
                 <button 
                   onClick={() => setAddSectionOpen(!addSectionOpen)}
                   className="w-full flex items-center justify-between p-6 hover:bg-gray-50 transition-colors"
@@ -5415,11 +5509,21 @@ function SectionAddMenu({
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div className="absolute left-1/2 top-full mt-2 -translate-x-1/2 z-50 w-[280px] bg-white border border-line shadow-xl rounded-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-        <div className="px-3 py-2 border-b border-line text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
-          Add section
+      <div className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-50 max-h-[70dvh] bg-white border border-line shadow-xl rounded-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 md:absolute md:inset-x-auto md:bottom-auto md:left-1/2 md:top-full md:mt-2 md:w-[280px] md:max-h-[320px] md:-translate-x-1/2 md:rounded-xl">
+        <div className="px-4 py-3 md:px-3 md:py-2 border-b border-line flex items-center justify-between gap-3">
+          <div className="text-[13px] md:text-[11px] font-semibold text-gray-700 md:text-gray-500 md:uppercase md:tracking-wide">
+            Add section
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="md:hidden p-1.5 -mr-1 rounded-full text-gray-500 hover:bg-gray-100"
+            aria-label="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
-        <div className="p-2 grid grid-cols-2 gap-1.5 max-h-[320px] overflow-y-auto">
+        <div className="p-2 grid grid-cols-2 gap-1.5 max-h-[min(60dvh,360px)] md:max-h-[280px] overflow-y-auto">
           {SECTION_PALETTE.map((item) => (
             <button
               key={`${item.type}-${item.variant || 'default'}`}
@@ -5428,7 +5532,7 @@ function SectionAddMenu({
                 e.stopPropagation();
                 onPick(item);
               }}
-              className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-[12px] font-medium text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors"
+              className="flex items-center gap-2 px-2.5 py-2.5 md:py-2 rounded-lg text-left text-[13px] md:text-[12px] font-medium text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors"
             >
               <span className="text-gray-400">
                 {item.type === 'summary' && <AlignLeft className="w-3.5 h-3.5" />}
@@ -5535,26 +5639,28 @@ function EditableBlock({
         {children}
         
         {isActive && (
-          <div className="absolute top-1/2 -right-12 -translate-y-1/2 flex flex-col gap-1 z-20">
+          <div className="absolute top-2 right-2 md:top-1/2 md:-right-12 md:-translate-y-1/2 flex flex-row md:flex-col gap-1 z-20">
             <button 
-              className="p-1.5 text-emerald-600 hover:bg-emerald-50 bg-white shadow-sm border border-line rounded-md mb-2 flex items-center justify-center transition-colors"
+              className="p-1.5 text-emerald-600 hover:bg-emerald-50 bg-white shadow-sm border border-line rounded-md md:mb-2 flex items-center justify-center transition-colors"
               title="Finish section"
               onClick={(e) => { e.stopPropagation(); onSelect('global', 'global'); }}
             >
               <Check className="w-4 h-4" />
             </button>
             
-            <div className="bg-white shadow-sm border border-line rounded-md overflow-hidden flex flex-col">
+            <div className="bg-white shadow-sm border border-line rounded-md overflow-hidden flex flex-row md:flex-col">
               {onMoveUp && (
                 <>
                   <button type="button" onClick={(e) => { e.stopPropagation(); onMoveUp(); }} className="p-2 text-gray-400 hover:text-gray-900 hover:bg-gray-50 transition-colors" title="Move Up"><ChevronUp className="w-4 h-4" /></button>
-                  <div className="h-px bg-gray-100 mx-1"></div>
+                  <div className="hidden md:block h-px bg-gray-100 mx-1"></div>
+                  <div className="md:hidden w-px bg-gray-100 my-1"></div>
                 </>
               )}
               {onMoveDown && (
                 <>
                   <button type="button" onClick={(e) => { e.stopPropagation(); onMoveDown(); }} className="p-2 text-gray-400 hover:text-gray-900 hover:bg-gray-50 transition-colors" title="Move Down"><ChevronDown className="w-4 h-4" /></button>
-                  <div className="h-px bg-gray-100 mx-1"></div>
+                  <div className="hidden md:block h-px bg-gray-100 mx-1"></div>
+                  <div className="md:hidden w-px bg-gray-100 my-1"></div>
                 </>
               )}
               {onDelete && (
@@ -5565,10 +5671,12 @@ function EditableBlock({
         )}
       </div>
 
-      {/* Insert / drop gap */}
+      {/* Insert / drop gap — always tappable on mobile */}
       <div
-        className={`relative h-8 w-full flex items-center justify-center transition-all duration-150 ${
-          isHovered || isActive || addMenuOpen || (draggingActive && isDropTarget) ? 'opacity-100' : 'opacity-0'
+        className={`relative h-10 md:h-8 w-full flex items-center justify-center transition-all duration-150 ${
+          isHovered || isActive || addMenuOpen || (draggingActive && isDropTarget)
+            ? 'opacity-100'
+            : 'opacity-100 md:opacity-0'
         } ${isDropTarget && draggingActive ? 'bg-emerald-50' : ''}`}
         onDragOver={onDragOverGap}
         onDragLeave={onDragLeaveGap}
@@ -5581,7 +5689,7 @@ function EditableBlock({
             e.stopPropagation();
             onOpenAddMenu();
           }}
-          className={`relative z-10 bg-white border rounded-full p-1 shadow-sm transition-colors ${
+          className={`relative z-10 bg-white border rounded-full p-1.5 md:p-1 shadow-sm transition-colors ${
             addMenuOpen || (isDropTarget && draggingActive)
               ? 'border-emerald-400 text-emerald-600'
               : 'border-blue-200 text-blue-500 hover:bg-blue-50 hover:text-blue-600'

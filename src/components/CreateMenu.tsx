@@ -45,6 +45,36 @@ const CREATE_ITEMS = [
   },
 ] as const;
 
+const CREATE_BUTTON_CLASS =
+  "group inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium text-white transition-all duration-200 ease-out bg-[#2563EB] shadow-sm hover:bg-[#1d4ed8] hover:shadow-[0_8px_20px_rgba(37,99,235,0.35)] hover:scale-[1.03] active:scale-[0.98]";
+
+/** Page-specific primary CTA for the mobile chrome slot (same place as dashboard Create). */
+export function PageChromeCta({
+  label,
+  href,
+}: {
+  label: string;
+  href: string;
+}) {
+  const { entitled, loading, openUpgradeModal } = useBilling();
+
+  return (
+    <Link
+      href={href}
+      onClick={(e) => {
+        if (!loading && !entitled) {
+          e.preventDefault();
+          openUpgradeModal();
+        }
+      }}
+      className={CREATE_BUTTON_CLASS}
+    >
+      <Plus className="w-4 h-4 transition-transform duration-200 ease-out group-hover:rotate-90" />
+      {label}
+    </Link>
+  );
+}
+
 export function CreateMenu() {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -84,10 +114,10 @@ export function CreateMenu() {
         }}
         aria-expanded={open}
         aria-haspopup="menu"
-        className={`group inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium text-white transition-all duration-200 ease-out ${
+        className={`${CREATE_BUTTON_CLASS} ${
           open
-            ? "bg-[#1d4ed8] shadow-[0_8px_20px_rgba(37,99,235,0.4)] scale-[1.02]"
-            : "bg-[#2563EB] shadow-sm hover:bg-[#1d4ed8] hover:shadow-[0_8px_20px_rgba(37,99,235,0.35)] hover:scale-[1.03] active:scale-[0.98]"
+            ? "!bg-[#1d4ed8] shadow-[0_8px_20px_rgba(37,99,235,0.4)] scale-[1.02]"
+            : ""
         }`}
       >
         <Plus className={`w-4 h-4 transition-transform duration-200 ease-out ${open ? "rotate-45" : "group-hover:rotate-90"}`} />

@@ -32,7 +32,6 @@ import {
   LayoutList,
   Plus,
   Search,
-  GripVertical,
   User,
   Layers,
 } from "lucide-react";
@@ -1355,30 +1354,23 @@ function TaskCard({
   onClick,
 }: {
   task: Task;
-  dragHandleProps?: React.HTMLAttributes<HTMLButtonElement>;
+  dragHandleProps?: React.HTMLAttributes<HTMLElement>;
   overlay?: boolean;
   onClick?: () => void;
 }) {
   return (
     <article
       onClick={onClick}
-      className={`rounded-xl border border-line bg-white p-3 transition-colors ${
+      {...dragHandleProps}
+      className={`rounded-xl border border-line bg-white p-3 transition-colors touch-none ${
         overlay
-          ? "shadow-xl rotate-1 scale-[1.02]"
-          : "hover:border-gray-300 cursor-pointer"
+          ? "shadow-xl rotate-1 scale-[1.02] cursor-grabbing"
+          : dragHandleProps
+            ? "hover:border-gray-300 cursor-grab active:cursor-grabbing"
+            : "hover:border-gray-300 cursor-pointer"
       }`}
     >
       <div className="flex items-start gap-2 mb-2">
-        {dragHandleProps && (
-          <button
-            type="button"
-            className="mt-0.5 text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing"
-            onClick={(e) => e.stopPropagation()}
-            {...dragHandleProps}
-          >
-            <GripVertical className="w-4 h-4" />
-          </button>
-        )}
         <div className="min-w-0 flex-1">
           <h3 className="text-[13px] font-semibold text-gray-900 leading-snug">
             {task.title}

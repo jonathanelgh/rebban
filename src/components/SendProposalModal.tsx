@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
+import Link from "next/link";
 import {
   X,
   Send,
@@ -13,10 +14,8 @@ import {
 } from "lucide-react";
 import {
   DEFAULT_PROPOSAL_SEND_MESSAGE,
-  FOLLOW_UP_SEQUENCES,
-  getFollowUpSequence,
+  asOrgFollowUpSequence,
   type FollowUpSequenceKey,
-  type FollowUpStepTemplate,
 } from "@/lib/proposals/followups";
 import {
   ModalOverlay,
@@ -38,6 +37,7 @@ export function SendProposalModal({
   defaultEmail,
   defaultName,
   proposalTitle,
+  defaultFollowUpSequence,
   onClose,
   onSent,
 }: {
@@ -45,42 +45,22 @@ export function SendProposalModal({
   defaultEmail?: string | null;
   defaultName?: string | null;
   proposalTitle: string;
+  defaultFollowUpSequence?: FollowUpSequenceKey | null;
   onClose: () => void;
   onSent: (result: { url: string; recipientEmail: string }) => void;
 }) {
+  const orgSequence = asOrgFollowUpSequence(defaultFollowUpSequence);
+
   const [stepIndex, setStepIndex] = useState(0);
   const [email, setEmail] = useState(defaultEmail || "");
   const [name, setName] = useState(defaultName || "");
-  const [sequenceKey, setSequenceKey] =
-    useState<FollowUpSequenceKey>("standard");
-  const [customSteps, setCustomSteps] = useState<FollowUpStepTemplate[] | null>(
-    null
-  );
+  const [automationOn, setAutomationOn] = useState(true);
   const [message, setMessage] = useState(DEFAULT_PROPOSAL_SEND_MESSAGE);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const step = STEPS[stepIndex];
-  const sequence = useMemo(
-    () => getFollowUpSequence(sequenceKey),
-    [sequenceKey]
-  );
-  const activeSteps = customSteps ?? sequence.steps;
-
-  function selectSequence(key: FollowUpSequenceKey) {
-    setSequenceKey(key);
-    setCustomSteps(null);
-  }
-
-  function updateStepField(
-    index: number,
-    patch: Partial<FollowUpStepTemplate>
-  ) {
-    setCustomSteps((prev) => {
-      const base = prev ?? getFollowUpSequence(sequenceKey).steps;
-      return base.map((item, i) => (i === index ? { ...item, ...patch } : item));
-    });
-  }
+  const sequenceKey: FollowUpSequenceKey = automationOn ? orgSequence : "none";
 
   function goNext() {
     setError(null);
@@ -115,14 +95,7 @@ export function SendProposalModal({
         recipientName: name.trim(),
         message: message.trim() || DEFAULT_PROPOSAL_SEND_MESSAGE,
         sequenceKey,
-        followUpSteps:
-          sequenceKey === "none"
-            ? []
-            : activeSteps.map((s) => ({
-                delayDays: s.delayDays,
-                subject: s.subject,
-                body: s.body,
-              })),
+        followUpSteps: sequenceKey === "none" ? [] : undefined,
       }),
     });
     const json = await res.json();
@@ -240,88 +213,50 @@ export function SendProposalModal({
           {step.id === "automation" && (
             <div className="space-y-4 pb-2">
               <p className="text-[14px] text-gray-500">
-                Choose a follow-up sequence. Emails send automatically if the
-                proposal is still open.
+                When on, clients get automated follow-ups if the proposal is still
+                open, using your sequence from Settings.
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {FOLLOW_UP_SEQUENCES.map((option) => {
-                  const selected = sequenceKey === option.key;
-                  return (
-                    <button
-                      key={option.key}
-                      type="button"
-                      onClick={() => selectSequence(option.key)}
-                      className={`text-left rounded-2xl border p-3.5 transition-all ${
-                        selected
-                          ? "border-emerald-500 bg-emerald-50/50 ring-1 ring-emerald-200"
-                          : "border-gray-200 hover:border-gray-300 bg-white"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="text-[14px] font-semibold text-gray-900">
-                          {option.label}
-                        </div>
-                        {selected && (
-                          <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0">
-                            <Check className="w-3 h-3" strokeWidth={2.5} />
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[12px] text-gray-500 mt-1 leading-snug">
-                        {option.description}
-                      </p>
-                      {option.steps.length > 0 && (
-                        <p className="text-[11px] font-medium text-gray-400 mt-2">
-                          {option.steps
-                            .map((s) => `Day ${s.delayDays}`)
-                            .join(" · ")}
-                        </p>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {activeSteps.length > 0 && (
-                <div className="rounded-2xl border border-gray-200 bg-[#FAFBFC] p-3.5 space-y-3">
-                  <div className="text-[13px] font-semibold text-gray-900">
-                    Sequence preview
+              <div className="flex items-center justify-between gap-4 rounded-2xl border border-gray-200 bg-white px-4 py-3.5">
+                <div className="min-w-0">
+                  <div className="text-[14px] font-semibold text-gray-900">
+                    Follow-up emails
                   </div>
-                  {activeSteps.map((item, index) => (
-                    <div
-                      key={`${sequenceKey}-${index}`}
-                      className="rounded-xl border border-gray-200 bg-white p-3 space-y-2"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[12px] font-semibold text-emerald-700">
-                          Follow-up {index + 1}
-                        </span>
-                        <span className="text-[11px] font-medium text-gray-400">
-                          Day {item.delayDays}
-                        </span>
-                      </div>
-                      <input
-                        type="text"
-                        value={item.subject}
-                        onChange={(e) =>
-                          updateStepField(index, { subject: e.target.value })
-                        }
-                        className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-[13px] font-medium outline-none focus:border-gray-300"
-                        placeholder="Email subject"
-                      />
-                      <textarea
-                        value={item.body}
-                        onChange={(e) =>
-                          updateStepField(index, { body: e.target.value })
-                        }
-                        rows={2}
-                        className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-[13px] text-gray-600 outline-none focus:border-gray-300 resize-none"
-                        placeholder="Email body"
-                      />
-                    </div>
-                  ))}
+                  <p className="text-[13px] text-gray-500 mt-0.5">
+                    {automationOn
+                      ? "On — follow-ups will be scheduled."
+                      : "Off — send the proposal once with no follow-ups."}
+                  </p>
                 </div>
-              )}
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={automationOn}
+                  onClick={() => {
+                    setError(null);
+                    setAutomationOn((v) => !v);
+                  }}
+                  className={`w-11 h-6 rounded-full flex items-center p-0.5 transition-colors shrink-0 ${
+                    automationOn ? "bg-[#2563EB]" : "bg-gray-300"
+                  }`}
+                >
+                  <span
+                    className={`w-5 h-5 bg-white rounded-full shadow-sm transform transition-transform ${
+                      automationOn ? "translate-x-5" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </div>
+              <p className="text-[12px] text-gray-400">
+                Change your follow-up sequence in{" "}
+                <Link
+                  href="/settings?section=preferences"
+                  className="font-medium text-[#2563EB] hover:text-[#1d4ed8]"
+                  onClick={onClose}
+                >
+                  Settings → Preferences
+                </Link>
+                .
+              </p>
             </div>
           )}
 
@@ -357,10 +292,7 @@ export function SendProposalModal({
                 <p>
                   Automation:{" "}
                   <span className="text-gray-800">
-                    {sequence.label}
-                    {activeSteps.length > 0
-                      ? ` · ${activeSteps.length} follow-up${activeSteps.length === 1 ? "" : "s"}`
-                      : ""}
+                    {sequenceKey === "none" ? "Off" : "On"}
                   </span>
                 </p>
               </div>

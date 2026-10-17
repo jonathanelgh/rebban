@@ -1913,6 +1913,19 @@ export default function InvoiceEditorPage() {
                 >
                   Mark as paid
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void (async () => {
+                      await cancelPendingReminders();
+                      flash("Payment reminders cancelled");
+                    })();
+                  }}
+                  disabled={saving}
+                  className="w-full border border-line bg-white px-4 py-2.5 rounded-xl text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancel automation
+                </button>
               </>
             )}
             {(paymentUrl || paymentToken) && (

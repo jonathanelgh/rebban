@@ -374,7 +374,7 @@ function ProfileMenu({
         onClick={() => {
           if (!canHover()) onOpenChange(!open);
         }}
-        className={`relative z-10 rounded-full transition-all ${
+        className={`relative z-10 rounded-full cursor-pointer transition-all ${
           open ? "ring-2 ring-gray-200" : "hover:ring-2 hover:ring-gray-200"
         }`}
       >
@@ -586,7 +586,7 @@ function AlertsMenu({
         onClick={() => {
           if (!canHover()) tryOpenAlerts(!open);
         }}
-        className={`relative flex flex-col items-center justify-center gap-1 py-2.5 px-1 w-full transition-colors ${
+        className={`relative flex flex-col items-center justify-center gap-1 py-2.5 px-1 w-full cursor-pointer transition-colors ${
           active || open ? "text-gray-900" : "text-gray-500 hover:text-gray-800"
         }`}
         title="Alerts"

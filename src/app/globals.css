@@ -38,6 +38,13 @@
     box-sizing: border-box;
   }
 
+  /* Mobile: keep sheets inside the viewport even if a larger max-w-[Npx] is set. */
+  @media (max-width: 639px) {
+    .rebban-modal-panel {
+      max-width: 100% !important;
+    }
+  }
+
   .rebban-modal-panel input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
   .rebban-modal-panel select,
   .rebban-modal-panel textarea {

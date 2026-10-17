@@ -93,6 +93,20 @@ export function getFollowUpSequence(key: FollowUpSequenceKey) {
   );
 }
 
+/** Sequences selectable as an org default (excludes “none”). */
+export const ORG_FOLLOW_UP_SEQUENCES = FOLLOW_UP_SEQUENCES.filter(
+  (sequence) => sequence.key !== "none"
+);
+
+export function asOrgFollowUpSequence(
+  raw: string | null | undefined
+): Exclude<FollowUpSequenceKey, "none"> {
+  if (raw === "gentle" || raw === "standard" || raw === "persistent") {
+    return raw;
+  }
+  return "standard";
+}
+
 export function fillFollowUpTemplate(
   template: string,
   vars: {

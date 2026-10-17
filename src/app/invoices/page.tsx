@@ -125,6 +125,7 @@ function InvoicesPageInner() {
   const [clients, setClients] = useState<ClientOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | InvoiceStatus>("all");
   const [clientFilter, setClientFilter] = useState("all");
@@ -200,6 +201,30 @@ function InvoicesPageInner() {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not void invoice.");
+    } finally {
+      setActionBusyId(null);
+    }
+  }
+
+  async function cancelInvoiceAutomation(invoice: InvoiceRow) {
+    setActionBusyId(invoice.id);
+    setError(null);
+    setNotice(null);
+    const supabase = createClient();
+    try {
+      const { error: cancelError } = await supabase.rpc(
+        "cancel_invoice_reminders",
+        { p_invoice_id: invoice.id }
+      );
+      if (cancelError) throw cancelError;
+      setNotice(
+        `Payment reminders cancelled for ${invoice.number || "invoice"}.`
+      );
+      window.setTimeout(() => setNotice(null), 3200);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not cancel automation."
+      );
     } finally {
       setActionBusyId(null);
     }
@@ -416,6 +441,11 @@ function InvoicesPageInner() {
       </div>
 
       {error && <p className="mb-4 text-[13px] text-red-600">{error}</p>}
+      {notice && (
+        <p className="mb-4 text-[13px] text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-xl px-3.5 py-2.5">
+          {notice}
+        </p>
+      )}
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-8 min-w-0">
         <StatCard label="Outstanding" value={loading ? "—" : stats.outstanding} accent="bg-[#FFF9D6]" />
@@ -529,6 +559,9 @@ function InvoicesPageInner() {
                         onSendAgain={() =>
                           router.push(`/invoices/${invoice.id}/edit?send=1`)
                         }
+                        onCancelAutomation={() =>
+                          void cancelInvoiceAutomation(invoice)
+                        }
                         onVoid={() => void voidInvoice(invoice)}
                         onDelete={() => void deleteInvoice(invoice)}
                       />
@@ -585,6 +618,7 @@ function InvoiceActionsMenu({
   busy,
   onOpen,
   onSendAgain,
+  onCancelAutomation,
   onVoid,
   onDelete,
 }: {
@@ -592,6 +626,7 @@ function InvoiceActionsMenu({
   busy?: boolean;
   onOpen: () => void;
   onSendAgain: () => void;
+  onCancelAutomation: () => void;
   onVoid: () => void;
   onDelete: () => void;
 }) {
@@ -619,6 +654,7 @@ function InvoiceActionsMenu({
   const isDraft = status === "draft";
   const canResend =
     status === "sent" || status === "viewed" || status === "overdue";
+  const canCancelAutomation = canResend;
   const canVoid = canResend;
 
   return (
@@ -671,6 +707,21 @@ function InvoiceActionsMenu({
             >
               <Send className="w-4 h-4 text-[#2563EB] shrink-0" />
               Send again
+            </button>
+          )}
+          {canCancelAutomation && (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={busy}
+              onClick={() => {
+                setMenuOpen(false);
+                onCancelAutomation();
+              }}
+              className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+            >
+              <Ban className="w-4 h-4 text-gray-500 shrink-0" />
+              Cancel automation
             </button>
           )}
           {canVoid && (

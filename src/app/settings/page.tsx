@@ -28,6 +28,11 @@ import {
   formatReminderOffsetLabel,
   type ReminderSequenceKey,
 } from "@/lib/invoices/reminders";
+import {
+  ORG_FOLLOW_UP_SEQUENCES,
+  asOrgFollowUpSequence,
+  type FollowUpSequenceKey,
+} from "@/lib/proposals/followups";
 import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "@/components/ProfileContext";
 import { useBilling } from "@/components/BillingContext";
@@ -210,6 +215,7 @@ function SettingsPageInner() {
     }>
   >([]);
   const [billingInvoicesLoading, setBillingInvoicesLoading] = useState(false);
+  const [billingSectionReady, setBillingSectionReady] = useState(false);
   const [cancelConfirm, setCancelConfirm] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deletingAccount, setDeletingAccount] = useState(false);
@@ -248,6 +254,10 @@ function SettingsPageInner() {
   const [preferences, setPreferences] = useState({
     defaultHourlyRate: "95",
     reminderSequence: "standard" as Exclude<ReminderSequenceKey, "none">,
+    proposalFollowUpSequence: "standard" as Exclude<
+      FollowUpSequenceKey,
+      "none"
+    >,
   });
 
   const [taxSettings, setTaxSettings] = useState({
@@ -309,7 +319,7 @@ function SettingsPageInner() {
       const { data } = await supabase
         .from("organizations")
         .select(
-          "name, legal_name, address, country, website, org_number, default_tax_rate, default_tax_enabled, default_prices_include_tax, custom_tax_rates, tax_id, currency, default_hourly_rate, default_reminder_sequence, payment_iban, payment_bankgiro"
+          "name, legal_name, address, country, website, org_number, default_tax_rate, default_tax_enabled, default_prices_include_tax, custom_tax_rates, tax_id, currency, default_hourly_rate, default_reminder_sequence, default_proposal_followup_sequence, payment_iban, payment_bankgiro"
         )
         .eq("id", organizationId!)
         .maybeSingle();
@@ -339,6 +349,9 @@ function SettingsPageInner() {
       setPreferences({
         defaultHourlyRate: String(Number(data.default_hourly_rate || 95)),
         reminderSequence: asOrgReminderSequence(data.default_reminder_sequence),
+        proposalFollowUpSequence: asOrgFollowUpSequence(
+          data.default_proposal_followup_sequence
+        ),
       });
     }
     void loadOrgSettings();
@@ -482,35 +495,49 @@ function SettingsPageInner() {
   }, [section]);
 
   useEffect(() => {
-    if (section !== "billing") return;
+    if (section !== "billing") {
+      setBillingSectionReady(false);
+      return;
+    }
     let cancelled = false;
     async function loadBilling() {
-      const res = await fetch("/api/stripe/billing/status");
-      if (!res.ok || cancelled) return;
-      const json = await res.json();
-      if (cancelled) return;
-      setBillingConfigured(Boolean(json.configured));
-      setBillingActive(Boolean(json.active));
-      setBillingPlanLabel(json.planLabel || "Trial");
-      setBillingStatus(json.status || null);
-      setBillingCancelAtPeriodEnd(Boolean(json.cancelAtPeriodEnd));
-      setBillingPeriodEnd(json.currentPeriodEnd || null);
-      setBillingPaymentMethod(json.paymentMethodLabel || null);
+      setBillingSectionReady(false);
+      setBillingInvoicesLoading(false);
+      try {
+        const res = await fetch("/api/stripe/billing/status");
+        if (!res.ok || cancelled) return;
+        const json = await res.json();
+        if (cancelled) return;
+        setBillingConfigured(Boolean(json.configured));
+        setBillingActive(Boolean(json.active));
+        setBillingPlanLabel(json.planLabel || "Trial");
+        setBillingStatus(json.status || null);
+        setBillingCancelAtPeriodEnd(Boolean(json.cancelAtPeriodEnd));
+        setBillingPeriodEnd(json.currentPeriodEnd || null);
+        setBillingPaymentMethod(json.paymentMethodLabel || null);
 
-      if (json.active || json.hasCustomer) {
-        setBillingInvoicesLoading(true);
-        const invRes = await fetch("/api/stripe/billing/invoices");
-        if (!cancelled) {
-          if (invRes.ok) {
-            const invJson = await invRes.json();
-            setBillingInvoices(invJson.invoices || []);
-          } else {
-            setBillingInvoices([]);
+        // Show plan/card UI while invoices continue loading.
+        setBillingSectionReady(true);
+
+        if (json.active || json.hasCustomer) {
+          setBillingInvoicesLoading(true);
+          const invRes = await fetch("/api/stripe/billing/invoices");
+          if (!cancelled) {
+            if (invRes.ok) {
+              const invJson = await invRes.json();
+              setBillingInvoices(invJson.invoices || []);
+            } else {
+              setBillingInvoices([]);
+            }
           }
-          setBillingInvoicesLoading(false);
+        } else if (!cancelled) {
+          setBillingInvoices([]);
         }
-      } else {
-        setBillingInvoices([]);
+      } finally {
+        if (!cancelled) {
+          setBillingInvoicesLoading(false);
+          setBillingSectionReady(true);
+        }
       }
     }
     void loadBilling();
@@ -887,6 +914,8 @@ function SettingsPageInner() {
         .update({
           default_hourly_rate: Math.round(rate * 100) / 100,
           default_reminder_sequence: preferences.reminderSequence,
+          default_proposal_followup_sequence:
+            preferences.proposalFollowUpSequence,
           updated_at: new Date().toISOString(),
         })
         .eq("id", organizationId);
@@ -1535,6 +1564,10 @@ function SettingsPageInner() {
                 title="Billing"
                 subtitle="Your Rebban plan, invoices, and subscription."
               >
+                {!billingSectionReady ? (
+                  <BillingSkeleton />
+                ) : (
+                  <>
                 {billingNotice && (
                   <p className="mb-4 text-[13px] text-gray-600 bg-[#FAFBFC] border border-line rounded-xl px-3.5 py-2.5">
                     {billingNotice}
@@ -1626,7 +1659,9 @@ function SettingsPageInner() {
                   )}
                 </div>
 
-                {(billingActive || billingInvoices.length > 0) && (
+                {(billingActive ||
+                  billingInvoicesLoading ||
+                  billingInvoices.length > 0) && (
                   <div className="rounded-2xl border border-line overflow-hidden mb-5 min-w-0">
                     <div className="px-4 sm:px-5 py-3.5 border-b border-line bg-[#FAFBFC]">
                       <div className="text-[14px] font-semibold text-gray-900">
@@ -1637,9 +1672,7 @@ function SettingsPageInner() {
                       </p>
                     </div>
                     {billingInvoicesLoading ? (
-                      <p className="px-4 sm:px-5 py-8 text-sm text-gray-400 text-center">
-                        Loading invoices…
-                      </p>
+                      <BillingInvoicesSkeleton />
                     ) : billingInvoices.length === 0 ? (
                       <p className="px-4 sm:px-5 py-8 text-sm text-gray-400 text-center">
                         No invoices yet.
@@ -1742,13 +1775,15 @@ function SettingsPageInner() {
                     )}
                   </div>
                 )}
+                  </>
+                )}
               </Section>
             )}
 
             {section === "preferences" && (
               <Section
                 title="Preferences"
-                subtitle="Defaults for tracking time and sending invoices."
+                subtitle="Defaults for tracking time, invoices, and proposals."
               >
                 <div className="space-y-6">
                   <Field label="Default hourly rate">
@@ -1826,6 +1861,63 @@ function SettingsPageInner() {
                                 .map((s) =>
                                   formatReminderOffsetLabel(s.offsetDays)
                                 )
+                                .join(" · ")}
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-[13px] font-medium text-gray-700 mb-1.5">
+                      Proposal follow-ups
+                    </div>
+                    <p className="text-[12px] text-gray-400 mb-3">
+                      Used when you turn automation on while sending a proposal.
+                      New accounts start on Standard.
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                      {ORG_FOLLOW_UP_SEQUENCES.map((option) => {
+                        const selected =
+                          preferences.proposalFollowUpSequence === option.key;
+                        return (
+                          <button
+                            key={option.key}
+                            type="button"
+                            onClick={() =>
+                              setPreferences({
+                                ...preferences,
+                                proposalFollowUpSequence: asOrgFollowUpSequence(
+                                  option.key
+                                ),
+                              })
+                            }
+                            className={`text-left rounded-2xl border p-3.5 transition-all ${
+                              selected
+                                ? "border-emerald-500 bg-emerald-50/50 ring-1 ring-emerald-200"
+                                : "border-gray-200 hover:border-gray-300 bg-white"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="text-[14px] font-semibold text-gray-900">
+                                {option.label}
+                              </div>
+                              {selected && (
+                                <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0">
+                                  <Check
+                                    className="w-3 h-3"
+                                    strokeWidth={2.5}
+                                  />
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[12px] text-gray-500 mt-1 leading-snug">
+                              {option.description}
+                            </p>
+                            <p className="text-[11px] font-medium text-gray-400 mt-2">
+                              {option.steps
+                                .map((s) => `Day ${s.delayDays}`)
                                 .join(" · ")}
                             </p>
                           </button>
@@ -2001,6 +2093,77 @@ function SettingsPageInner() {
         </div>
       </div>
     </main>
+  );
+}
+
+function SkeletonBar({ className = "" }: { className?: string }) {
+  return (
+    <div
+      className={`rounded-md bg-gray-200/80 animate-pulse ${className}`}
+      aria-hidden
+    />
+  );
+}
+
+function BillingInvoicesSkeleton() {
+  return (
+    <ul className="divide-y divide-line" aria-busy="true" aria-label="Loading invoices">
+      {[0, 1, 2].map((i) => (
+        <li
+          key={i}
+          className="px-4 sm:px-5 py-3.5 flex items-center gap-3 min-w-0"
+        >
+          <div className="min-w-0 flex-1 space-y-2">
+            <SkeletonBar className="h-4 w-28" />
+            <SkeletonBar className="h-3 w-44 max-w-full" />
+          </div>
+          <SkeletonBar className="h-4 w-10 shrink-0" />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function BillingSkeleton() {
+  return (
+    <div aria-busy="true" aria-label="Loading billing">
+      <div className="rounded-2xl border border-line bg-[#FAFBFC] p-4 sm:p-5 mb-5">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
+          <div className="min-w-0 flex-1 space-y-2.5">
+            <SkeletonBar className="h-3.5 w-24" />
+            <SkeletonBar className="h-7 w-20" />
+            <SkeletonBar className="h-3.5 w-56 max-w-full" />
+          </div>
+          <SkeletonBar className="h-10 w-full sm:w-24 rounded-full shrink-0" />
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-line p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 mb-5">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <div className="w-10 h-10 rounded-xl bg-gray-100 shrink-0 animate-pulse" />
+          <div className="min-w-0 flex-1 space-y-2">
+            <SkeletonBar className="h-4 w-36 max-w-full" />
+            <SkeletonBar className="h-3 w-48 max-w-full" />
+          </div>
+        </div>
+        <SkeletonBar className="h-4 w-20 shrink-0 self-start sm:self-auto" />
+      </div>
+
+      <div className="rounded-2xl border border-line overflow-hidden mb-5 min-w-0">
+        <div className="px-4 sm:px-5 py-3.5 border-b border-line bg-[#FAFBFC] space-y-2">
+          <SkeletonBar className="h-4 w-20" />
+          <SkeletonBar className="h-3 w-44 max-w-full" />
+        </div>
+        <BillingInvoicesSkeleton />
+      </div>
+
+      <div className="rounded-2xl border border-line p-4 sm:p-5 space-y-3">
+        <SkeletonBar className="h-4 w-36" />
+        <SkeletonBar className="h-3.5 w-full max-w-md" />
+        <SkeletonBar className="h-3.5 w-3/4 max-w-sm" />
+        <SkeletonBar className="mt-1 h-10 w-40 rounded-xl" />
+      </div>
+    </div>
   );
 }
 

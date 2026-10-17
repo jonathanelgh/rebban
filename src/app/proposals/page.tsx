@@ -8,6 +8,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Plus,
@@ -895,7 +896,9 @@ function ClientSelectDropdown({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [isMobile, setIsMobile] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const sheetRef = useRef<HTMLDivElement>(null);
 
   const filtered = clients.filter(
     (c) =>
@@ -904,21 +907,125 @@ function ClientSelectDropdown({
   );
 
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(event.target as Node)
-      ) {
-        setIsOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    const mq = window.matchMedia("(max-width: 639px)");
+    const sync = () => setIsMobile(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
   }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    function handleClickOutside(event: MouseEvent) {
+      const target = event.target as Node;
+      if (
+        containerRef.current?.contains(target) ||
+        sheetRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setIsOpen(false);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setIsOpen(false);
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setSearch("");
+      return;
+    }
+    if (!isMobile) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [isOpen, isMobile]);
 
   const displayName = selected
     ? selected.company || selected.name
     : null;
+
+  const listContent = (
+    <>
+      <div className="p-3 border-b border-gray-50 flex items-center gap-2">
+        <Search className="w-4 h-4 text-gray-400 shrink-0 ml-1" />
+        <input
+          type="text"
+          autoFocus
+          placeholder="Search clients..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full text-sm outline-none placeholder-gray-400 font-medium"
+        />
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1 max-h-[min(50dvh,320px)] sm:max-h-[240px]">
+        {filtered.length > 0 ? (
+          filtered.map((client) => {
+            const label = client.company || client.name;
+            return (
+              <button
+                key={client.id}
+                type="button"
+                onClick={() => {
+                  onChange(client);
+                  setIsOpen(false);
+                }}
+                className="w-full flex items-center justify-between p-2.5 sm:p-2 hover:bg-gray-50 rounded-xl transition-colors text-left group"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-8 h-8 rounded-full bg-blue-50 text-[#2563EB] flex items-center justify-center font-bold text-xs shrink-0">
+                    {label.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-gray-900 truncate">
+                      {label}
+                    </div>
+                    <div className="text-xs text-gray-500 truncate">
+                      {client.name}
+                    </div>
+                  </div>
+                </div>
+                {selected?.id === client.id && (
+                  <Check className="w-4 h-4 text-[#2563EB] shrink-0" />
+                )}
+              </button>
+            );
+          })
+        ) : (
+          <div className="p-4 text-center text-sm text-gray-500">
+            No clients found.
+          </div>
+        )}
+      </div>
+
+      <div className="p-2 border-t border-gray-50 bg-gray-50/50 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-2">
+        <button
+          type="button"
+          onClick={() => {
+            setIsOpen(false);
+            onCreateNew();
+          }}
+          className="w-full flex items-center gap-2 p-2.5 text-sm font-medium text-[#2563EB] hover:bg-blue-50 rounded-xl transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+          Create new client
+        </button>
+      </div>
+    </>
+  );
 
   return (
     <div className="relative min-w-0 max-w-full" ref={containerRef}>
@@ -937,75 +1044,45 @@ function ClientSelectDropdown({
         <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />
       </button>
 
-      {isOpen && (
+      {/* Desktop: anchored dropdown */}
+      {isOpen && !isMobile && (
         <div className="absolute top-full left-0 mt-2 w-full min-w-0 bg-white rounded-2xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.15)] border border-line overflow-hidden z-50">
-          <div className="p-3 border-b border-gray-50 flex items-center gap-2">
-            <Search className="w-4 h-4 text-gray-400 shrink-0 ml-1" />
-            <input
-              type="text"
-              autoFocus
-              placeholder="Search clients..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full text-sm outline-none placeholder-gray-400 font-medium"
-            />
-          </div>
-
-          <div className="max-h-[240px] overflow-y-auto p-2 space-y-1">
-            {filtered.length > 0 ? (
-              filtered.map((client) => {
-                const label = client.company || client.name;
-                return (
-                  <button
-                    key={client.id}
-                    type="button"
-                    onClick={() => {
-                      onChange(client);
-                      setIsOpen(false);
-                    }}
-                    className="w-full flex items-center justify-between p-2 hover:bg-gray-50 rounded-xl transition-colors text-left group"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-8 h-8 rounded-full bg-blue-50 text-[#2563EB] flex items-center justify-center font-bold text-xs shrink-0">
-                        {label.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium text-gray-900 truncate">
-                          {label}
-                        </div>
-                        <div className="text-xs text-gray-500 truncate">
-                          {client.name}
-                        </div>
-                      </div>
-                    </div>
-                    {selected?.id === client.id && (
-                      <Check className="w-4 h-4 text-[#2563EB] shrink-0" />
-                    )}
-                  </button>
-                );
-              })
-            ) : (
-              <div className="p-4 text-center text-sm text-gray-500">
-                No clients found.
-              </div>
-            )}
-          </div>
-
-          <div className="p-2 border-t border-gray-50 bg-gray-50/50">
-            <button
-              type="button"
-              onClick={() => {
-                setIsOpen(false);
-                onCreateNew();
-              }}
-              className="w-full flex items-center gap-2 p-2.5 text-sm font-medium text-[#2563EB] hover:bg-blue-50 rounded-xl transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              Create new client
-            </button>
-          </div>
+          {listContent}
         </div>
       )}
+
+      {/* Mobile: portaled sheet so it isn’t clipped by the modal */}
+      {isOpen &&
+        isMobile &&
+        createPortal(
+          <div className="fixed inset-0 z-[120]">
+            <button
+              type="button"
+              aria-label="Close client picker"
+              className="absolute inset-0 bg-gray-900/40"
+              onClick={() => setIsOpen(false)}
+            />
+            <div
+              ref={sheetRef}
+              className="absolute inset-x-0 bottom-0 max-h-[85dvh] bg-white rounded-t-[1.75rem] border border-line shadow-[0_-8px_40px_rgba(16,24,40,0.16)] flex flex-col overflow-hidden"
+            >
+              <div className="flex items-center justify-between px-5 pt-4 pb-2 shrink-0">
+                <div className="text-[15px] font-semibold text-gray-900">
+                  Select client
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsOpen(false)}
+                  className="p-2 -mr-2 rounded-full text-gray-500 hover:bg-gray-100"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              {listContent}
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
@@ -1308,148 +1385,58 @@ function CreateProposalModal({
   }
 
   return (
-    <ModalOverlay onClose={onClose} zClass="z-[60]">
-      <div className={modalPanelClass("max-w-[600px]")}>
-        <div className={`${modalHeaderClass} border-b border-line`}>
-          <h2 className="text-xl font-semibold text-gray-900 min-w-0">
-            Create New Proposal
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500 shrink-0"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="px-5 sm:px-6 py-5 space-y-6 overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0">
-          <div className="flex p-1 bg-gray-100 rounded-xl gap-1">
+    <>
+      <ModalOverlay onClose={onClose} zClass="z-[60]">
+        <div
+          className={modalPanelClass(
+            "max-w-[600px]",
+            "max-sm:!max-h-[100dvh] max-sm:h-[100dvh] max-sm:rounded-none"
+          )}
+        >
+          <div className={`${modalHeaderClass} border-b border-line`}>
+            <h2 className="text-lg sm:text-xl font-semibold text-gray-900 min-w-0">
+              New proposal
+            </h2>
             <button
               type="button"
-              onClick={() => setCreationMode("scratch")}
-              className={`flex-1 min-w-0 py-2.5 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2 ${
-                creationMode === "scratch"
-                  ? "bg-white shadow-sm text-gray-900"
-                  : "text-gray-500 hover:text-gray-700"
-              }`}
+              onClick={onClose}
+              className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500 shrink-0"
             >
-              <PenTool className="w-4 h-4 shrink-0" />
-              <span className="truncate">From scratch</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setCreationMode("ai")}
-              className={`flex-1 min-w-0 py-2.5 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2 ${
-                creationMode === "ai"
-                  ? "bg-white shadow-sm text-blue-600"
-                  : "text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              <Sparkles className="w-4 h-4 shrink-0" />
-              <span className="truncate">With AI</span>
+              <X className="w-5 h-5" />
             </button>
           </div>
 
-          {creationMode === "ai" ? (
-            <div className="space-y-6">
-              <div className="relative z-10">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Client
-                </label>
-                <ClientSelectDropdown
-                  clients={clientOptions}
-                  selected={selectedClient}
-                  onChange={setSelectedClient}
-                  onCreateNew={() => setIsClientModalOpen(true)}
-                />
-              </div>
-
-              <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-5 relative z-0">
-                <div className="flex items-start gap-3 text-sm text-gray-600 mb-4">
-                  <Sparkles className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
-                  <p>
-                    Upload a brief or paste notes. AI writes the full proposal
-                    copy (summary, scope, timeline, pricing, terms). You pick a
-                    template look next, then refine in the editor.
-                  </p>
-                </div>
-
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".txt,.md,.markdown,.csv,.json,.docx,.pdf,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0] || null;
-                    setAiFile(file);
-                    e.target.value = "";
-                  }}
-                />
-
-                <div
-                  className={`w-full border-2 border-dashed rounded-xl p-6 text-center transition-colors ${
-                    aiFile
-                      ? "border-blue-200 bg-white"
-                      : "border-gray-200 bg-white"
-                  }`}
-                >
-                  <div className="w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-3 text-blue-500">
-                    <UploadCloud className="w-5 h-5" />
-                  </div>
-                  {aiFile ? (
-                    <>
-                      <div className="text-sm font-medium text-gray-900 mb-1 truncate px-2">
-                        {aiFile.name}
-                      </div>
-                      <div className="flex items-center justify-center gap-3 text-xs">
-                        <button
-                          type="button"
-                          onClick={() => fileInputRef.current?.click()}
-                          className="font-medium text-blue-600 hover:text-blue-700"
-                        >
-                          Replace
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setAiFile(null)}
-                          className="font-medium text-gray-500 hover:text-gray-700"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="text-sm font-medium text-gray-900 mb-1">
-                        Upload notes or a brief
-                      </div>
-                      <div className="text-xs text-gray-500 mb-3">
-                        .txt, .md, .docx, or .pdf · up to 8MB
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="inline-flex items-center rounded-lg border border-line bg-white px-3 py-1.5 text-[13px] font-medium text-gray-700 hover:bg-gray-50"
-                      >
-                        Choose file
-                      </button>
-                    </>
-                  )}
-                </div>
-
-                <textarea
-                  value={aiText}
-                  onChange={(e) => setAiText(e.target.value)}
-                  placeholder="Or paste client emails, call notes, or project requirements here..."
-                  className="w-full mt-4 bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-100 outline-none resize-none min-h-[120px]"
-                />
-              </div>
+          <div className="px-4 sm:px-6 py-4 sm:py-5 space-y-5 sm:space-y-6 overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0 overscroll-contain">
+            <div className="flex p-1 bg-gray-100 rounded-xl gap-1">
+              <button
+                type="button"
+                onClick={() => setCreationMode("scratch")}
+                className={`flex-1 min-w-0 py-2.5 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5 sm:gap-2 ${
+                  creationMode === "scratch"
+                    ? "bg-white shadow-sm text-gray-900"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                <PenTool className="w-4 h-4 shrink-0" />
+                <span className="truncate">From scratch</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCreationMode("ai")}
+                className={`flex-1 min-w-0 py-2.5 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5 sm:gap-2 ${
+                  creationMode === "ai"
+                    ? "bg-white shadow-sm text-blue-600"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                <Sparkles className="w-4 h-4 shrink-0" />
+                <span className="truncate">With AI</span>
+              </button>
             </div>
-          ) : (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-6 relative z-10 min-w-0">
-                <div className="min-w-0">
+
+            {creationMode === "ai" ? (
+              <div className="space-y-4 sm:space-y-6">
+                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Client
                   </label>
@@ -1460,120 +1447,218 @@ function CreateProposalModal({
                     onCreateNew={() => setIsClientModalOpen(true)}
                   />
                 </div>
-                <div className="min-w-0">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Project Category
-                  </label>
-                  <MenuSelect
-                    value={category}
-                    options={[...CATEGORY_OPTIONS]}
-                    onChange={setCategory}
+
+                <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-3.5 sm:p-5">
+                  <p className="text-[13px] sm:text-sm text-gray-600 mb-3 sm:mb-4 leading-relaxed">
+                    <Sparkles className="w-4 h-4 text-blue-500 inline-block align-text-bottom mr-1.5" />
+                    Upload a brief or paste notes — AI drafts the proposal, then
+                    you pick a template and edit.
+                  </p>
+
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".txt,.md,.markdown,.csv,.json,.docx,.pdf,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] || null;
+                      setAiFile(file);
+                      e.target.value = "";
+                    }}
+                  />
+
+                  <div
+                    className={`w-full border-2 border-dashed rounded-xl p-4 sm:p-6 text-center transition-colors ${
+                      aiFile
+                        ? "border-blue-200 bg-white"
+                        : "border-gray-200 bg-white"
+                    }`}
+                  >
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-2.5 sm:mb-3 text-blue-500">
+                      <UploadCloud className="w-5 h-5" />
+                    </div>
+                    {aiFile ? (
+                      <>
+                        <div className="text-sm font-medium text-gray-900 mb-1 truncate px-2">
+                          {aiFile.name}
+                        </div>
+                        <div className="flex items-center justify-center gap-3 text-xs">
+                          <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            className="font-medium text-blue-600 hover:text-blue-700"
+                          >
+                            Replace
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAiFile(null)}
+                            className="font-medium text-gray-500 hover:text-gray-700"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-sm font-medium text-gray-900 mb-1">
+                          Upload notes or a brief
+                        </div>
+                        <div className="text-xs text-gray-500 mb-3">
+                          .txt, .md, .docx, or .pdf · up to 8MB
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="inline-flex items-center rounded-lg border border-line bg-white px-3 py-2 text-[13px] font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                          Choose file
+                        </button>
+                      </>
+                    )}
+                  </div>
+
+                  <textarea
+                    value={aiText}
+                    onChange={(e) => setAiText(e.target.value)}
+                    placeholder="Or paste client emails, call notes, or requirements…"
+                    className="w-full mt-3 sm:mt-4 bg-white border border-gray-200 rounded-xl px-3.5 sm:px-4 py-3 text-sm focus:ring-2 focus:ring-blue-100 outline-none resize-none min-h-[100px] sm:min-h-[120px]"
                   />
                 </div>
               </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Proposal Title
-                </label>
-                <input
-                  type="text"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Website Redesign & Build"
-                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-100 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-3">
-                  Pricing Model
-                </label>
-                <div className="flex p-1 bg-gray-100 rounded-xl">
-                  {(["Fixed", "Hourly", "Retainer"] as const).map((model) => (
-                    <button
-                      key={model}
-                      type="button"
-                      onClick={() => setPricingModel(model)}
-                      className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${
-                        pricingModel === model
-                          ? "bg-white shadow-sm text-gray-900"
-                          : "text-gray-500 hover:text-gray-700"
-                      }`}
-                    >
-                      {model}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-6 min-w-0">
-                <div className="min-w-0">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Currency
-                  </label>
-                  <MenuSelect
-                    value={currency}
-                    options={[...CURRENCY_OPTIONS]}
-                    onChange={setCurrency}
-                  />
-                </div>
-                <div className="min-w-0">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Estimated Value (Optional)
-                  </label>
-                  <div className="relative min-w-0">
-                    <DollarSign className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      value={amount}
-                      onChange={(e) => setAmount(e.target.value)}
-                      placeholder="0.00"
-                      className="w-full min-w-0 max-w-full border border-gray-200 rounded-xl pl-9 pr-4 py-3 text-sm focus:ring-2 focus:ring-blue-100 outline-none"
+            ) : (
+              <div className="space-y-4 sm:space-y-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 min-w-0">
+                  <div className="min-w-0">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Client
+                    </label>
+                    <ClientSelectDropdown
+                      clients={clientOptions}
+                      selected={selectedClient}
+                      onChange={setSelectedClient}
+                      onCreateNew={() => setIsClientModalOpen(true)}
+                    />
+                  </div>
+                  <div className="min-w-0">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Project category
+                    </label>
+                    <MenuSelect
+                      value={category}
+                      options={[...CATEGORY_OPTIONS]}
+                      onChange={setCategory}
                     />
                   </div>
                 </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Proposal title
+                  </label>
+                  <input
+                    type="text"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="e.g. Website Redesign & Build"
+                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-100 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2.5 sm:mb-3">
+                    Pricing model
+                  </label>
+                  <div className="grid grid-cols-3 gap-1 p-1 bg-gray-100 rounded-xl">
+                    {(["Fixed", "Hourly", "Retainer"] as const).map((model) => (
+                      <button
+                        key={model}
+                        type="button"
+                        onClick={() => setPricingModel(model)}
+                        className={`min-w-0 py-2.5 text-[13px] sm:text-sm font-medium rounded-lg transition-colors ${
+                          pricingModel === model
+                            ? "bg-white shadow-sm text-gray-900"
+                            : "text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        {model}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 min-w-0">
+                  <div className="min-w-0">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Currency
+                    </label>
+                    <MenuSelect
+                      value={currency}
+                      options={[...CURRENCY_OPTIONS]}
+                      onChange={setCurrency}
+                    />
+                  </div>
+                  <div className="min-w-0">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Estimated value{" "}
+                      <span className="font-normal text-gray-400">
+                        (optional)
+                      </span>
+                    </label>
+                    <div className="relative min-w-0">
+                      <DollarSign className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={amount}
+                        onChange={(e) => setAmount(e.target.value)}
+                        placeholder="0.00"
+                        className="w-full min-w-0 max-w-full border border-gray-200 rounded-xl pl-9 pr-4 py-3 text-sm focus:ring-2 focus:ring-blue-100 outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
-          )}
-
-          {formError && (
-            <p className="text-[13px] text-red-600">{formError}</p>
-          )}
-        </div>
-
-        <div className="px-5 sm:px-6 py-4 border-t border-line flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end bg-gray-50/50 shrink-0 gap-2 sm:gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-5 py-2.5 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-200 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            disabled={saving}
-            onClick={() => void handleContinue()}
-            className="btn-primary px-6 py-2.5 rounded-xl text-sm flex items-center justify-center gap-2 disabled:opacity-50"
-          >
-            {saving ? (
-              creationMode === "ai" ? (
-                "Writing with AI… (~20s)"
-              ) : (
-                "Creating…"
-              )
-            ) : creationMode === "ai" ? (
-              <>
-                Generate Proposal <Sparkles className="w-4 h-4 fill-current" />
-              </>
-            ) : (
-              <>
-                Continue <ChevronRight className="w-4 h-4" />
-              </>
             )}
-          </button>
+
+            {formError && (
+              <p className="text-[13px] text-red-600">{formError}</p>
+            )}
+          </div>
+
+          <div className="px-4 sm:px-6 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] sm:py-4 border-t border-line flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end bg-gray-50/50 shrink-0 gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-5 py-3 sm:py-2.5 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-200 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => void handleContinue()}
+              className="btn-primary px-6 py-3 sm:py-2.5 rounded-xl text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {saving ? (
+                creationMode === "ai" ? (
+                  "Writing with AI… (~20s)"
+                ) : (
+                  "Creating…"
+                )
+              ) : creationMode === "ai" ? (
+                <>
+                  Generate <Sparkles className="w-4 h-4 fill-current" />
+                </>
+              ) : (
+                <>
+                  Continue <ChevronRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </div>
         </div>
-      </div>
+      </ModalOverlay>
 
       {isClientModalOpen && (
         <CreateClientModal
@@ -1587,6 +1672,6 @@ function CreateProposalModal({
           }}
         />
       )}
-    </ModalOverlay>
+    </>
   );
 }

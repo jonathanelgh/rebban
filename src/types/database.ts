@@ -695,6 +695,7 @@ export type Database = {
           custom_tax_rates: number[]
           default_hourly_rate: number
           default_prices_include_tax: boolean
+          default_proposal_followup_sequence: string | null
           default_reminder_sequence: string | null
           default_tax_enabled: boolean
           default_tax_rate: number
@@ -732,6 +733,7 @@ export type Database = {
           custom_tax_rates?: number[]
           default_hourly_rate?: number
           default_prices_include_tax?: boolean
+          default_proposal_followup_sequence?: string | null
           default_reminder_sequence?: string | null
           default_tax_enabled?: boolean
           default_tax_rate?: number
@@ -769,6 +771,7 @@ export type Database = {
           custom_tax_rates?: number[]
           default_hourly_rate?: number
           default_prices_include_tax?: boolean
+          default_proposal_followup_sequence?: string | null
           default_reminder_sequence?: string | null
           default_tax_enabled?: boolean
           default_tax_rate?: number
@@ -2554,6 +2557,7 @@ export type Database = {
           custom_tax_rates: number[]
           default_hourly_rate: number
           default_prices_include_tax: boolean
+          default_proposal_followup_sequence: string | null
           default_reminder_sequence: string | null
           default_tax_enabled: boolean
           default_tax_rate: number
