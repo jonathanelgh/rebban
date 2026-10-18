@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { GoogleAuthButton } from "@/components/GoogleAuthButton";
+import { trackSignUp } from "@/lib/analytics/track";
 
 export default function SignupPage() {
   const [fullName, setFullName] = useState("");
@@ -40,6 +41,8 @@ export default function SignupPage() {
       setError(signUpError.message);
       return;
     }
+
+    trackSignUp("email");
 
     // Full navigation so middleware + session cookies are applied cleanly.
     window.location.assign("/onboarding");

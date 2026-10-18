@@ -37,6 +37,7 @@ import {
   normalizeBankgiro,
   normalizeIban,
 } from "@/lib/invoices/payment-details";
+import { trackSignUp } from "@/lib/analytics/track";
 
 const INDUSTRY_SELECT_OPTIONS = INDUSTRY_OPTIONS.map((option) => ({
   value: option.value,
@@ -122,6 +123,20 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     setStep(stepFromSearch());
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("signup") !== "google") return;
+    const dedupeKey = "rebban_tracked_sign_up_google";
+    if (sessionStorage.getItem(dedupeKey)) return;
+    sessionStorage.setItem(dedupeKey, "1");
+    trackSignUp("google");
+    params.delete("signup");
+    const qs = params.toString();
+    const next = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
+    window.history.replaceState({}, "", next);
   }, []);
 
   useEffect(() => {

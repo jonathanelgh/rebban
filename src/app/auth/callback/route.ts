@@ -30,7 +30,12 @@ export async function GET(request: Request) {
         marketingConsent,
       });
       const destination = safeNextPath(next);
-      return NextResponse.redirect(new URL(destination, origin));
+      const destUrl = new URL(destination, origin);
+      // Flag brand-new Google signups so the client can fire analytics once.
+      if (isSignupIntent && destUrl.pathname.startsWith("/onboarding")) {
+        destUrl.searchParams.set("signup", "google");
+      }
+      return NextResponse.redirect(destUrl);
     }
   }
 

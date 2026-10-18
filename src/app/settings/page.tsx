@@ -21,6 +21,7 @@ import {
   Cookie,
 } from "lucide-react";
 import { openCookiePreferences } from "@/lib/cookies/consent";
+import { trackSubscribed } from "@/lib/analytics/track";
 import { TAX_RATE_PRESETS } from "@/lib/invoices/totals";
 import {
   normalizeBankgiro,
@@ -425,6 +426,14 @@ function SettingsPageInner() {
     if (billing === "success") {
       setSection("billing");
       setBillingNotice("Subscription active. Syncing your plan…");
+      const dedupeKey = "rebban_tracked_subscribed";
+      if (
+        typeof sessionStorage !== "undefined" &&
+        !sessionStorage.getItem(dedupeKey)
+      ) {
+        sessionStorage.setItem(dedupeKey, "1");
+        trackSubscribed({ plan: "pro" });
+      }
       void (async () => {
         try {
           await fetch("/api/stripe/billing/sync", { method: "POST" });

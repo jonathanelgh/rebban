@@ -9,6 +9,7 @@ import {
   formatPlanMoney,
   type BillingInterval,
 } from "@/lib/billing/plan";
+import { trackSubscribed } from "@/lib/analytics/track";
 
 export function UpgradeModal({
   open,
@@ -55,6 +56,24 @@ export function UpgradeModal({
 
   async function handleComplete() {
     setPaidSuccess(true);
+    const currency =
+      pricing?.monthly?.currency ||
+      pricing?.yearly?.currency ||
+      "USD";
+    const value = isYearly ? yearlyAmount : monthlyAmount;
+    const dedupeKey = "rebban_tracked_subscribed";
+    if (
+      typeof sessionStorage !== "undefined" &&
+      !sessionStorage.getItem(dedupeKey)
+    ) {
+      sessionStorage.setItem(dedupeKey, "1");
+      trackSubscribed({
+        plan: "pro",
+        interval: isYearly ? "year" : "month",
+        currency,
+        value: value ?? undefined,
+      });
+    }
     // Checkout can finish before the webhook writes the org — sync from Stripe.
     try {
       await fetch("/api/stripe/billing/sync", { method: "POST" });
