@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { requireOrgEntitlement } from "@/lib/billing/require-entitlement";
 import {
   generateLeadEmailDraft,
   isLeadEmailAiConfigured,
@@ -33,21 +34,15 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const entitlement = await requireOrgEntitlement(supabase, user.id);
+    if ("response" in entitlement) return entitlement.response;
+    const organizationId = entitlement.organizationId;
+
     const { data: profile } = await supabase
       .from("profiles")
-      .select(
-        "full_name, email, title, industry, active_organization_id"
-      )
+      .select("full_name, email, title, industry")
       .eq("id", user.id)
       .maybeSingle();
-
-    const organizationId = profile?.active_organization_id;
-    if (!organizationId) {
-      return NextResponse.json(
-        { error: "No active workspace." },
-        { status: 400 }
-      );
-    }
 
     const [{ data: org }, { data: lead, error: leadError }, { data: submissions }] =
       await Promise.all([

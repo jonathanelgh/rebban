@@ -40,8 +40,32 @@ async function maybeSendConfirmationEmail(options: {
   if (!form?.confirmation_email_enabled) return;
 
   const via = normalizeConfirmationVia(form.confirmation_email_via);
-  const fromUserId =
+  let fromUserId =
     form.confirmation_email_user_id || form.created_by || null;
+
+  // Never send from a mailbox outside this form's organization.
+  if (fromUserId && via === "connected") {
+    const { data: membership } = await admin
+      .from("organization_members")
+      .select("user_id")
+      .eq("organization_id", form.organization_id)
+      .eq("user_id", fromUserId)
+      .eq("status", "active")
+      .maybeSingle();
+    if (!membership) {
+      fromUserId = form.created_by;
+      if (fromUserId) {
+        const { data: creatorMembership } = await admin
+          .from("organization_members")
+          .select("user_id")
+          .eq("organization_id", form.organization_id)
+          .eq("user_id", fromUserId)
+          .eq("status", "active")
+          .maybeSingle();
+        if (!creatorMembership) fromUserId = null;
+      }
+    }
+  }
 
   const [{ data: org }, { data: profile }] = await Promise.all([
     admin
@@ -104,6 +128,32 @@ export async function POST(
     const values = body.values || {};
     const { ip, userAgent } = clientMeta(request);
     const supabase = await createClient();
+
+    // Basic abuse protection: cap submits per IP per form token window.
+    if (ip) {
+      const admin = createAdminClient();
+      const since = new Date(Date.now() - 60_000).toISOString();
+      const { data: formMeta } = await admin
+        .from("lead_forms")
+        .select("id")
+        .eq("public_token", token)
+        .is("deleted_at", null)
+        .maybeSingle();
+      if (formMeta?.id) {
+        const { count } = await admin
+          .from("lead_form_submissions")
+          .select("id", { count: "exact", head: true })
+          .eq("form_id", formMeta.id)
+          .eq("ip", ip)
+          .gte("created_at", since);
+        if ((count || 0) >= 8) {
+          return NextResponse.json(
+            { error: "Too many submissions. Please try again shortly." },
+            { status: 429 }
+          );
+        }
+      }
+    }
 
     const { data, error } = await supabase.rpc("submit_public_lead_form", {
       p_token: token,

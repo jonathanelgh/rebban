@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getActiveOrganizationId } from "@/lib/stripe/org";
+import { requireOrgEntitlement } from "@/lib/billing/require-entitlement";
 import { extractTextFromBriefFile } from "@/lib/proposals/extract-brief";
 import {
   generateProposalFromBrief,
@@ -102,13 +102,9 @@ export async function POST(request: Request) {
     );
   }
 
-  const organizationId = await getActiveOrganizationId(supabase, user.id);
-  if (!organizationId) {
-    return NextResponse.json(
-      { error: "No active workspace found." },
-      { status: 400 }
-    );
-  }
+  const entitlement = await requireOrgEntitlement(supabase, user.id);
+  if ("response" in entitlement) return entitlement.response;
+  const organizationId = entitlement.organizationId;
 
   let parsed;
   try {

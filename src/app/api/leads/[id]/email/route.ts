@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { requireOrgEntitlement } from "@/lib/billing/require-entitlement";
 import { sendEmailViaGmail } from "@/lib/email/gmail";
 import { sendEmailViaOutlook } from "@/lib/email/outlook";
 import { plainTextToEmailHtml } from "@/lib/leads/email";
@@ -47,19 +48,15 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const entitlement = await requireOrgEntitlement(supabase, user.id);
+    if ("response" in entitlement) return entitlement.response;
+    const organizationId = entitlement.organizationId;
+
     const { data: profile } = await supabase
       .from("profiles")
-      .select("full_name, active_organization_id")
+      .select("full_name")
       .eq("id", user.id)
       .maybeSingle();
-
-    const organizationId = profile?.active_organization_id;
-    if (!organizationId) {
-      return NextResponse.json(
-        { error: "No active workspace." },
-        { status: 400 }
-      );
-    }
 
     const { data: lead, error: leadError } = await supabase
       .from("leads")

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { requireOrgEntitlement } from "@/lib/billing/require-entitlement";
 import { sendSignedProposalConfirmation } from "@/lib/proposals/send-signed-confirmation";
 
 export const runtime = "nodejs";
@@ -22,6 +23,9 @@ export async function POST(_request: Request, context: RouteContext) {
     if (!user) {
       return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     }
+
+    const entitlement = await requireOrgEntitlement(supabase, user.id);
+    if ("response" in entitlement) return entitlement.response;
 
     const result = await sendSignedProposalConfirmation(supabase, proposalId, {
       request: _request,

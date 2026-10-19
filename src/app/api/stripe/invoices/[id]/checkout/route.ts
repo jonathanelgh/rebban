@@ -1,16 +1,14 @@
 import { NextResponse } from "next/server";
 import { nanoid } from "nanoid";
 import { createClient } from "@/lib/supabase/server";
+import { requireOrgEntitlement } from "@/lib/billing/require-entitlement";
 import {
   appOriginFromRequest,
   getStripe,
   isStripeConfigured,
   toStripeAmount,
 } from "@/lib/stripe/client";
-import {
-  getActiveOrganizationId,
-  getOrganizationStripeState,
-} from "@/lib/stripe/org";
+import { getOrganizationStripeState } from "@/lib/stripe/org";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -29,10 +27,9 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const organizationId = await getActiveOrganizationId(supabase, user.id);
-  if (!organizationId) {
-    return NextResponse.json({ error: "No organization" }, { status: 400 });
-  }
+  const entitlement = await requireOrgEntitlement(supabase, user.id);
+  if ("response" in entitlement) return entitlement.response;
+  const organizationId = entitlement.organizationId;
 
   const org = await getOrganizationStripeState(supabase, organizationId);
   if (!org?.stripe_account_id || !org.stripe_charges_enabled) {

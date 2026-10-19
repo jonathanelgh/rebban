@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { requireOrgEntitlement } from "@/lib/billing/require-entitlement";
 import {
   buildSignedProposalPdfForProposal,
   PROPOSAL_FILES_BUCKET,
@@ -44,6 +45,9 @@ export async function GET(request: Request, context: RouteContext) {
     if (!user) {
       return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     }
+
+    const entitlement = await requireOrgEntitlement(supabase, user.id);
+    if ("response" in entitlement) return entitlement.response;
 
     const { data: signature, error: sigError } = await supabase
       .from("proposal_signatures")

@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
 import {
   X,
   Building2,
@@ -11,8 +10,16 @@ import {
   Gift,
   Ban,
   Trash2,
+  CheckCircle2,
+  Circle,
 } from "lucide-react";
 import type { AdminOrgRow } from "@/lib/platform-admin";
+import {
+  ModalOverlay,
+  modalBodyClass,
+  modalHeaderClass,
+  modalPanelClass,
+} from "@/components/ModalFrame";
 
 type TabId = "details" | "billing" | "settings";
 
@@ -24,6 +31,47 @@ type PaymentRow = {
   currency: string;
   createdAt: string;
   hostedInvoiceUrl: string | null;
+};
+
+type UsageStats = {
+  clients: number;
+  invoices: number;
+  proposals: number;
+  leads: number;
+  leadForms: number;
+  tasks: number;
+  timeEntries: number;
+  projects: number;
+};
+
+type ConnectInfo = {
+  connected: boolean;
+  accountId: string | null;
+  chargesEnabled: boolean;
+  payoutsEnabled: boolean;
+  detailsSubmitted: boolean;
+  connectedAt: string | null;
+};
+
+type EmailProviderInfo = {
+  connected: boolean;
+  email: string | null;
+  connectedAt: string | null;
+};
+
+type SubscriptionInfo = {
+  status: string | null;
+  subscribedAt: string | null;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  priceId: string | null;
+} | null;
+
+type OrgDetail = AdminOrgRow & {
+  stripeAccountId: string | null;
+  stripeChargesEnabled: boolean;
+  stripePayoutsEnabled: boolean;
+  stripeDetailsSubmitted: boolean;
 };
 
 const TABS: { id: TabId; label: string; icon: typeof Building2 }[] = [
@@ -43,6 +91,19 @@ function formatDate(iso: string | null) {
   });
 }
 
+function formatDateTime(iso: string | null) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 function planTone(label: string) {
   if (label === "Pro") return "bg-emerald-50 text-emerald-700";
   if (label === "Trial") return "bg-amber-50 text-amber-800";
@@ -59,18 +120,19 @@ export function AdminUserDrawer({
   onChanged: () => void;
 }) {
   const [tab, setTab] = useState<TabId>("details");
-  const [org, setOrg] = useState<AdminOrgRow | null>(null);
+  const [org, setOrg] = useState<OrgDetail | null>(null);
   const [payments, setPayments] = useState<PaymentRow[]>([]);
+  const [usage, setUsage] = useState<UsageStats | null>(null);
+  const [connect, setConnect] = useState<ConnectInfo | null>(null);
+  const [email, setEmail] = useState<{
+    gmail: EmailProviderInfo;
+    outlook: EmailProviderInfo;
+  } | null>(null);
+  const [subscription, setSubscription] = useState<SubscriptionInfo>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [entered, setEntered] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
-
-  useEffect(() => {
-    const id = window.requestAnimationFrame(() => setEntered(true));
-    return () => window.cancelAnimationFrame(id);
-  }, []);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -90,8 +152,17 @@ export function AdminUserDrawer({
       setLoading(false);
       return;
     }
-    setOrg(json.organization as AdminOrgRow);
+    setOrg(json.organization as OrgDetail);
     setPayments((json.payments || []) as PaymentRow[]);
+    setUsage((json.usage || null) as UsageStats | null);
+    setConnect((json.connect || null) as ConnectInfo | null);
+    setEmail(
+      (json.email || null) as {
+        gmail: EmailProviderInfo;
+        outlook: EmailProviderInfo;
+      } | null
+    );
+    setSubscription((json.subscription || null) as SubscriptionInfo);
     setLoading(false);
   }
 
@@ -154,27 +225,19 @@ export function AdminUserDrawer({
     onClose();
   }
 
-  const content = (
-    <div className="fixed inset-0 z-[70]">
-      <button
-        type="button"
-        aria-label="Close"
-        className={`absolute inset-0 bg-black/25 transition-opacity duration-300 ${
-          entered ? "opacity-100" : "opacity-0"
-        }`}
-        onClick={() => {
-          if (!busy) onClose();
-        }}
-      />
-      <aside
+  const ownEmailConnected = Boolean(
+    email?.gmail.connected || email?.outlook.connected
+  );
+
+  return (
+    <ModalOverlay onClose={busy ? undefined : onClose} zClass="z-[70]">
+      <div
         role="dialog"
         aria-modal="true"
         aria-label="User details"
-        className={`absolute top-3 bottom-3 right-3 w-[min(440px,calc(100vw-1.5rem))] rounded-2xl border border-line bg-white shadow-[0_24px_64px_rgba(16,24,40,0.22)] flex flex-col overflow-hidden transition-transform duration-300 ease-out ${
-          entered ? "translate-x-0" : "translate-x-[110%]"
-        }`}
+        className={modalPanelClass("max-w-3xl", "z-10")}
       >
-        <div className="px-5 pt-5 pb-4 border-b border-line flex items-start justify-between gap-3 shrink-0">
+        <div className={modalHeaderClass}>
           <div className="min-w-0">
             <h2 className="text-lg font-semibold text-gray-900 tracking-tight truncate">
               {org?.name || "User"}
@@ -194,7 +257,7 @@ export function AdminUserDrawer({
           </button>
         </div>
 
-        <div className="px-5 pt-3 shrink-0">
+        <div className="px-5 sm:px-6 shrink-0">
           <div className="flex gap-1 p-1 rounded-xl border border-line bg-[#FAFBFC]">
             {TABS.map((item) => {
               const Icon = item.icon;
@@ -218,7 +281,7 @@ export function AdminUserDrawer({
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
+        <div className={`${modalBodyClass} pt-4`}>
           {loading ? (
             <p className="text-sm text-gray-400">Loading…</p>
           ) : !org ? (
@@ -232,8 +295,8 @@ export function AdminUserDrawer({
               )}
 
               {tab === "details" && (
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2">
+                <div className="space-y-6">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span
                       className={`inline-flex px-2.5 py-0.5 rounded-full text-[12px] font-medium ${planTone(org.planLabel)}`}
                     >
@@ -244,26 +307,149 @@ export function AdminUserDrawer({
                         Complimentary
                       </span>
                     )}
+                    {org.paid && !org.complimentaryPro && (
+                      <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
+                        Subscribed
+                      </span>
+                    )}
                   </div>
-                  <dl className="space-y-3 text-[13px]">
-                    <Row label="Workspace" value={org.name} />
-                    <Row label="Type" value={org.type} />
-                    <Row label="Owner" value={org.ownerName || "—"} />
-                    <Row label="Email" value={org.ownerEmail || "—"} />
-                    <Row label="Members" value={String(org.memberCount)} />
-                    <Row label="Country" value={org.country || "—"} />
-                    <Row label="Currency" value={org.currency || "—"} />
-                    <Row
-                      label="Address"
-                      value={org.address || "—"}
-                      multiline
-                    />
-                    <Row label="Created" value={formatDate(org.createdAt)} />
-                    <Row
-                      label="Trial ends"
-                      value={formatDate(org.trialEndsAt)}
-                    />
-                  </dl>
+
+                  <section>
+                    <h3 className="text-[12px] font-semibold uppercase tracking-wide text-gray-400 mb-3">
+                      Workspace
+                    </h3>
+                    <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 text-[13px]">
+                      <Row label="Workspace" value={org.name} />
+                      <Row label="Type" value={org.type} />
+                      <Row label="Owner" value={org.ownerName || "—"} />
+                      <Row label="Email" value={org.ownerEmail || "—"} />
+                      <Row label="Members" value={String(org.memberCount)} />
+                      <Row label="Country" value={org.country || "—"} />
+                      <Row label="Currency" value={org.currency || "—"} />
+                      <Row label="Created" value={formatDate(org.createdAt)} />
+                      <Row
+                        label="Trial ends"
+                        value={formatDate(org.trialEndsAt)}
+                      />
+                      <Row
+                        label="Address"
+                        value={org.address || "—"}
+                        multiline
+                        className="sm:col-span-2"
+                      />
+                    </dl>
+                  </section>
+
+                  <section>
+                    <h3 className="text-[12px] font-semibold uppercase tracking-wide text-gray-400 mb-3">
+                      Activity
+                    </h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                      <Stat label="Clients" value={usage?.clients ?? 0} />
+                      <Stat label="Invoices" value={usage?.invoices ?? 0} />
+                      <Stat label="Proposals" value={usage?.proposals ?? 0} />
+                      <Stat label="Leads" value={usage?.leads ?? 0} />
+                      <Stat label="Forms" value={usage?.leadForms ?? 0} />
+                      <Stat label="Projects" value={usage?.projects ?? 0} />
+                      <Stat label="Tasks" value={usage?.tasks ?? 0} />
+                      <Stat
+                        label="Time entries"
+                        value={usage?.timeEntries ?? 0}
+                      />
+                    </div>
+                  </section>
+
+                  <section>
+                    <h3 className="text-[12px] font-semibold uppercase tracking-wide text-gray-400 mb-3">
+                      Connections
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <ConnectionCard
+                        title="Stripe Connect"
+                        connected={Boolean(connect?.connected)}
+                        lines={[
+                          connect?.connected
+                            ? `Connected ${formatDateTime(connect.connectedAt)}`
+                            : "Not connected",
+                          connect?.connected
+                            ? [
+                                connect.chargesEnabled
+                                  ? "Charges on"
+                                  : "Charges off",
+                                connect.payoutsEnabled
+                                  ? "Payouts on"
+                                  : "Payouts off",
+                              ].join(" · ")
+                            : null,
+                          connect?.accountId
+                            ? `${connect.accountId.slice(0, 18)}…`
+                            : null,
+                        ]}
+                      />
+                      <ConnectionCard
+                        title="Own email"
+                        connected={ownEmailConnected}
+                        lines={[
+                          email?.gmail.connected
+                            ? `Gmail · ${email.gmail.email || "connected"} · ${formatDateTime(email.gmail.connectedAt)}`
+                            : null,
+                          email?.outlook.connected
+                            ? `Outlook · ${email.outlook.email || "connected"} · ${formatDateTime(email.outlook.connectedAt)}`
+                            : null,
+                          !ownEmailConnected ? "Not connected" : null,
+                        ]}
+                      />
+                    </div>
+                  </section>
+
+                  {(org.paid ||
+                    org.complimentaryPro ||
+                    subscription ||
+                    org.stripeSubscriptionId) && (
+                    <section>
+                      <h3 className="text-[12px] font-semibold uppercase tracking-wide text-gray-400 mb-3">
+                        Subscription
+                      </h3>
+                      <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 text-[13px]">
+                        <Row
+                          label="Status"
+                          value={
+                            org.complimentaryPro
+                              ? "Complimentary Pro"
+                              : subscription?.status ||
+                                org.subscriptionStatus ||
+                                "—"
+                          }
+                        />
+                        <Row
+                          label="Subscribed"
+                          value={
+                            org.complimentaryPro
+                              ? "—"
+                              : formatDateTime(
+                                  subscription?.subscribedAt || null
+                                )
+                          }
+                        />
+                        <Row
+                          label="Next billing"
+                          value={
+                            org.complimentaryPro
+                              ? "—"
+                              : subscription?.cancelAtPeriodEnd
+                                ? `Cancels ${formatDate(subscription.currentPeriodEnd)}`
+                                : formatDate(
+                                    subscription?.currentPeriodEnd || null
+                                  )
+                          }
+                        />
+                        <Row
+                          label="Customer"
+                          value={org.stripeCustomerId || "—"}
+                        />
+                      </dl>
+                    </section>
+                  )}
                 </div>
               )}
 
@@ -276,10 +462,30 @@ export function AdminUserDrawer({
                     <p className="text-[13px] text-gray-600">
                       {org.planLabel}
                       {org.complimentaryPro ? " · complimentary Pro" : ""}
-                      {org.subscriptionStatus
-                        ? ` · Stripe ${org.subscriptionStatus}`
+                      {(subscription?.status || org.subscriptionStatus)
+                        ? ` · Stripe ${subscription?.status || org.subscriptionStatus}`
                         : ""}
                     </p>
+                    {!org.complimentaryPro && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 text-[12px] text-gray-500">
+                        <div>
+                          Subscribed{" "}
+                          <span className="text-gray-800 font-medium">
+                            {formatDateTime(subscription?.subscribedAt || null)}
+                          </span>
+                        </div>
+                        <div>
+                          Next billing{" "}
+                          <span className="text-gray-800 font-medium">
+                            {subscription?.cancelAtPeriodEnd
+                              ? `Cancels ${formatDate(subscription.currentPeriodEnd)}`
+                              : formatDate(
+                                  subscription?.currentPeriodEnd || null
+                                )}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                     {org.stripeCustomerId && (
                       <p className="text-[11px] font-mono text-gray-400 break-all">
                         {org.stripeCustomerId}
@@ -287,13 +493,13 @@ export function AdminUserDrawer({
                     )}
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="space-y-2 sm:flex sm:gap-2 sm:space-y-0">
                     {org.complimentaryPro ? (
                       <button
                         type="button"
                         disabled={busy}
                         onClick={() => void billingAction("revoke_pro")}
-                        className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-line px-4 py-2.5 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+                        className="w-full sm:flex-1 inline-flex items-center justify-center gap-2 rounded-xl border border-line px-4 py-2.5 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50"
                       >
                         <Ban className="w-4 h-4" />
                         Revoke complimentary Pro
@@ -303,7 +509,7 @@ export function AdminUserDrawer({
                         type="button"
                         disabled={busy}
                         onClick={() => void billingAction("grant_pro")}
-                        className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+                        className="w-full sm:flex-1 inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
                       >
                         <Gift className="w-4 h-4" />
                         Give free Pro
@@ -326,7 +532,7 @@ export function AdminUserDrawer({
                               void billingAction("cancel_subscription");
                             }
                           }}
-                          className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                          className="w-full sm:flex-1 inline-flex items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
                         >
                           <Ban className="w-4 h-4" />
                           Cancel subscription
@@ -415,25 +621,69 @@ export function AdminUserDrawer({
             </>
           )}
         </div>
-      </aside>
+      </div>
+    </ModalOverlay>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-xl border border-line bg-[#FAFBFC] px-3 py-2.5">
+      <div className="text-[11px] text-gray-400 font-medium">{label}</div>
+      <div className="text-[18px] font-semibold text-gray-900 tabular-nums mt-0.5">
+        {value}
+      </div>
     </div>
   );
+}
 
-  if (typeof document === "undefined") return null;
-  return createPortal(content, document.body);
+function ConnectionCard({
+  title,
+  connected,
+  lines,
+}: {
+  title: string;
+  connected: boolean;
+  lines: Array<string | null | undefined>;
+}) {
+  const Icon = connected ? CheckCircle2 : Circle;
+  return (
+    <div className="rounded-2xl border border-line bg-white p-4">
+      <div className="flex items-center gap-2 mb-2">
+        <Icon
+          className={`w-4 h-4 ${connected ? "text-emerald-600" : "text-gray-300"}`}
+        />
+        <div className="text-[13px] font-semibold text-gray-900">{title}</div>
+      </div>
+      <div className="space-y-1">
+        {lines
+          .filter((line): line is string => Boolean(line))
+          .map((line) => (
+            <p
+              key={line}
+              className="text-[12px] text-gray-500 break-all leading-relaxed"
+            >
+              {line}
+            </p>
+          ))}
+      </div>
+    </div>
+  );
 }
 
 function Row({
   label,
   value,
   multiline,
+  className = "",
 }: {
   label: string;
   value: string;
   multiline?: boolean;
+  className?: string;
 }) {
   return (
-    <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-3">
+    <div className={`grid grid-cols-[100px_minmax(0,1fr)] gap-3 ${className}`}>
       <dt className="text-gray-400">{label}</dt>
       <dd
         className={`text-gray-900 font-medium ${
