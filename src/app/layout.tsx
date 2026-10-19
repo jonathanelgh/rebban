@@ -49,6 +49,9 @@ export const metadata: Metadata = {
   title: "Rebban — From proposal to paid",
   description:
     "Create professional proposals, track your time, invoice clients, and let automated reminders follow up until you get paid.",
+  icons: {
+    icon: [{ url: "/rebban-icon.svg", type: "image/svg+xml" }],
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

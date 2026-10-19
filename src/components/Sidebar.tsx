@@ -127,10 +127,17 @@ function SidebarInner({
         <Link
           href={isAdminPanel ? "/admin" : "/"}
           onClick={handleNavigate}
-          className="w-10 h-10 rounded-xl bg-gray-950 text-white flex items-center justify-center shrink-0"
+          className="w-10 h-10 rounded-xl overflow-hidden shrink-0"
           title={isAdminPanel ? "Admin overview" : "Home"}
         >
-          <span className="text-[15px] font-semibold tracking-tight leading-none">R.</span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/rebban-icon.svg"
+            alt="Rebban"
+            width={40}
+            height={40}
+            className="h-full w-full"
+          />
         </Link>
 
         <ProfileMenu
