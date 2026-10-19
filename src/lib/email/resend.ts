@@ -13,6 +13,7 @@ import {
   sendEmailViaOutlook,
 } from "@/lib/email/outlook";
 import { DEFAULT_INVOICE_SEND_MESSAGE } from "@/lib/invoices/send";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export function getResend() {
   const key = process.env.RESEND_API_KEY;
@@ -674,6 +675,100 @@ export async function sendProposalDeclinedEmail(options: {
   return sendHtmlEmail({
     to: options.to,
     subject: `Declined: ${title}`,
+    html,
+  });
+}
+
+export async function sendLeadFormConfirmationEmail(options: {
+  to: string;
+  subject: string;
+  body: string;
+  recipientName?: string | null;
+  organizationName: string;
+  formName: string;
+  /** `rebban` = always Resend. `connected` = Outlook/Gmail for fromUserId. */
+  via: "rebban" | "connected";
+  fromUserId?: string | null;
+  fromName?: string | null;
+  /** Public submit has no user session — use service role for mailbox tokens. */
+  useAdmin?: boolean;
+}) {
+  const bodyText = options.body.trim();
+  const subject = options.subject.trim() || "Thanks for reaching out";
+
+  if (options.via === "connected") {
+    if (!options.fromUserId) {
+      throw new Error("Connect Gmail or Outlook to send from your own email.");
+    }
+
+    let canSendConnected = false;
+    if (options.useAdmin) {
+      const admin = createAdminClient();
+      const [{ data: gmail }, { data: outlook }] = await Promise.all([
+        admin
+          .from("gmail_connections")
+          .select("scope")
+          .eq("user_id", options.fromUserId)
+          .is("revoked_at", null)
+          .maybeSingle(),
+        admin
+          .from("outlook_connections")
+          .select("scope")
+          .eq("user_id", options.fromUserId)
+          .is("revoked_at", null)
+          .maybeSingle(),
+      ]);
+      canSendConnected = Boolean(gmail || outlook);
+    } else {
+      const [gmail, outlook] = await Promise.all([
+        getGmailConnectionStatus(options.fromUserId),
+        getOutlookConnectionStatus(options.fromUserId),
+      ]);
+      canSendConnected = Boolean(gmail?.canSend || outlook?.canSend);
+    }
+
+    if (!canSendConnected) {
+      throw new Error(
+        "Connect Gmail or Outlook in Settings → Integrations to send from your own email."
+      );
+    }
+
+    const html = `
+  <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.55;color:#111827;max-width:540px;margin:0 auto;padding:8px 0;">
+    <p style="margin:0 0 16px;white-space:pre-wrap;">${escapeHtml(bodyText)}</p>
+    <p style="margin:28px 0 0;font-size:13px;color:#6B7280;">
+      Sent by ${escapeHtml(options.fromName?.trim() || options.organizationName)}
+    </p>
+  </div>`;
+
+    return sendHtmlEmail({
+      to: options.to,
+      subject,
+      html,
+      fromUserId: options.fromUserId,
+      fromName: options.fromName,
+      useAdmin: options.useAdmin,
+    });
+  }
+
+  const bodyHtml = `
+    <p style="margin:0 0 14px;white-space:pre-wrap;">${escapeHtml(bodyText)}</p>
+    ${emailDetailCard([
+      { label: "Form", value: options.formName },
+      { label: "From", value: options.organizationName },
+    ])}
+  `;
+
+  const html = rebbanEmailLayout({
+    preheader: subject,
+    title: subject,
+    bodyHtml,
+    footerNote: `Sent on behalf of ${options.organizationName}`,
+  });
+
+  return sendHtmlEmail({
+    to: options.to,
+    subject,
     html,
   });
 }

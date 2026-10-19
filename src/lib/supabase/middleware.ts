@@ -48,6 +48,8 @@ export async function updateSession(request: NextRequest) {
     path.startsWith("/p/") || path.startsWith("/api/p/");
   const isPublicPayRoute =
     path.startsWith("/pay/") || path.startsWith("/api/stripe/pay/");
+  const isPublicLeadFormRoute =
+    path.startsWith("/f/") || path.startsWith("/api/f/");
   const isStripeWebhook = path === "/api/stripe/webhook";
   const isCronRoute = path.startsWith("/api/cron/");
   // Gmail / Outlook OAuth also return ?code= — do not treat as Supabase login.
@@ -83,6 +85,7 @@ export async function updateSession(request: NextRequest) {
   if (
     isPublicProposalRoute ||
     isPublicPayRoute ||
+    isPublicLeadFormRoute ||
     isStripeWebhook ||
     isCronRoute
   ) {

@@ -7,6 +7,7 @@ import {
 } from "@/lib/email/resend";
 import { formatMoneyLabel } from "@/lib/proposals/documentHash";
 import { sendSignedProposalConfirmation } from "@/lib/proposals/send-signed-confirmation";
+import { markLeadWonFromProposal } from "@/lib/leads/convert";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -122,6 +123,16 @@ export async function POST(
     } catch (err) {
       console.error(
         "[proposal sign] signer confirmation failed",
+        err instanceof Error ? err.message : err
+      );
+    }
+
+    try {
+      const admin = tryAdminClient();
+      await markLeadWonFromProposal(admin || supabase, result.proposal_id);
+    } catch (err) {
+      console.error(
+        "[proposal sign] lead won update failed",
         err instanceof Error ? err.message : err
       );
     }

@@ -94,6 +94,7 @@ export function isBillingExemptPath(pathname: string) {
   if (pathname.startsWith("/onboarding")) return true;
   if (pathname.startsWith("/auth/")) return true;
   if (pathname.startsWith("/p/") || pathname.startsWith("/pay/")) return true;
+  if (pathname.startsWith("/f/") || pathname.startsWith("/api/f/")) return true;
   if (pathname === "/admin" || pathname.startsWith("/admin/")) return true;
   // Home stays reachable so the upgrade prompt can show.
   if (pathname === "/") return true;

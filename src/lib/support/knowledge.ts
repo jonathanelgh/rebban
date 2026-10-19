@@ -66,6 +66,13 @@ Start a timer with the timer form at the top of Time tracking.
 Entries show by week; you can review billable time and later use time toward invoicing.
 An active timer may also appear elsewhere in the app chrome when running.
 
+## Leads
+Path: Leads (/leads). Capture inquiries from your website or add them manually.
+- Lead forms (/leads/forms): build a form and embed it with an iframe snippet, or share the public link (/f/…).
+- Convert a lead to a client, or create a proposal from a lead (creates/links a client).
+- When a linked proposal is accepted/signed, the lead is marked won.
+Separate from Admin → Leads (internal founder outreach).
+
 ## Settings & connections
 Path: Settings (/settings). Tabs include profile/account, Billing, and integrations.
 Email sending:

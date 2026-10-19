@@ -9,6 +9,7 @@ import {
   FolderKanban,
   FileSpreadsheet,
   ListTodo,
+  Contact,
 } from "lucide-react";
 import { useBilling } from "@/components/BillingContext";
 
@@ -24,6 +25,12 @@ const CREATE_ITEMS = [
     label: "New client",
     description: "Add a client to your workspace",
     icon: Users,
+  },
+  {
+    href: "/leads?new=1",
+    label: "New lead",
+    description: "Add an inquiry to your pipeline",
+    icon: Contact,
   },
   {
     href: "/tasks?new=1",

@@ -30,6 +30,7 @@ import {
   MoreHorizontal,
   FolderKanban,
   Receipt,
+  UserRound,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "@/components/ProfileContext";
@@ -59,6 +60,18 @@ type ClientOption = {
   name: string;
   company: string | null;
 };
+
+type LeadOption = {
+  id: string;
+  name: string;
+  company: string | null;
+  email: string | null;
+  converted_client_id: string | null;
+};
+
+type RecipientSelection =
+  | { kind: "client"; client: ClientOption }
+  | { kind: "lead"; lead: LeadOption };
 
 type ProposalRowData = {
   id: string;
@@ -156,6 +169,7 @@ function ProposalsPageInner() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [proposals, setProposals] = useState<ProposalRowData[]>([]);
   const [clients, setClients] = useState<ClientOption[]>([]);
+  const [leads, setLeads] = useState<LeadOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [convertProposal, setConvertProposal] =
     useState<ProposalRowData | null>(null);
@@ -169,9 +183,17 @@ function ProposalsPageInner() {
     to: string;
     title: string;
   } | null>(null);
+  const [newProposalClientId, setNewProposalClientId] = useState<string | null>(
+    null
+  );
+  const [newProposalLeadId, setNewProposalLeadId] = useState<string | null>(
+    null
+  );
 
   useEffect(() => {
     if (searchParams.get("new") === "1") {
+      setNewProposalClientId(searchParams.get("clientId"));
+      setNewProposalLeadId(searchParams.get("leadId"));
       setIsModalOpen(true);
       router.replace("/proposals", { scroll: false });
     }
@@ -190,6 +212,7 @@ function ProposalsPageInner() {
     if (!organizationId) {
       setProposals([]);
       setClients([]);
+      setLeads([]);
       setLoading(false);
       return;
     }
@@ -198,7 +221,7 @@ function ProposalsPageInner() {
     setError(null);
     const supabase = createClient();
 
-    const [proposalsRes, clientsRes] = await Promise.all([
+    const [proposalsRes, clientsRes, leadsRes] = await Promise.all([
       supabase
         .from("proposals")
         .select(
@@ -213,11 +236,29 @@ function ProposalsPageInner() {
         .eq("organization_id", organizationId)
         .is("deleted_at", null)
         .order("name", { ascending: true }),
+      supabase
+        .from("leads")
+        .select("id, name, company, email, converted_client_id, status")
+        .eq("organization_id", organizationId)
+        .is("deleted_at", null)
+        .in("status", ["new", "contacted", "proposal_sent"])
+        .order("created_at", { ascending: false }),
     ]);
 
     const clientRows = clientsRes.data ?? [];
     if (!clientsRes.error) {
       setClients(clientRows);
+    }
+    if (!leadsRes.error) {
+      setLeads(
+        (leadsRes.data ?? []).map((lead) => ({
+          id: lead.id,
+          name: lead.name,
+          company: lead.company,
+          email: lead.email,
+          converted_client_id: lead.converted_client_id,
+        }))
+      );
     }
 
     const clientsById = new Map(clientRows.map((c) => [c.id, c]));
@@ -589,11 +630,20 @@ function ProposalsPageInner() {
       {isModalOpen && (
         <CreateProposalModal
           clients={clients}
+          leads={leads}
           defaultCurrency={organizationCurrency || "USD"}
           organizationId={organizationId}
-          onClose={() => setIsModalOpen(false)}
+          initialClientId={newProposalClientId}
+          initialLeadId={newProposalLeadId}
+          onClose={() => {
+            setIsModalOpen(false);
+            setNewProposalClientId(null);
+            setNewProposalLeadId(null);
+          }}
           onCreated={(id) => {
             setIsModalOpen(false);
+            setNewProposalClientId(null);
+            setNewProposalLeadId(null);
             router.push(`/proposals/${id}/template`);
           }}
           onClientsChanged={() => void load()}
@@ -883,15 +933,25 @@ function ProposalRow({
   );
 }
 
-function ClientSelectDropdown({
+function recipientLabel(selection: RecipientSelection | null) {
+  if (!selection) return null;
+  if (selection.kind === "client") {
+    return selection.client.company || selection.client.name;
+  }
+  return selection.lead.company || selection.lead.name;
+}
+
+function ClientOrLeadSelectDropdown({
   clients,
+  leads,
   selected,
   onChange,
   onCreateNew,
 }: {
   clients: ClientOption[];
-  selected: ClientOption | null;
-  onChange: (client: ClientOption) => void;
+  leads: LeadOption[];
+  selected: RecipientSelection | null;
+  onChange: (value: RecipientSelection) => void;
   onCreateNew: () => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -900,11 +960,21 @@ function ClientSelectDropdown({
   const containerRef = useRef<HTMLDivElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
 
-  const filtered = clients.filter(
+  const q = search.trim().toLowerCase();
+  const filteredClients = clients.filter(
     (c) =>
-      c.name.toLowerCase().includes(search.toLowerCase()) ||
-      (c.company?.toLowerCase().includes(search.toLowerCase()) ?? false)
+      !q ||
+      c.name.toLowerCase().includes(q) ||
+      (c.company?.toLowerCase().includes(q) ?? false)
   );
+  const filteredLeads = leads.filter(
+    (l) =>
+      !q ||
+      l.name.toLowerCase().includes(q) ||
+      (l.company?.toLowerCase().includes(q) ?? false) ||
+      (l.email?.toLowerCase().includes(q) ?? false)
+  );
+  const hasResults = filteredClients.length > 0 || filteredLeads.length > 0;
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 639px)");
@@ -953,9 +1023,8 @@ function ClientSelectDropdown({
     };
   }, [isOpen, isMobile]);
 
-  const displayName = selected
-    ? selected.company || selected.name
-    : null;
+  const displayName = recipientLabel(selected);
+  const selectedIsLead = selected?.kind === "lead";
 
   const listContent = (
     <>
@@ -964,49 +1033,113 @@ function ClientSelectDropdown({
         <input
           type="text"
           autoFocus
-          placeholder="Search clients..."
+          placeholder="Search clients or leads..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="w-full text-sm outline-none placeholder-gray-400 font-medium"
         />
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1 max-h-[min(50dvh,320px)] sm:max-h-[240px]">
-        {filtered.length > 0 ? (
-          filtered.map((client) => {
-            const label = client.company || client.name;
-            return (
-              <button
-                key={client.id}
-                type="button"
-                onClick={() => {
-                  onChange(client);
-                  setIsOpen(false);
-                }}
-                className="w-full flex items-center justify-between p-2.5 sm:p-2 hover:bg-gray-50 rounded-xl transition-colors text-left group"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-8 h-8 rounded-full bg-blue-50 text-[#2563EB] flex items-center justify-center font-bold text-xs shrink-0">
-                    {label.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium text-gray-900 truncate">
-                      {label}
-                    </div>
-                    <div className="text-xs text-gray-500 truncate">
-                      {client.name}
-                    </div>
-                  </div>
+      <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-3 max-h-[min(50dvh,360px)] sm:max-h-[280px]">
+        {hasResults ? (
+          <>
+            {filteredClients.length > 0 ? (
+              <div>
+                <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                  Clients
                 </div>
-                {selected?.id === client.id && (
-                  <Check className="w-4 h-4 text-[#2563EB] shrink-0" />
-                )}
-              </button>
-            );
-          })
+                <div className="space-y-1">
+                  {filteredClients.map((client) => {
+                    const label = client.company || client.name;
+                    const isSelected =
+                      selected?.kind === "client" &&
+                      selected.client.id === client.id;
+                    return (
+                      <button
+                        key={`client-${client.id}`}
+                        type="button"
+                        onClick={() => {
+                          onChange({ kind: "client", client });
+                          setIsOpen(false);
+                        }}
+                        className="w-full flex items-center justify-between p-2.5 sm:p-2 hover:bg-gray-50 rounded-xl transition-colors text-left"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-8 h-8 rounded-full bg-blue-50 text-[#2563EB] flex items-center justify-center font-bold text-xs shrink-0">
+                            {label.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium text-gray-900 truncate">
+                              {label}
+                            </div>
+                            <div className="text-xs text-gray-500 truncate">
+                              {client.name}
+                            </div>
+                          </div>
+                        </div>
+                        {isSelected ? (
+                          <Check className="w-4 h-4 text-[#2563EB] shrink-0" />
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
+            {filteredLeads.length > 0 ? (
+              <div>
+                <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                  Leads
+                </div>
+                <div className="space-y-1">
+                  {filteredLeads.map((lead) => {
+                    const label = lead.company || lead.name;
+                    const isSelected =
+                      selected?.kind === "lead" && selected.lead.id === lead.id;
+                    return (
+                      <button
+                        key={`lead-${lead.id}`}
+                        type="button"
+                        onClick={() => {
+                          onChange({ kind: "lead", lead });
+                          setIsOpen(false);
+                        }}
+                        className="w-full flex items-center justify-between p-2.5 sm:p-2 hover:bg-gray-50 rounded-xl transition-colors text-left"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-8 h-8 rounded-full bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
+                            <UserRound className="w-3.5 h-3.5" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="text-sm font-medium text-gray-900 truncate">
+                                {label}
+                              </span>
+                              <span className="shrink-0 rounded-full bg-amber-50 text-amber-700 px-1.5 py-0.5 text-[10px] font-semibold">
+                                Lead
+                              </span>
+                            </div>
+                            <div className="text-xs text-gray-500 truncate">
+                              {[lead.name !== label ? lead.name : null, lead.email]
+                                .filter(Boolean)
+                                .join(" · ") || "Lead"}
+                            </div>
+                          </div>
+                        </div>
+                        {isSelected ? (
+                          <Check className="w-4 h-4 text-[#2563EB] shrink-0" />
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+          </>
         ) : (
           <div className="p-4 text-center text-sm text-gray-500">
-            No clients found.
+            No clients or leads found.
           </div>
         )}
       </div>
@@ -1035,30 +1168,35 @@ function ClientSelectDropdown({
         className="w-full min-w-0 max-w-full flex items-center justify-between gap-2 border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none bg-white text-left hover:border-gray-300 transition-colors"
       >
         <span
-          className={`min-w-0 truncate ${
+          className={`min-w-0 truncate flex items-center gap-2 ${
             displayName ? "text-gray-900" : "text-gray-400"
           }`}
         >
-          {displayName || "Select a client..."}
+          <span className="truncate">
+            {displayName || "Select a client or lead..."}
+          </span>
+          {selectedIsLead ? (
+            <span className="shrink-0 rounded-full bg-amber-50 text-amber-700 px-1.5 py-0.5 text-[10px] font-semibold">
+              Lead
+            </span>
+          ) : null}
         </span>
         <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />
       </button>
 
-      {/* Desktop: anchored dropdown */}
       {isOpen && !isMobile && (
         <div className="absolute top-full left-0 mt-2 w-full min-w-0 bg-white rounded-2xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.15)] border border-line overflow-hidden z-50">
           {listContent}
         </div>
       )}
 
-      {/* Mobile: portaled sheet so it isn’t clipped by the modal */}
       {isOpen &&
         isMobile &&
         createPortal(
           <div className="fixed inset-0 z-[120]">
             <button
               type="button"
-              aria-label="Close client picker"
+              aria-label="Close picker"
               className="absolute inset-0 bg-gray-900/40"
               onClick={() => setIsOpen(false)}
             />
@@ -1068,7 +1206,7 @@ function ClientSelectDropdown({
             >
               <div className="flex items-center justify-between px-5 pt-4 pb-2 shrink-0">
                 <div className="text-[15px] font-semibold text-gray-900">
-                  Select client
+                  Select client or lead
                 </div>
                 <button
                   type="button"
@@ -1246,15 +1384,21 @@ function Badge({
 
 function CreateProposalModal({
   clients,
+  leads,
   defaultCurrency,
   organizationId,
+  initialClientId,
+  initialLeadId,
   onClose,
   onCreated,
   onClientsChanged,
 }: {
   clients: ClientOption[];
+  leads: LeadOption[];
   defaultCurrency: string;
   organizationId: string | null;
+  initialClientId?: string | null;
+  initialLeadId?: string | null;
   onClose: () => void;
   onCreated: (id: string) => void;
   onClientsChanged: () => void;
@@ -1269,8 +1413,19 @@ function CreateProposalModal({
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState("");
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
-  const [selectedClient, setSelectedClient] = useState<ClientOption | null>(null);
+  const [selected, setSelected] = useState<RecipientSelection | null>(() => {
+    if (initialClientId) {
+      const client = clients.find((c) => c.id === initialClientId);
+      if (client) return { kind: "client", client };
+    }
+    if (initialLeadId) {
+      const lead = leads.find((l) => l.id === initialLeadId);
+      if (lead) return { kind: "lead", lead };
+    }
+    return null;
+  });
   const [clientOptions, setClientOptions] = useState(clients);
+  const [leadOptions, setLeadOptions] = useState(leads);
   const [aiText, setAiText] = useState("");
   const [aiFile, setAiFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
@@ -1279,15 +1434,95 @@ function CreateProposalModal({
 
   useEffect(() => {
     setClientOptions(clients);
-  }, [clients]);
+    setLeadOptions(leads);
+    setSelected((prev) => {
+      if (prev) return prev;
+      if (initialClientId) {
+        const client = clients.find((c) => c.id === initialClientId);
+        if (client) return { kind: "client", client };
+      }
+      if (initialLeadId) {
+        const lead = leads.find((l) => l.id === initialLeadId);
+        if (lead) return { kind: "lead", lead };
+      }
+      return prev;
+    });
+  }, [clients, leads, initialClientId, initialLeadId]);
+
+  async function resolveClientAndLead(): Promise<{
+    clientId: string;
+    clientLabel: string;
+    leadId: string | null;
+  }> {
+    if (!selected) {
+      throw new Error("Select a client or lead to continue.");
+    }
+
+    if (selected.kind === "client") {
+      return {
+        clientId: selected.client.id,
+        clientLabel: selected.client.company || selected.client.name,
+        // Keep URL lead link only when that lead was opened with this client.
+        leadId:
+          initialLeadId && initialClientId === selected.client.id
+            ? initialLeadId
+            : null,
+      };
+    }
+
+    const lead = selected.lead;
+    if (lead.converted_client_id) {
+      return {
+        clientId: lead.converted_client_id,
+        clientLabel: lead.company || lead.name,
+        leadId: lead.id,
+      };
+    }
+
+    const res = await fetch(`/api/leads/${lead.id}/convert`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "prospect" }),
+    });
+    const json = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      clientId?: string;
+    };
+    if (!res.ok || !json.clientId) {
+      throw new Error(json.error || "Could not convert lead to client.");
+    }
+
+    onClientsChanged();
+    return {
+      clientId: json.clientId,
+      clientLabel: lead.company || lead.name,
+      leadId: lead.id,
+    };
+  }
+
+  async function linkLeadToProposal(
+    leadId: string,
+    proposalId: string,
+    clientId: string
+  ) {
+    const supabase = createClient();
+    await supabase
+      .from("leads")
+      .update({
+        proposal_id: proposalId,
+        status: "proposal_sent",
+        converted_client_id: clientId,
+      })
+      .eq("id", leadId);
+  }
 
   async function handleContinue() {
     if (!organizationId) {
       setFormError("No workspace found. Try signing out and back in.");
       return;
     }
-    if (!selectedClient) {
-      setFormError("Select a client to continue.");
+    if (!selected) {
+      setFormError("Select a client or lead to continue.");
       return;
     }
     if (creationMode === "scratch" && !title.trim()) {
@@ -1302,11 +1537,26 @@ function CreateProposalModal({
     setSaving(true);
     setFormError(null);
 
+    let resolved: {
+      clientId: string;
+      clientLabel: string;
+      leadId: string | null;
+    };
+    try {
+      resolved = await resolveClientAndLead();
+    } catch (err) {
+      setSaving(false);
+      setFormError(
+        err instanceof Error ? err.message : "Could not resolve recipient."
+      );
+      return;
+    }
+
     if (creationMode === "ai") {
       try {
         const form = new FormData();
         form.set("notes", aiText);
-        form.set("clientId", selectedClient.id);
+        form.set("clientId", resolved.clientId);
         form.set("category", category);
         form.set("currency", currency);
         form.set("pricingHint", pricingModel.toLowerCase());
@@ -1318,15 +1568,31 @@ function CreateProposalModal({
           body: form,
         });
         const json = await res.json().catch(() => ({}));
-        setSaving(false);
         if (!res.ok) {
+          setSaving(false);
           setFormError(json.error || "Could not generate proposal with AI.");
           return;
         }
         if (!json.id) {
+          setSaving(false);
           setFormError("AI did not create a proposal. Try again.");
           return;
         }
+
+        if (resolved.leadId) {
+          const supabase = createClient();
+          await supabase
+            .from("proposals")
+            .update({ lead_id: resolved.leadId })
+            .eq("id", String(json.id));
+          await linkLeadToProposal(
+            resolved.leadId,
+            String(json.id),
+            resolved.clientId
+          );
+        }
+
+        setSaving(false);
         onCreated(String(json.id));
         return;
       } catch (err) {
@@ -1344,8 +1610,7 @@ function CreateProposalModal({
     } = await supabase.auth.getUser();
 
     const proposalTitle =
-      title.trim() ||
-      `${selectedClient.company || selectedClient.name} proposal`;
+      title.trim() || `${resolved.clientLabel} proposal`;
     const parsedAmount = Number(amount.replace(/,/g, ""));
     const content: Json = {
       meta: {
@@ -1360,7 +1625,8 @@ function CreateProposalModal({
       .from("proposals")
       .insert({
         organization_id: organizationId,
-        client_id: selectedClient.id,
+        client_id: resolved.clientId,
+        lead_id: resolved.leadId,
         title: proposalTitle,
         amount: Number.isFinite(parsedAmount) ? parsedAmount : 0,
         currency,
@@ -1379,6 +1645,10 @@ function CreateProposalModal({
     if (error || !data) {
       setFormError(error?.message || "Could not create proposal.");
       return;
+    }
+
+    if (resolved.leadId) {
+      await linkLeadToProposal(resolved.leadId, data.id, resolved.clientId);
     }
 
     onCreated(data.id);
@@ -1438,12 +1708,13 @@ function CreateProposalModal({
               <div className="space-y-4 sm:space-y-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Client
+                    Client or lead
                   </label>
-                  <ClientSelectDropdown
+                  <ClientOrLeadSelectDropdown
                     clients={clientOptions}
-                    selected={selectedClient}
-                    onChange={setSelectedClient}
+                    leads={leadOptions}
+                    selected={selected}
+                    onChange={setSelected}
                     onCreateNew={() => setIsClientModalOpen(true)}
                   />
                 </div>
@@ -1531,12 +1802,13 @@ function CreateProposalModal({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 min-w-0">
                   <div className="min-w-0">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Client
+                      Client or lead
                     </label>
-                    <ClientSelectDropdown
+                    <ClientOrLeadSelectDropdown
                       clients={clientOptions}
-                      selected={selectedClient}
-                      onChange={setSelectedClient}
+                      leads={leadOptions}
+                      selected={selected}
+                      onChange={setSelected}
                       onCreateNew={() => setIsClientModalOpen(true)}
                     />
                   </div>
@@ -1666,7 +1938,7 @@ function CreateProposalModal({
           onClose={() => setIsClientModalOpen(false)}
           onSave={(client) => {
             setClientOptions((prev) => [client, ...prev]);
-            setSelectedClient(client);
+            setSelected({ kind: "client", client });
             setIsClientModalOpen(false);
             onClientsChanged();
           }}

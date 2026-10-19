@@ -123,7 +123,8 @@ export function SupportChat() {
     pathname.startsWith("/reset-password") ||
     pathname.startsWith("/onboarding") ||
     pathname.startsWith("/p/") ||
-    pathname.startsWith("/pay/");
+    pathname.startsWith("/pay/") ||
+    pathname.startsWith("/f/");
 
   useEffect(() => {
     if (!open) return;

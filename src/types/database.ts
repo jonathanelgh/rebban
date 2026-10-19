@@ -55,6 +55,69 @@ export type Database = {
           },
         ]
       }
+      blog_posts: {
+        Row: {
+          author: string
+          category: string
+          content: Json
+          cover_image: string | null
+          cover_image_alt: string | null
+          created_at: string
+          description: string
+          excerpt: string
+          featured: boolean
+          id: string
+          modified_at: string
+          published_at: string
+          reading_minutes: number
+          slug: string
+          status: string
+          tags: string[]
+          title: string
+          updated_at: string | null
+        }
+        Insert: {
+          author?: string
+          category: string
+          content?: Json
+          cover_image?: string | null
+          cover_image_alt?: string | null
+          created_at?: string
+          description: string
+          excerpt: string
+          featured?: boolean
+          id?: string
+          modified_at?: string
+          published_at: string
+          reading_minutes?: number
+          slug: string
+          status?: string
+          tags?: string[]
+          title: string
+          updated_at?: string | null
+        }
+        Update: {
+          author?: string
+          category?: string
+          content?: Json
+          cover_image?: string | null
+          cover_image_alt?: string | null
+          created_at?: string
+          description?: string
+          excerpt?: string
+          featured?: boolean
+          id?: string
+          modified_at?: string
+          published_at?: string
+          reading_minutes?: number
+          slug?: string
+          status?: string
+          tags?: string[]
+          title?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       clients: {
         Row: {
           company: string | null
@@ -546,6 +609,257 @@ export type Database = {
           },
         ]
       }
+      lead_form_submissions: {
+        Row: {
+          created_at: string
+          form_id: string
+          id: string
+          ip: string | null
+          lead_id: string
+          organization_id: string
+          payload: Json
+          user_agent: string | null
+        }
+        Insert: {
+          created_at?: string
+          form_id: string
+          id?: string
+          ip?: string | null
+          lead_id: string
+          organization_id: string
+          payload?: Json
+          user_agent?: string | null
+        }
+        Update: {
+          created_at?: string
+          form_id?: string
+          id?: string
+          ip?: string | null
+          lead_id?: string
+          organization_id?: string
+          payload?: Json
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_form_submissions_form_id_fkey"
+            columns: ["form_id"]
+            isOneToOne: false
+            referencedRelation: "lead_forms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_form_submissions_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_form_submissions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lead_forms: {
+        Row: {
+          confirmation_email_body: string
+          confirmation_email_enabled: boolean
+          confirmation_email_subject: string
+          confirmation_email_user_id: string | null
+          confirmation_email_via: string
+          created_at: string
+          created_by: string | null
+          deleted_at: string | null
+          fields: Json
+          id: string
+          is_active: boolean
+          name: string
+          organization_id: string
+          public_token: string
+          success_message: string
+          theme: Json
+          updated_at: string
+        }
+        Insert: {
+          confirmation_email_body?: string
+          confirmation_email_enabled?: boolean
+          confirmation_email_subject?: string
+          confirmation_email_user_id?: string | null
+          confirmation_email_via?: string
+          created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          fields?: Json
+          id?: string
+          is_active?: boolean
+          name?: string
+          organization_id: string
+          public_token: string
+          success_message?: string
+          theme?: Json
+          updated_at?: string
+        }
+        Update: {
+          confirmation_email_body?: string
+          confirmation_email_enabled?: boolean
+          confirmation_email_subject?: string
+          confirmation_email_user_id?: string | null
+          confirmation_email_via?: string
+          created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          fields?: Json
+          id?: string
+          is_active?: boolean
+          name?: string
+          organization_id?: string
+          public_token?: string
+          success_message?: string
+          theme?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_forms_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lead_sources: {
+        Row: {
+          created_at: string
+          icon: string | null
+          id: string
+          image_url: string | null
+          is_active: boolean
+          keywords: string[]
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          icon?: string | null
+          id: string
+          image_url?: string | null
+          is_active?: boolean
+          keywords?: string[]
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          icon?: string | null
+          id?: string
+          image_url?: string | null
+          is_active?: boolean
+          keywords?: string[]
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      leads: {
+        Row: {
+          company: string | null
+          converted_at: string | null
+          converted_client_id: string | null
+          created_at: string
+          created_by: string | null
+          deleted_at: string | null
+          email: string | null
+          form_id: string | null
+          id: string
+          name: string
+          notes: string | null
+          organization_id: string
+          phone: string | null
+          proposal_id: string | null
+          source: string
+          status: Database["public"]["Enums"]["lead_status"]
+          updated_at: string
+          website: string | null
+        }
+        Insert: {
+          company?: string | null
+          converted_at?: string | null
+          converted_client_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          email?: string | null
+          form_id?: string | null
+          id?: string
+          name: string
+          notes?: string | null
+          organization_id: string
+          phone?: string | null
+          proposal_id?: string | null
+          source?: string
+          status?: Database["public"]["Enums"]["lead_status"]
+          updated_at?: string
+          website?: string | null
+        }
+        Update: {
+          company?: string | null
+          converted_at?: string | null
+          converted_client_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          email?: string | null
+          form_id?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          organization_id?: string
+          phone?: string | null
+          proposal_id?: string | null
+          source?: string
+          status?: Database["public"]["Enums"]["lead_status"]
+          updated_at?: string
+          website?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leads_converted_client_id_fkey"
+            columns: ["converted_client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leads_form_id_fkey"
+            columns: ["form_id"]
+            isOneToOne: false
+            referencedRelation: "lead_forms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leads_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leads_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "proposals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notifications: {
         Row: {
           body: string
@@ -687,10 +1001,10 @@ export type Database = {
       organizations: {
         Row: {
           address: string | null
+          complimentary_pro: boolean
           country: string | null
           created_at: string
           created_by: string | null
-          complimentary_pro: boolean
           currency: string
           custom_tax_rates: number[]
           default_hourly_rate: number
@@ -725,10 +1039,10 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          complimentary_pro?: boolean
           country?: string | null
           created_at?: string
           created_by?: string | null
-          complimentary_pro?: boolean
           currency?: string
           custom_tax_rates?: number[]
           default_hourly_rate?: number
@@ -763,10 +1077,10 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          complimentary_pro?: boolean
           country?: string | null
           created_at?: string
           created_by?: string | null
-          complimentary_pro?: boolean
           currency?: string
           custom_tax_rates?: number[]
           default_hourly_rate?: number
@@ -1908,6 +2222,7 @@ export type Database = {
           deleted_at: string | null
           expires_at: string | null
           id: string
+          lead_id: string | null
           organization_id: string
           project_id: string | null
           sent_at: string | null
@@ -1929,6 +2244,7 @@ export type Database = {
           deleted_at?: string | null
           expires_at?: string | null
           id?: string
+          lead_id?: string | null
           organization_id: string
           project_id?: string | null
           sent_at?: string | null
@@ -1950,6 +2266,7 @@ export type Database = {
           deleted_at?: string | null
           expires_at?: string | null
           id?: string
+          lead_id?: string | null
           organization_id?: string
           project_id?: string | null
           sent_at?: string | null
@@ -1965,6 +2282,13 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "proposals_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
             referencedColumns: ["id"]
           },
           {
@@ -2010,108 +2334,6 @@ export type Database = {
           type?: string
         }
         Relationships: []
-      }
-      task_attachments: {
-        Row: {
-          created_at: string
-          deleted_at: string | null
-          file_name: string
-          file_size: number | null
-          file_type: string | null
-          id: string
-          organization_id: string
-          storage_path: string
-          task_id: string
-          uploaded_by: string | null
-        }
-        Insert: {
-          created_at?: string
-          deleted_at?: string | null
-          file_name: string
-          file_size?: number | null
-          file_type?: string | null
-          id?: string
-          organization_id: string
-          storage_path: string
-          task_id: string
-          uploaded_by?: string | null
-        }
-        Update: {
-          created_at?: string
-          deleted_at?: string | null
-          file_name?: string
-          file_size?: number | null
-          file_type?: string | null
-          id?: string
-          organization_id?: string
-          storage_path?: string
-          task_id?: string
-          uploaded_by?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "task_attachments_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "task_attachments_task_id_fkey"
-            columns: ["task_id"]
-            isOneToOne: false
-            referencedRelation: "tasks"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      task_comments: {
-        Row: {
-          author_id: string
-          body: string
-          created_at: string
-          deleted_at: string | null
-          id: string
-          organization_id: string
-          task_id: string
-          updated_at: string
-        }
-        Insert: {
-          author_id: string
-          body: string
-          created_at?: string
-          deleted_at?: string | null
-          id?: string
-          organization_id: string
-          task_id: string
-          updated_at?: string
-        }
-        Update: {
-          author_id?: string
-          body?: string
-          created_at?: string
-          deleted_at?: string | null
-          id?: string
-          organization_id?: string
-          task_id?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "task_comments_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "task_comments_task_id_fkey"
-            columns: ["task_id"]
-            isOneToOne: false
-            referencedRelation: "tasks"
-            referencedColumns: ["id"]
-          },
-        ]
       }
       support_messages: {
         Row: {
@@ -2280,6 +2502,108 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      task_attachments: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          file_name: string
+          file_size: number | null
+          file_type: string | null
+          id: string
+          organization_id: string
+          storage_path: string
+          task_id: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          file_name: string
+          file_size?: number | null
+          file_type?: string | null
+          id?: string
+          organization_id: string
+          storage_path: string
+          task_id: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          file_name?: string
+          file_size?: number | null
+          file_type?: string | null
+          id?: string
+          organization_id?: string
+          storage_path?: string
+          task_id?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_attachments_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_attachments_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      task_comments: {
+        Row: {
+          author_id: string
+          body: string
+          created_at: string
+          deleted_at: string | null
+          id: string
+          organization_id: string
+          task_id: string
+          updated_at: string
+        }
+        Insert: {
+          author_id: string
+          body: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          organization_id: string
+          task_id: string
+          updated_at?: string
+        }
+        Update: {
+          author_id?: string
+          body?: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          organization_id?: string
+          task_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_comments_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_comments_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
             referencedColumns: ["id"]
           },
         ]
@@ -2550,6 +2874,7 @@ export type Database = {
         }
         Returns: {
           address: string | null
+          complimentary_pro: boolean
           country: string | null
           created_at: string
           created_by: string | null
@@ -2617,6 +2942,7 @@ export type Database = {
         Returns: Json
       }
       get_public_invoice: { Args: { p_token: string }; Returns: Json }
+      get_public_lead_form: { Args: { p_token: string }; Returns: Json }
       get_public_proposal: { Args: { p_token: string }; Returns: Json }
       get_signed_proposal_bundle: { Args: { p_token: string }; Returns: Json }
       is_org_admin: { Args: { p_org_id: string }; Returns: boolean }
@@ -2680,6 +3006,16 @@ export type Database = {
         Returns: Json
       }
       slugify: { Args: { input: string }; Returns: string }
+      soft_delete_lead_form: { Args: { p_form_id: string }; Returns: string }
+      submit_public_lead_form: {
+        Args: {
+          p_ip?: string
+          p_payload: Json
+          p_token: string
+          p_user_agent?: string
+        }
+        Returns: Json
+      }
     }
     Enums: {
       client_status: "active" | "idle" | "prospect"
@@ -2690,6 +3026,7 @@ export type Database = {
         | "monthly"
         | "quarterly"
       invoice_status: "draft" | "sent" | "viewed" | "paid" | "overdue" | "void"
+      lead_status: "new" | "contacted" | "proposal_sent" | "won" | "lost"
       member_role: "owner" | "admin" | "member"
       member_status: "active" | "invited" | "removed"
       organization_type: "solo" | "agency"
@@ -2862,6 +3199,7 @@ export const Constants = {
         "quarterly",
       ],
       invoice_status: ["draft", "sent", "viewed", "paid", "overdue", "void"],
+      lead_status: ["new", "contacted", "proposal_sent", "won", "lost"],
       member_role: ["owner", "admin", "member"],
       member_status: ["active", "invited", "removed"],
       organization_type: ["solo", "agency"],
