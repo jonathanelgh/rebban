@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { requirePlatformAdmin } from "@/lib/platform-admin";
+import { resolveBlogCategory } from "@/lib/blog/categories";
 import {
+  BLOG_POST_SELECT,
   blocksToJson,
   mapBlogPostRow,
   parseBlogPostBody,
@@ -20,9 +22,7 @@ export async function GET(request: Request) {
 
   let query = auth.db
     .from("blog_posts")
-    .select(
-      "id, slug, title, description, excerpt, category, author, published_at, updated_at, reading_minutes, tags, featured, content, status, created_at, modified_at, cover_image, cover_image_alt"
-    )
+    .select(BLOG_POST_SELECT)
     .order("published_at", { ascending: false })
     .order("created_at", { ascending: false });
 
@@ -30,9 +30,20 @@ export async function GET(request: Request) {
     query = query.eq("status", status);
   }
   if (q) {
-    query = query.or(
-      `title.ilike.%${q}%,slug.ilike.%${q}%,category.ilike.%${q}%,excerpt.ilike.%${q}%`
-    );
+    const { data: cats } = await auth.db
+      .from("blog_categories")
+      .select("id")
+      .ilike("name", `%${q.replace(/[%_]/g, "\\$&")}%`);
+    const catIds = (cats || []).map((c) => c.id);
+    const parts = [
+      `title.ilike.%${q}%`,
+      `slug.ilike.%${q}%`,
+      `excerpt.ilike.%${q}%`,
+    ];
+    if (catIds.length) {
+      parts.push(`category_id.in.(${catIds.join(",")})`);
+    }
+    query = query.or(parts.join(","));
   }
 
   const { data, error } = await query;
@@ -56,45 +67,55 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
 
-  const now = new Date().toISOString();
-  const { data, error } = await auth.db
-    .from("blog_posts")
-    .insert({
-      title: parsed.title,
-      slug: parsed.slug,
-      description: parsed.description,
-      excerpt: parsed.excerpt,
+  try {
+    const category = await resolveBlogCategory(auth.db, {
+      categoryId: parsed.categoryId,
       category: parsed.category,
-      author: parsed.author,
-      published_at: parsed.publishedAt,
-      updated_at: parsed.status === "published" ? parsed.publishedAt : null,
-      reading_minutes: parsed.readingMinutes,
-      tags: parsed.tags,
-      featured: parsed.featured,
-      content: blocksToJson(parsed.content),
-      status: parsed.status,
-      cover_image: parsed.coverImage,
-      cover_image_alt: parsed.coverImageAlt,
-      created_at: now,
-      modified_at: now,
-    })
-    .select(
-      "id, slug, title, description, excerpt, category, author, published_at, updated_at, reading_minutes, tags, featured, content, status, created_at, modified_at, cover_image, cover_image_alt"
-    )
-    .single();
+    });
 
-  if (error) {
-    const status = error.code === "23505" ? 409 : 500;
+    const now = new Date().toISOString();
+    const { data, error } = await auth.db
+      .from("blog_posts")
+      .insert({
+        title: parsed.title,
+        slug: parsed.slug,
+        description: parsed.description,
+        excerpt: parsed.excerpt,
+        category_id: category.id,
+        author: parsed.author,
+        published_at: parsed.publishedAt,
+        updated_at: parsed.status === "published" ? parsed.publishedAt : null,
+        reading_minutes: parsed.readingMinutes,
+        tags: parsed.tags,
+        featured: parsed.featured,
+        content: blocksToJson(parsed.content),
+        status: parsed.status,
+        cover_image: parsed.coverImage,
+        cover_image_alt: parsed.coverImageAlt,
+        created_at: now,
+        modified_at: now,
+      })
+      .select(BLOG_POST_SELECT)
+      .single();
+
+    if (error) {
+      const status = error.code === "23505" ? 409 : 500;
+      return NextResponse.json(
+        {
+          error:
+            error.code === "23505"
+              ? "A post with that slug already exists."
+              : error.message,
+        },
+        { status }
+      );
+    }
+
+    return NextResponse.json({ post: mapBlogPostRow(data) }, { status: 201 });
+  } catch (err) {
     return NextResponse.json(
-      {
-        error:
-          error.code === "23505"
-            ? "A post with that slug already exists."
-            : error.message,
-      },
-      { status }
+      { error: err instanceof Error ? err.message : "Could not create post." },
+      { status: 500 }
     );
   }
-
-  return NextResponse.json({ post: mapBlogPostRow(data) }, { status: 201 });
 }

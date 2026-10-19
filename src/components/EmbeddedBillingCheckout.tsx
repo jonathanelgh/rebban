@@ -3,8 +3,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
 import {
+  BillingAddressElement,
   CheckoutElementsProvider,
   PaymentElement,
+  TaxIdElement,
   useCheckoutElements,
 } from "@stripe/react-stripe-js/checkout";
 import { Loader2, Lock } from "lucide-react";
@@ -22,9 +24,11 @@ function getPlatformStripe(publishableKey: string) {
 function PaymentForm({
   submitLabel,
   onComplete,
+  taxEnabled,
 }: {
   submitLabel: string;
   onComplete?: () => void;
+  taxEnabled: boolean;
 }) {
   const result = useCheckoutElements();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -74,6 +78,25 @@ function PaymentForm({
 
   return (
     <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
+      {taxEnabled ? (
+        <>
+          <div>
+            <div className="text-[12px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
+              Billing address
+            </div>
+            <BillingAddressElement />
+          </div>
+          <div>
+            <div className="text-[12px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
+              VAT / Tax ID{" "}
+              <span className="font-normal normal-case tracking-normal text-gray-400">
+                (optional for businesses)
+              </span>
+            </div>
+            <TaxIdElement options={{ visibility: "auto" }} />
+          </div>
+        </>
+      ) : null}
       <div>
         <div className="text-[12px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
           Payment details
@@ -129,6 +152,7 @@ export function EmbeddedBillingCheckout({
   const [loading, setLoading] = useState(true);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [publishableKey, setPublishableKey] = useState<string | null>(null);
+  const [taxEnabled, setTaxEnabled] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -136,6 +160,7 @@ export function EmbeddedBillingCheckout({
       setLoading(true);
       setError(null);
       setClientSecret(null);
+      setTaxEnabled(false);
       try {
         const res = await fetch("/api/stripe/billing/checkout", {
           method: "POST",
@@ -146,6 +171,7 @@ export function EmbeddedBillingCheckout({
           error?: string;
           clientSecret?: string;
           publishableKey?: string;
+          taxEnabled?: boolean;
         };
         if (cancelled) return;
         if (!res.ok || !json.clientSecret || !json.publishableKey) {
@@ -154,6 +180,7 @@ export function EmbeddedBillingCheckout({
         }
         setClientSecret(json.clientSecret);
         setPublishableKey(json.publishableKey);
+        setTaxEnabled(Boolean(json.taxEnabled));
       } catch (err) {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : "Could not start checkout");
@@ -208,7 +235,11 @@ export function EmbeddedBillingCheckout({
         },
       }}
     >
-      <PaymentForm submitLabel={submitLabel} onComplete={onComplete} />
+      <PaymentForm
+        submitLabel={submitLabel}
+        onComplete={onComplete}
+        taxEnabled={taxEnabled}
+      />
     </CheckoutElementsProvider>
   );
 }

@@ -22,6 +22,7 @@ export type BlogEditorPost = {
   description: string;
   excerpt: string;
   category: string;
+  categoryId?: string | null;
   author: string;
   publishedAt: string;
   readingMinutes: number;
@@ -33,12 +34,19 @@ export type BlogEditorPost = {
   content: BlogBlock[];
 };
 
+type BlogCategoryOption = {
+  id: string;
+  name: string;
+  slug: string;
+};
+
 const emptyPost = (): BlogEditorPost => ({
   title: "",
   slug: "",
   description: "",
   excerpt: "",
   category: "",
+  categoryId: null,
   author: "Rebban",
   publishedAt: new Date().toISOString().slice(0, 10),
   readingMinutes: 5,
@@ -78,6 +86,32 @@ export function BlogPostEditor({
   const [tagsText, setTagsText] = useState((initial?.tags || []).join(", "));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [categories, setCategories] = useState<BlogCategoryOption[]>([]);
+  const [newCategory, setNewCategory] = useState("");
+
+  React.useEffect(() => {
+    let cancelled = false;
+    async function loadCategories() {
+      const res = await fetch("/api/admin/blog-categories");
+      const json = await res.json().catch(() => ({}));
+      if (cancelled || !res.ok) return;
+      const rows = (json.categories || []) as BlogCategoryOption[];
+      setCategories(rows);
+      setPost((prev) => {
+        if (prev.categoryId || prev.category) return prev;
+        if (!rows[0]) return prev;
+        return {
+          ...prev,
+          categoryId: rows[0].id,
+          category: rows[0].name,
+        };
+      });
+    }
+    void loadCategories();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const autoMinutes = useMemo(
     () => estimateReadingMinutes(post.content),
@@ -422,14 +456,71 @@ export function BlogPostEditor({
               <span className="block text-[12px] font-medium text-gray-500 mb-1.5">
                 Category
               </span>
-              <input
-                value={post.category}
-                onChange={(e) =>
-                  setPost((prev) => ({ ...prev, category: e.target.value }))
-                }
+              <select
+                value={post.categoryId || ""}
+                onChange={(e) => {
+                  const selected = categories.find((c) => c.id === e.target.value);
+                  setPost((prev) => ({
+                    ...prev,
+                    categoryId: selected?.id || null,
+                    category: selected?.name || "",
+                  }));
+                }}
                 className="w-full border border-line rounded-xl px-3 py-2.5 text-sm bg-white outline-none"
-                placeholder="Founder story"
-              />
+              >
+                <option value="" disabled>
+                  Select category
+                </option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              <div className="mt-2 flex gap-2">
+                <input
+                  value={newCategory}
+                  onChange={(e) => setNewCategory(e.target.value)}
+                  className="min-w-0 flex-1 border border-line rounded-xl px-3 py-2 text-sm bg-white outline-none"
+                  placeholder="New category"
+                />
+                <button
+                  type="button"
+                  disabled={!newCategory.trim()}
+                  onClick={() => {
+                    void (async () => {
+                      const name = newCategory.trim();
+                      if (!name) return;
+                      const res = await fetch("/api/admin/blog-categories", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ name }),
+                      });
+                      const json = await res.json().catch(() => ({}));
+                      if (!res.ok) {
+                        setError(json.error || "Could not create category.");
+                        return;
+                      }
+                      const created = json.category as BlogCategoryOption;
+                      setCategories((prev) => {
+                        if (prev.some((c) => c.id === created.id)) return prev;
+                        return [...prev, created].sort((a, b) =>
+                          a.name.localeCompare(b.name)
+                        );
+                      });
+                      setPost((prev) => ({
+                        ...prev,
+                        categoryId: created.id,
+                        category: created.name,
+                      }));
+                      setNewCategory("");
+                    })();
+                  }}
+                  className="shrink-0 rounded-xl border border-line bg-white px-3 py-2 text-[12px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+                >
+                  Add
+                </button>
+              </div>
             </label>
 
             <label className="block">

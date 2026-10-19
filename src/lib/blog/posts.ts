@@ -10,6 +10,7 @@ export type BlogPostInput = {
   description: string;
   excerpt: string;
   category: string;
+  categoryId: string | null;
   author: string;
   publishedAt: string;
   readingMinutes: number;
@@ -90,9 +91,10 @@ export function parseBlogPostBody(body: unknown): BlogPostInput | { error: strin
   const description = String(raw.description || "").trim();
   const excerpt = String(raw.excerpt || "").trim();
   const category = String(raw.category || "").trim();
+  const categoryId = String(raw.categoryId || raw.category_id || "").trim() || null;
   if (!description) return { error: "Description is required." };
   if (!excerpt) return { error: "Excerpt is required." };
-  if (!category) return { error: "Category is required." };
+  if (!category && !categoryId) return { error: "Category is required." };
 
   const statusRaw = String(raw.status || "draft");
   const status = statusRaw === "published" ? "published" : "draft";
@@ -127,6 +129,7 @@ export function parseBlogPostBody(body: unknown): BlogPostInput | { error: strin
     description,
     excerpt,
     category,
+    categoryId,
     author: String(raw.author || "Rebban").trim() || "Rebban",
     publishedAt,
     readingMinutes,
@@ -139,13 +142,16 @@ export function parseBlogPostBody(body: unknown): BlogPostInput | { error: strin
   };
 }
 
+export const BLOG_POST_SELECT =
+  "id, slug, title, description, excerpt, category_id, author, published_at, updated_at, reading_minutes, tags, featured, content, status, created_at, modified_at, cover_image, cover_image_alt, blog_categories ( id, name, slug )";
+
 export function mapBlogPostRow(row: {
   id: string;
   slug: string;
   title: string;
   description: string;
   excerpt: string;
-  category: string;
+  category_id: string;
   author: string;
   published_at: string;
   updated_at: string | null;
@@ -158,14 +164,22 @@ export function mapBlogPostRow(row: {
   modified_at: string;
   cover_image: string | null;
   cover_image_alt: string | null;
+  blog_categories?:
+    | { id: string; name: string; slug: string }
+    | { id: string; name: string; slug: string }[]
+    | null;
 }) {
+  const categoryRel = Array.isArray(row.blog_categories)
+    ? row.blog_categories[0]
+    : row.blog_categories;
   return {
     id: row.id,
     slug: row.slug,
     title: row.title,
     description: row.description,
     excerpt: row.excerpt,
-    category: row.category,
+    category: categoryRel?.name || "",
+    categoryId: row.category_id,
     author: row.author,
     publishedAt: row.published_at,
     updatedAt: row.updated_at,

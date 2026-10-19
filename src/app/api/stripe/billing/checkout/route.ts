@@ -8,6 +8,7 @@ import {
   getStripePublishableKey,
   isStripeConfigured,
 } from "@/lib/stripe/client";
+import { platformBillingCurrencyForCountry } from "@/lib/stripe/billing-currency";
 import {
   getActiveOrganizationId,
   getOrganizationStripeState,
@@ -87,12 +88,14 @@ export async function POST(request: Request) {
 
   const origin = appOriginFromRequest(request);
   const returnUrl = `${origin}/settings?section=billing&billing=success`;
+  const billingCurrency = platformBillingCurrencyForCountry(org.country);
 
   try {
     const session = await stripe.checkout.sessions.create({
       ui_mode: "elements",
       mode: "subscription",
       customer: customerId,
+      currency: billingCurrency.toLowerCase(),
       line_items: [{ price: priceId, quantity: 1 }],
       return_url: returnUrl,
       integration_identifier: `rebban_billing_${nanoid(8)}`,
@@ -100,17 +103,24 @@ export async function POST(request: Request) {
       metadata: {
         organization_id: organizationId,
         billing_interval: interval,
+        billing_currency: billingCurrency,
       },
       subscription_data: {
         metadata: {
           organization_id: organizationId,
           billing_interval: interval,
+          billing_currency: billingCurrency,
         },
       },
       ...(process.env.STRIPE_TAX_ENABLED === "true"
         ? {
             automatic_tax: { enabled: true },
-            customer_update: { address: "auto" as const },
+            tax_id_collection: { enabled: true },
+            billing_address_collection: "required" as const,
+            customer_update: {
+              address: "auto" as const,
+              name: "auto" as const,
+            },
           }
         : {}),
     });
@@ -129,6 +139,7 @@ export async function POST(request: Request) {
       returnUrl,
       interval,
       customerEmail: user.email || null,
+      taxEnabled: process.env.STRIPE_TAX_ENABLED === "true",
     });
   } catch (error) {
     const message =

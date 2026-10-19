@@ -28,7 +28,9 @@ import {
   CURRENCY_OPTIONS,
   INDUSTRY_OPTIONS,
   ONBOARDING_STEPS,
+  currencyForCountry,
   firstNameFrom,
+  normalizeOnboardingCountry,
   normalizeWebsite,
   type OnboardingStepId,
 } from "@/lib/onboarding";
@@ -116,6 +118,7 @@ export default function OnboardingPage() {
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const hydratedRef = useRef(false);
+  const currencyTouchedRef = useRef(false);
 
   const stepIndex = ONBOARDING_STEPS.indexOf(step);
   const firstName = firstNameFrom(name) || firstNameFrom(fullName);
@@ -178,9 +181,7 @@ export default function OnboardingPage() {
       if (cancelled || !data) return;
 
       setAddress(data.address || "");
-      setCountry(data.country || "SE");
       setTaxId(data.tax_id || "");
-      setCurrency(data.currency || "USD");
       setTaxEnabled(Boolean(data.default_tax_enabled));
       {
         const rate = Number(data.default_tax_rate) || 25;
@@ -194,6 +195,40 @@ export default function OnboardingPage() {
       setStripeConnected(Boolean(data.stripe_account_id));
       setStripeReady(
         Boolean(data.stripe_charges_enabled && data.stripe_details_submitted)
+      );
+
+      const savedCountry = data.country?.trim() || null;
+      // Org currency defaults to USD in the DB until onboarding is saved.
+      const savedCurrency = data.currency?.trim() || null;
+      const countryWasSet = Boolean(savedCountry);
+
+      if (countryWasSet && savedCountry) {
+        setCountry(savedCountry);
+        setCurrency(savedCurrency || currencyForCountry(savedCountry));
+        currencyTouchedRef.current = Boolean(
+          savedCurrency && savedCurrency !== currencyForCountry(savedCountry)
+        );
+        return;
+      }
+
+      let geoCountry: string | null = null;
+      try {
+        const geoRes = await fetch("/api/geo");
+        const geoJson = await geoRes.json().catch(() => ({}));
+        if (!cancelled && geoRes.ok) {
+          geoCountry = normalizeOnboardingCountry(geoJson.country);
+        }
+      } catch {
+        // Local/dev often has no geo headers — keep fallbacks.
+      }
+      if (cancelled) return;
+
+      const nextCountry = geoCountry || "SE";
+      setCountry(nextCountry);
+      setCurrency(
+        savedCurrency && savedCurrency !== "USD"
+          ? savedCurrency
+          : currencyForCountry(nextCountry)
       );
     }
 
@@ -769,7 +804,12 @@ export default function OnboardingPage() {
                     </span>
                     <FancySelect
                       value={country}
-                      onChange={setCountry}
+                      onChange={(value) => {
+                        setCountry(value);
+                        if (!currencyTouchedRef.current) {
+                          setCurrency(currencyForCountry(value));
+                        }
+                      }}
                       options={COUNTRY_SELECT_OPTIONS}
                       placeholder="Select country"
                       searchable
@@ -782,7 +822,10 @@ export default function OnboardingPage() {
                     </span>
                     <FancySelect
                       value={currency}
-                      onChange={setCurrency}
+                      onChange={(value) => {
+                        currencyTouchedRef.current = true;
+                        setCurrency(value);
+                      }}
                       options={CURRENCY_SELECT_OPTIONS}
                       placeholder="Select currency"
                     />

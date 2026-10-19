@@ -137,6 +137,17 @@ export function SupportChat() {
     }
   }, [open, view]);
 
+  useEffect(() => {
+    if (!open) return;
+    const mobile = window.matchMedia("(max-width: 767px)");
+    if (!mobile.matches) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [open]);
+
   const loadTicketMessages = useCallback(async (ticketId: string) => {
     const res = await fetch(`/api/support/tickets/${ticketId}`);
     const json = await res.json().catch(() => ({}));
@@ -269,8 +280,8 @@ export function SupportChat() {
   return (
     <div className="pointer-events-none fixed bottom-4 right-4 z-[60] flex flex-col items-end gap-3 md:bottom-6 md:right-6">
       {open && (
-        <div className="pointer-events-auto flex h-[min(560px,calc(100vh-7rem))] w-[min(400px,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-[0_12px_40px_rgba(16,24,40,0.14)]">
-          <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
+        <div className="pointer-events-auto fixed inset-0 z-[60] flex h-[100dvh] w-screen flex-col overflow-hidden border-0 bg-white md:absolute md:inset-auto md:bottom-0 md:right-0 md:h-[min(560px,calc(100vh-7rem))] md:w-[min(400px,calc(100vw-2rem))] md:rounded-2xl md:border md:border-line md:shadow-[0_12px_40px_rgba(16,24,40,0.14)]">
+          <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] shrink-0">
             <div className="min-w-0">
               {view === "history" ? (
                 <button
@@ -310,7 +321,7 @@ export function SupportChat() {
                 </>
               )}
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 shrink-0">
               {view === "chat" && (
                 <>
                   <button
@@ -320,7 +331,7 @@ export function SupportChat() {
                       setView("history");
                       void loadHistory();
                     }}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-500 hover:bg-gray-50 hover:text-gray-800"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full text-gray-500 hover:bg-gray-50 hover:text-gray-800"
                   >
                     <History className="h-4 w-4" strokeWidth={1.75} />
                   </button>
@@ -328,7 +339,7 @@ export function SupportChat() {
                     type="button"
                     aria-label="New conversation"
                     onClick={() => void startNewConversation()}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-500 hover:bg-gray-50 hover:text-gray-800"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full text-gray-500 hover:bg-gray-50 hover:text-gray-800"
                   >
                     <Plus className="h-4 w-4" strokeWidth={1.75} />
                   </button>
@@ -338,9 +349,9 @@ export function SupportChat() {
                 type="button"
                 aria-label="Close support chat"
                 onClick={() => setOpen(false)}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-500 hover:bg-gray-50 hover:text-gray-800"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-gray-500 hover:bg-gray-50 hover:text-gray-800 md:h-8 md:w-8"
               >
-                <X className="h-4 w-4" strokeWidth={1.75} />
+                <X className="h-5 w-5 md:h-4 md:w-4" strokeWidth={1.75} />
               </button>
             </div>
           </div>
@@ -482,7 +493,7 @@ export function SupportChat() {
                 <div ref={bottomRef} />
               </div>
 
-              <div className="border-t border-line p-3">
+              <div className="border-t border-line p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shrink-0">
                 <div className="flex items-end gap-2">
                   <textarea
                     ref={inputRef}
@@ -523,7 +534,9 @@ export function SupportChat() {
         aria-label={open ? "Close support chat" : "Open support chat"}
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="pointer-events-auto inline-flex h-14 w-14 items-center justify-center rounded-full bg-gray-900 text-white shadow-[0_8px_24px_rgba(16,24,40,0.22)] transition-transform hover:scale-[1.03] hover:bg-gray-800 active:scale-[0.98]"
+        className={`pointer-events-auto inline-flex h-14 w-14 items-center justify-center rounded-full bg-gray-900 text-white shadow-[0_8px_24px_rgba(16,24,40,0.22)] transition-transform hover:scale-[1.03] hover:bg-gray-800 active:scale-[0.98] ${
+          open ? "hidden md:inline-flex" : ""
+        }`}
       >
         {open ? (
           <X className="h-6 w-6" strokeWidth={1.75} />

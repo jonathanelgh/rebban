@@ -37,6 +37,7 @@ const EMPTY_PRICING: PlatformPricing = {
   yearly: null,
   yearlyPerMonth: null,
   yearlySavings: null,
+  currency: "EUR",
 };
 
 const BillingContext = createContext<BillingState | null>(null);

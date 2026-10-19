@@ -13,6 +13,7 @@ import {
   computeEntitlement,
   isPaidSubscriptionStatus,
 } from "@/lib/billing/plan";
+import { platformBillingCurrencyForCountry } from "@/lib/stripe/billing-currency";
 import { fetchPlatformPricing } from "@/lib/stripe/prices";
 import { syncOrgSubscriptionFromStripe } from "@/lib/stripe/sync-subscription";
 
@@ -32,7 +33,8 @@ export async function GET() {
   }
 
   let org = await getOrganizationStripeState(supabase, organizationId);
-  const pricing = await fetchPlatformPricing();
+  const billingCurrency = platformBillingCurrencyForCountry(org?.country);
+  const pricing = await fetchPlatformPricing({ currency: billingCurrency });
 
   let cancelAtPeriodEnd = false;
   let currentPeriodEnd: string | null = null;
@@ -113,6 +115,7 @@ export async function GET() {
     complimentaryPro: entitlement.complimentaryPro,
     planLabel: entitlement.planLabel,
     pricing,
+    billingCurrency: pricing.currency,
     cancelAtPeriodEnd,
     currentPeriodEnd,
     paymentMethodLabel,

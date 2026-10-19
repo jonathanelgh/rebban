@@ -2,10 +2,11 @@
 
 import React, { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Mail } from "lucide-react";
+import { Mail, Newspaper } from "lucide-react";
 import { OutreachSettingsPanel } from "@/components/admin/OutreachSettingsPanel";
+import { BlogAutomationPanel } from "@/components/admin/BlogAutomationPanel";
 
-type SectionId = "outreach";
+type SectionId = "outreach" | "blog";
 
 const SECTIONS: {
   id: SectionId;
@@ -18,6 +19,12 @@ const SECTIONS: {
     label: "Outreach",
     description: "Gmail connection and daily send limits",
     icon: Mail,
+  },
+  {
+    id: "blog",
+    label: "Blog automation",
+    description: "AI topics, schedule, and auto-publish",
+    icon: Newspaper,
   },
 ];
 
@@ -142,6 +149,18 @@ function AdminSettingsInner() {
                 Founder outreach Gmail and send window controls.
               </p>
               <OutreachSettingsPanel />
+            </div>
+          )}
+          {section === "blog" && (
+            <div>
+              <h2 className="text-base sm:text-lg font-semibold text-gray-900 tracking-tight mb-1">
+                Blog automation
+              </h2>
+              <p className="text-sm text-gray-500 mb-5">
+                Schedule AI-written freelancer articles with SEO topics and
+                cover images.
+              </p>
+              <BlogAutomationPanel />
             </div>
           )}
         </div>

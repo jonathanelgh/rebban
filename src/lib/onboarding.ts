@@ -39,6 +39,37 @@ export const CURRENCY_OPTIONS = [
   "AUD",
 ] as const;
 
+const COUNTRY_CURRENCY: Record<string, (typeof CURRENCY_OPTIONS)[number]> = {
+  SE: "SEK",
+  NO: "NOK",
+  DK: "DKK",
+  FI: "EUR",
+  DE: "EUR",
+  NL: "EUR",
+  FR: "EUR",
+  ES: "EUR",
+  PT: "EUR",
+  IE: "EUR",
+  US: "USD",
+  GB: "GBP",
+  CA: "CAD",
+  AU: "AUD",
+  CH: "CHF",
+};
+
+export function currencyForCountry(countryCode: string | null | undefined) {
+  const code = String(countryCode || "").trim().toUpperCase();
+  return COUNTRY_CURRENCY[code] || "USD";
+}
+
+/** Map a geo IP country into an onboarding country option. */
+export function normalizeOnboardingCountry(countryCode: string | null | undefined) {
+  const code = String(countryCode || "").trim().toUpperCase();
+  if (!code || code === "XX") return null;
+  if (COUNTRY_OPTIONS.some((option) => option.code === code)) return code;
+  return "OTHER";
+}
+
 /** Common freelancer / indie-agency industries for onboarding. */
 export const INDUSTRY_OPTIONS = [
   { value: "design", label: "Design & Branding" },
