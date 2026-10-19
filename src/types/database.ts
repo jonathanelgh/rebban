@@ -1694,6 +1694,8 @@ export type Database = {
           timezone: string
           title: string | null
           updated_at: string
+          welcome_email_due_at: string | null
+          welcome_email_sent_at: string | null
         }
         Insert: {
           active_organization_id?: string | null
@@ -1712,6 +1714,8 @@ export type Database = {
           timezone?: string
           title?: string | null
           updated_at?: string
+          welcome_email_due_at?: string | null
+          welcome_email_sent_at?: string | null
         }
         Update: {
           active_organization_id?: string | null
@@ -1730,6 +1734,8 @@ export type Database = {
           timezone?: string
           title?: string | null
           updated_at?: string
+          welcome_email_due_at?: string | null
+          welcome_email_sent_at?: string | null
         }
         Relationships: [
           {

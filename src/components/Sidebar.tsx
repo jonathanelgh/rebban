@@ -25,6 +25,7 @@ import {
   ChartColumn,
   Headphones,
   Contact,
+  Newspaper,
   type LucideIcon,
 } from "lucide-react";
 import { useTimeTracking, formatElapsed } from "@/components/TimeTrackingContext";
@@ -173,6 +174,13 @@ function SidebarInner({
               icon={Headphones}
               label="Support"
               active={pathname.startsWith("/admin/support")}
+              onNavigate={handleNavigate}
+            />
+            <NavItem
+              href="/admin/blog"
+              icon={Newspaper}
+              label="Articles"
+              active={pathname.startsWith("/admin/blog")}
               onNavigate={handleNavigate}
             />
           </nav>
