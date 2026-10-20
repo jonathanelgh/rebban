@@ -27,7 +27,8 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
     pathname.includes("/template") ||
     pathname.startsWith("/p/") ||
     pathname.startsWith("/pay/") ||
-    pathname.startsWith("/f/");
+    pathname.startsWith("/f/") ||
+    pathname.startsWith("/b/");
   const isAuthLayout =
     pathname.startsWith("/login") ||
     pathname.startsWith("/signup") ||
@@ -47,17 +48,20 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
             ? { label: "New Invoice", href: "/invoices?new=1" }
             : pathname === "/time-tracking"
               ? { label: "Add time", href: "/time-tracking?new=1" }
-              : pathname === "/leads/forms" || pathname.startsWith("/leads/forms/")
-                ? { label: "New form", href: "/leads/forms?new=1" }
-                : pathname === "/leads" || pathname.startsWith("/leads/")
-                  ? { label: "Add lead", href: "/leads?new=1" }
-                  : null;
+              : pathname === "/calendar" || pathname.startsWith("/calendar/")
+                ? { label: "Create meeting", href: "/calendar?new=1" }
+                : pathname === "/leads/forms" || pathname.startsWith("/leads/forms/")
+                  ? { label: "New form", href: "/leads/forms?new=1" }
+                  : pathname === "/leads" || pathname.startsWith("/leads/")
+                    ? { label: "Add lead", href: "/leads?new=1" }
+                    : null;
   const hideCreateMenuOnDesktop = Boolean(mobilePageCta) ||
     pathname.startsWith("/proposals/") ||
     pathname.startsWith("/clients/") ||
     pathname.startsWith("/tasks/") ||
     pathname.startsWith("/invoices/") ||
-    pathname.startsWith("/time-tracking/");
+    pathname.startsWith("/time-tracking/") ||
+    pathname.startsWith("/calendar");
   const hideCreateMenuEntirely =
     pathname === "/admin" || pathname.startsWith("/admin/");
 

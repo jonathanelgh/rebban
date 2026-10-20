@@ -10,6 +10,7 @@ import {
   FileSpreadsheet,
   ListTodo,
   Contact,
+  CalendarDays,
 } from "lucide-react";
 import { useBilling } from "@/components/BillingContext";
 
@@ -49,6 +50,12 @@ const CREATE_ITEMS = [
     label: "New invoice",
     description: "Bill for time or accepted proposals",
     icon: FileSpreadsheet,
+  },
+  {
+    href: "/calendar?new=1",
+    label: "Create meeting",
+    description: "Send a booking link or schedule a time",
+    icon: CalendarDays,
   },
 ] as const;
 

@@ -50,12 +50,16 @@ export async function updateSession(request: NextRequest) {
     path.startsWith("/pay/") || path.startsWith("/api/stripe/pay/");
   const isPublicLeadFormRoute =
     path.startsWith("/f/") || path.startsWith("/api/f/");
+  const isPublicBookingRoute =
+    path.startsWith("/b/") || path.startsWith("/api/b/");
   const isStripeWebhook = path === "/api/stripe/webhook";
   const isCronRoute = path.startsWith("/api/cron/");
   // Gmail / Outlook OAuth also return ?code= — do not treat as Supabase login.
   const isMailOAuthRoute =
     path.startsWith("/api/gmail/") ||
     path.startsWith("/api/outlook/") ||
+    path.startsWith("/api/google-calendar/") ||
+    path.startsWith("/api/zoom/") ||
     path.startsWith("/api/admin/outreach-gmail/");
 
   // Supabase sometimes returns ?code= on Site URL (/) instead of /auth/callback.
@@ -75,6 +79,8 @@ export async function updateSession(request: NextRequest) {
     path.startsWith("/auth/callback") ||
     path.startsWith("/api/gmail/callback") ||
     path.startsWith("/api/outlook/callback") ||
+    path.startsWith("/api/google-calendar/callback") ||
+    path.startsWith("/api/zoom/callback") ||
     path.startsWith("/api/admin/outreach-gmail/callback")
   ) {
     return supabaseResponse;
@@ -86,6 +92,7 @@ export async function updateSession(request: NextRequest) {
     isPublicProposalRoute ||
     isPublicPayRoute ||
     isPublicLeadFormRoute ||
+    isPublicBookingRoute ||
     isStripeWebhook ||
     isCronRoute
   ) {

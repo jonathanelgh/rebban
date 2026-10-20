@@ -290,6 +290,243 @@ export type Database = {
           },
         ]
       }
+      booking_availability: {
+        Row: {
+          created_at: string
+          end_time: string
+          id: string
+          organization_id: string
+          start_time: string
+          weekday: number
+        }
+        Insert: {
+          created_at?: string
+          end_time: string
+          id?: string
+          organization_id: string
+          start_time: string
+          weekday: number
+        }
+        Update: {
+          created_at?: string
+          end_time?: string
+          id?: string
+          organization_id?: string
+          start_time?: string
+          weekday?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booking_availability_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      booking_links: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          deleted_at: string | null
+          description: string | null
+          duration_minutes: number
+          id: string
+          is_active: boolean
+          location_details: string | null
+          location_type: Database["public"]["Enums"]["booking_location_type"]
+          online_provider: Database["public"]["Enums"]["booking_online_provider"] | null
+          organization_id: string
+          public_token: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          description?: string | null
+          duration_minutes: number
+          id?: string
+          is_active?: boolean
+          location_details?: string | null
+          location_type?: Database["public"]["Enums"]["booking_location_type"]
+          online_provider?: Database["public"]["Enums"]["booking_online_provider"] | null
+          organization_id: string
+          public_token: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          description?: string | null
+          duration_minutes?: number
+          id?: string
+          is_active?: boolean
+          location_details?: string | null
+          location_type?: Database["public"]["Enums"]["booking_location_type"]
+          online_provider?: Database["public"]["Enums"]["booking_online_provider"] | null
+          organization_id?: string
+          public_token?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booking_links_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      booking_settings: {
+        Row: {
+          confirmation_email_body: string | null
+          confirmation_email_subject: string | null
+          created_at: string
+          organization_id: string
+          reminder_1d_body: string | null
+          reminder_1d_enabled: boolean
+          reminder_1d_subject: string | null
+          reminder_1h_body: string | null
+          reminder_1h_enabled: boolean
+          reminder_1h_subject: string | null
+          slot_interval_minutes: number
+          timezone: string
+          updated_at: string
+        }
+        Insert: {
+          confirmation_email_body?: string | null
+          confirmation_email_subject?: string | null
+          created_at?: string
+          organization_id: string
+          reminder_1d_body?: string | null
+          reminder_1d_enabled?: boolean
+          reminder_1d_subject?: string | null
+          reminder_1h_body?: string | null
+          reminder_1h_enabled?: boolean
+          reminder_1h_subject?: string | null
+          slot_interval_minutes?: number
+          timezone?: string
+          updated_at?: string
+        }
+        Update: {
+          confirmation_email_body?: string | null
+          confirmation_email_subject?: string | null
+          created_at?: string
+          organization_id?: string
+          reminder_1d_body?: string | null
+          reminder_1d_enabled?: boolean
+          reminder_1d_subject?: string | null
+          reminder_1h_body?: string | null
+          reminder_1h_enabled?: boolean
+          reminder_1h_subject?: string | null
+          slot_interval_minutes?: number
+          timezone?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booking_settings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bookings: {
+        Row: {
+          booking_link_id: string | null
+          confirmation_email_sent_at: string | null
+          created_at: string
+          ends_at: string
+          google_event_id: string | null
+          guest_email: string
+          guest_name: string
+          guest_notes: string | null
+          id: string
+          location_details: string | null
+          location_type: Database["public"]["Enums"]["booking_location_type"] | null
+          meeting_id: string | null
+          meeting_url: string | null
+          online_provider: Database["public"]["Enums"]["booking_online_provider"] | null
+          organization_id: string
+          reminder_1d_sent_at: string | null
+          reminder_1h_sent_at: string | null
+          starts_at: string
+          status: Database["public"]["Enums"]["booking_status"]
+          title: string | null
+          updated_at: string
+        }
+        Insert: {
+          booking_link_id?: string | null
+          confirmation_email_sent_at?: string | null
+          created_at?: string
+          ends_at: string
+          google_event_id?: string | null
+          guest_email: string
+          guest_name: string
+          guest_notes?: string | null
+          id?: string
+          location_details?: string | null
+          location_type?: Database["public"]["Enums"]["booking_location_type"] | null
+          meeting_id?: string | null
+          meeting_url?: string | null
+          online_provider?: Database["public"]["Enums"]["booking_online_provider"] | null
+          organization_id: string
+          reminder_1d_sent_at?: string | null
+          reminder_1h_sent_at?: string | null
+          starts_at: string
+          status?: Database["public"]["Enums"]["booking_status"]
+          title?: string | null
+          updated_at?: string
+        }
+        Update: {
+          booking_link_id?: string | null
+          confirmation_email_sent_at?: string | null
+          created_at?: string
+          ends_at?: string
+          google_event_id?: string | null
+          guest_email?: string
+          guest_name?: string
+          guest_notes?: string | null
+          id?: string
+          location_details?: string | null
+          location_type?: Database["public"]["Enums"]["booking_location_type"] | null
+          meeting_id?: string | null
+          meeting_url?: string | null
+          online_provider?: Database["public"]["Enums"]["booking_online_provider"] | null
+          organization_id?: string
+          reminder_1d_sent_at?: string | null
+          reminder_1h_sent_at?: string | null
+          starts_at?: string
+          status?: Database["public"]["Enums"]["booking_status"]
+          title?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bookings_booking_link_id_fkey"
+            columns: ["booking_link_id"]
+            isOneToOne: false
+            referencedRelation: "booking_links"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bookings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clients: {
         Row: {
           company: string | null
@@ -342,6 +579,112 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "clients_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      google_calendar_connections: {
+        Row: {
+          access_token: string
+          calendar_id: string
+          connected_at: string
+          email: string
+          id: string
+          organization_id: string | null
+          refresh_token: string
+          revoked_at: string | null
+          scope: string | null
+          token_expiry: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_token: string
+          calendar_id?: string
+          connected_at?: string
+          email: string
+          id?: string
+          organization_id?: string | null
+          refresh_token: string
+          revoked_at?: string | null
+          scope?: string | null
+          token_expiry: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_token?: string
+          calendar_id?: string
+          connected_at?: string
+          email?: string
+          id?: string
+          organization_id?: string | null
+          refresh_token?: string
+          revoked_at?: string | null
+          scope?: string | null
+          token_expiry?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "google_calendar_connections_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      zoom_connections: {
+        Row: {
+          access_token: string
+          connected_at: string
+          email: string
+          id: string
+          organization_id: string | null
+          refresh_token: string
+          revoked_at: string | null
+          scope: string | null
+          token_expiry: string
+          updated_at: string
+          user_id: string
+          zoom_user_id: string | null
+        }
+        Insert: {
+          access_token: string
+          connected_at?: string
+          email: string
+          id?: string
+          organization_id?: string | null
+          refresh_token: string
+          revoked_at?: string | null
+          scope?: string | null
+          token_expiry: string
+          updated_at?: string
+          user_id: string
+          zoom_user_id?: string | null
+        }
+        Update: {
+          access_token?: string
+          connected_at?: string
+          email?: string
+          id?: string
+          organization_id?: string | null
+          refresh_token?: string
+          revoked_at?: string | null
+          scope?: string | null
+          token_expiry?: string
+          updated_at?: string
+          user_id?: string
+          zoom_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "zoom_connections_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
@@ -3129,6 +3472,21 @@ export type Database = {
       }
       get_public_invoice: { Args: { p_token: string }; Returns: Json }
       get_public_lead_form: { Args: { p_token: string }; Returns: Json }
+      get_public_booking_link: { Args: { p_token: string }; Returns: Json }
+      get_public_booking_busy: {
+        Args: { p_from: string; p_to: string; p_token: string }
+        Returns: Json
+      }
+      create_public_booking: {
+        Args: {
+          p_guest_email: string
+          p_guest_name: string
+          p_guest_notes?: string | null
+          p_starts_at: string
+          p_token: string
+        }
+        Returns: Json
+      }
       get_public_proposal: { Args: { p_token: string }; Returns: Json }
       get_signed_proposal_bundle: { Args: { p_token: string }; Returns: Json }
       is_org_admin: { Args: { p_org_id: string }; Returns: boolean }
@@ -3204,6 +3562,9 @@ export type Database = {
       }
     }
     Enums: {
+      booking_location_type: "in_person" | "online"
+      booking_online_provider: "google_meet" | "zoom"
+      booking_status: "scheduled" | "cancelled" | "completed"
       client_status: "active" | "idle" | "prospect"
       invoice_line_unit: "qty" | "hr" | "day" | "flat"
       invoice_recurrence_interval:
@@ -3376,6 +3737,9 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      booking_location_type: ["in_person", "online"],
+      booking_online_provider: ["google_meet", "zoom"],
+      booking_status: ["scheduled", "cancelled", "completed"],
       client_status: ["active", "idle", "prospect"],
       invoice_line_unit: ["qty", "hr", "day", "flat"],
       invoice_recurrence_interval: [

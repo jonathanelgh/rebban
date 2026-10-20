@@ -314,12 +314,19 @@ export async function sendEmailViaOutlook(options: {
   const supabase = options.useAdmin
     ? createAdminClient()
     : await createClient();
-  const { data: connection } = await supabase
+  const { data: connection, error: connectionError } = await supabase
     .from("outlook_connections")
     .select("scope")
     .eq("user_id", options.userId)
     .is("revoked_at", null)
     .maybeSingle();
+
+  if (connectionError) {
+    console.error("[outlook] connection lookup failed", connectionError);
+    throw new Error(
+      connectionError.message || "Could not read Outlook connection."
+    );
+  }
 
   if (!connection) return null;
 

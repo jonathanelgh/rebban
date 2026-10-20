@@ -61,6 +61,8 @@ export async function deleteUserAccount(userId: string) {
 
   await admin.from("gmail_connections").delete().eq("user_id", userId);
   await admin.from("outlook_connections").delete().eq("user_id", userId);
+  await admin.from("google_calendar_connections").delete().eq("user_id", userId);
+  await admin.from("zoom_connections").delete().eq("user_id", userId);
   await admin.from("outreach_gmail_connections").delete().eq("user_id", userId);
 
   const { error: profileError } = await admin

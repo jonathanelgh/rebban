@@ -26,6 +26,7 @@ import {
   Headphones,
   Contact,
   Newspaper,
+  CalendarDays,
   type LucideIcon,
 } from "lucide-react";
 import { useTimeTracking, formatElapsed } from "@/components/TimeTrackingContext";
@@ -230,6 +231,13 @@ function SidebarInner({
               active={pathname === "/time-tracking"}
               badge={isTracking ? formatElapsed(elapsedSeconds) : undefined}
               badgeLive={isTracking}
+              onNavigate={handleNavigate}
+            />
+            <NavItem
+              href="/calendar"
+              icon={CalendarDays}
+              label="Calendar"
+              active={pathname.startsWith("/calendar")}
               onNavigate={handleNavigate}
             />
           </nav>

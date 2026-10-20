@@ -216,6 +216,16 @@ function SettingsPageInner() {
   const [stripeReady, setStripeReady] = useState(false);
   const [stripeBusy, setStripeBusy] = useState(false);
   const [stripeNotice, setStripeNotice] = useState<string | null>(null);
+  const [gcalConfigured, setGcalConfigured] = useState(false);
+  const [gcalConnected, setGcalConnected] = useState(false);
+  const [gcalEmail, setGcalEmail] = useState<string | null>(null);
+  const [gcalBusy, setGcalBusy] = useState(false);
+  const [gcalNotice, setGcalNotice] = useState<string | null>(null);
+  const [zoomConfigured, setZoomConfigured] = useState(false);
+  const [zoomConnected, setZoomConnected] = useState(false);
+  const [zoomEmail, setZoomEmail] = useState<string | null>(null);
+  const [zoomBusy, setZoomBusy] = useState(false);
+  const [zoomNotice, setZoomNotice] = useState<string | null>(null);
   const [billingConfigured, setBillingConfigured] = useState(false);
   const [billingActive, setBillingActive] = useState(false);
   const [billingPlanLabel, setBillingPlanLabel] = useState("Trial");
@@ -394,7 +404,9 @@ function SettingsPageInner() {
     const outlook = searchParams.get("outlook");
     const stripe = searchParams.get("stripe");
     const billing = searchParams.get("billing");
-    if (!gmail && !outlook && !stripe && !billing) return;
+    const gcal = searchParams.get("gcal");
+    const zoom = searchParams.get("zoom");
+    if (!gmail && !outlook && !stripe && !billing && !gcal && !zoom) return;
 
     if (gmail === "connected") {
       setGmailNotice("Gmail connected. Proposal emails will send from your account.");
@@ -414,6 +426,49 @@ function SettingsPageInner() {
       const reason =
         searchParams.get("reason") || "Could not connect Outlook.";
       setOutlookNotice(reason);
+      setSection("integrations");
+    }
+
+    if (gcal === "connected") {
+      setGcalNotice("Google Calendar connected.");
+      setSection("integrations");
+      void (async () => {
+        const res = await fetch("/api/google-calendar/status");
+        if (!res.ok) return;
+        const json = (await res.json()) as {
+          configured?: boolean;
+          connected?: boolean;
+          email?: string | null;
+        };
+        setGcalConfigured(Boolean(json.configured));
+        setGcalConnected(Boolean(json.connected));
+        setGcalEmail(json.email || null);
+      })();
+    } else if (gcal === "error") {
+      const reason =
+        searchParams.get("reason") || "Could not connect Google Calendar.";
+      setGcalNotice(reason);
+      setSection("integrations");
+    }
+
+    if (zoom === "connected") {
+      setZoomNotice("Zoom connected.");
+      setSection("integrations");
+      void (async () => {
+        const res = await fetch("/api/zoom/status");
+        if (!res.ok) return;
+        const json = (await res.json()) as {
+          configured?: boolean;
+          connected?: boolean;
+          email?: string | null;
+        };
+        setZoomConfigured(Boolean(json.configured));
+        setZoomConnected(Boolean(json.connected));
+        setZoomEmail(json.email || null);
+      })();
+    } else if (zoom === "error") {
+      const reason = searchParams.get("reason") || "Could not connect Zoom.";
+      setZoomNotice(reason);
       setSection("integrations");
     }
 
@@ -472,11 +527,14 @@ function SettingsPageInner() {
     if (section !== "integrations") return;
     let cancelled = false;
     async function loadIntegrations() {
-      const [gmailRes, outlookRes, stripeRes] = await Promise.all([
-        fetch("/api/gmail/status"),
-        fetch("/api/outlook/status"),
-        fetch("/api/stripe/connect/status"),
-      ]);
+      const [gmailRes, outlookRes, stripeRes, gcalRes, zoomRes] =
+        await Promise.all([
+          fetch("/api/gmail/status"),
+          fetch("/api/outlook/status"),
+          fetch("/api/stripe/connect/status"),
+          fetch("/api/google-calendar/status"),
+          fetch("/api/zoom/status"),
+        ]);
       if (cancelled) return;
       if (gmailRes.ok) {
         const json = (await gmailRes.json()) as {
@@ -523,6 +581,26 @@ function SettingsPageInner() {
         setStripeConfigured(Boolean(json.configured));
         setStripeConnected(Boolean(json.connected));
         setStripeReady(Boolean(json.ready));
+      }
+      if (gcalRes.ok) {
+        const json = (await gcalRes.json()) as {
+          configured?: boolean;
+          connected?: boolean;
+          email?: string | null;
+        };
+        setGcalConfigured(Boolean(json.configured));
+        setGcalConnected(Boolean(json.connected));
+        setGcalEmail(json.email || null);
+      }
+      if (zoomRes.ok) {
+        const json = (await zoomRes.json()) as {
+          configured?: boolean;
+          connected?: boolean;
+          email?: string | null;
+        };
+        setZoomConfigured(Boolean(json.configured));
+        setZoomConnected(Boolean(json.connected));
+        setZoomEmail(json.email || null);
       }
     }
     void loadIntegrations();
@@ -615,6 +693,38 @@ function SettingsPageInner() {
     setOutlookNotice(
       "Outlook disconnected. Emails will use Rebban’s sender again."
     );
+  }
+
+  async function handleGoogleCalendarDisconnect() {
+    setGcalBusy(true);
+    setGcalNotice(null);
+    const res = await fetch("/api/google-calendar/disconnect", {
+      method: "POST",
+    });
+    setGcalBusy(false);
+    if (!res.ok) {
+      const json = await res.json();
+      setGcalNotice(json.error || "Failed to disconnect Google Calendar.");
+      return;
+    }
+    setGcalConnected(false);
+    setGcalEmail(null);
+    setGcalNotice("Google Calendar disconnected.");
+  }
+
+  async function handleZoomDisconnect() {
+    setZoomBusy(true);
+    setZoomNotice(null);
+    const res = await fetch("/api/zoom/disconnect", { method: "POST" });
+    setZoomBusy(false);
+    if (!res.ok) {
+      const json = await res.json();
+      setZoomNotice(json.error || "Failed to disconnect Zoom.");
+      return;
+    }
+    setZoomConnected(false);
+    setZoomEmail(null);
+    setZoomNotice("Zoom disconnected.");
   }
 
   async function handleStripeConnect() {
@@ -1960,9 +2070,17 @@ function SettingsPageInner() {
                 title="Integrations"
                 subtitle="Connect tools you already use to get paid and stay in sync."
               >
-                {(gmailNotice || outlookNotice || stripeNotice) && (
+                {(gmailNotice ||
+                  outlookNotice ||
+                  stripeNotice ||
+                  gcalNotice ||
+                  zoomNotice) && (
                   <p className="mb-4 text-[13px] text-gray-600 bg-[#FAFBFC] border border-line rounded-xl px-3.5 py-2.5">
-                    {stripeNotice || outlookNotice || gmailNotice}
+                    {zoomNotice ||
+                      gcalNotice ||
+                      stripeNotice ||
+                      outlookNotice ||
+                      gmailNotice}
                   </p>
                 )}
                 <div className="space-y-3">
@@ -2096,7 +2214,41 @@ function SettingsPageInner() {
                         className="w-6 h-6"
                       />
                     }
-                    description="Block time for tracked work"
+                    description={
+                      gcalConnected && gcalEmail
+                        ? `Connected as ${gcalEmail}`
+                        : "Block busy times, create Meet links, and sync bookings"
+                    }
+                    connected={gcalConnected}
+                    actionLabel={
+                      !gcalConfigured
+                        ? "Not configured"
+                        : gcalBusy
+                          ? "Working…"
+                          : undefined
+                    }
+                    onConnect={
+                      gcalConfigured && !gcalBusy
+                        ? () => {
+                            window.location.href = `/api/google-calendar/connect?returnTo=${encodeURIComponent("/settings?section=integrations&gcal=connected")}`;
+                          }
+                        : undefined
+                    }
+                    onDisconnect={
+                      gcalConfigured && gcalConnected && !gcalBusy
+                        ? () => {
+                            void handleGoogleCalendarDisconnect();
+                          }
+                        : undefined
+                    }
+                  />
+                  <IntegrationRow
+                    name="Zoom"
+                    icon={
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src="/zoom.svg" alt="" className="w-6 h-6 rounded" />
+                    }
+                    description="Create Zoom meetings when clients book online"
                     connected={false}
                     actionLabel="Coming soon"
                   />
@@ -2114,10 +2266,10 @@ function SettingsPageInner() {
                 <div className="mt-6 flex items-start gap-2.5 rounded-xl bg-[#FAFBFC] border border-line px-3.5 py-3">
                   <Shield className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
                   <p className="text-[13px] text-gray-500 leading-relaxed">
-                    Gmail and Outlook use OAuth with send-only access. Rebban
-                    never stores your password, and we only send emails you
-                    choose to send. If neither mailbox is connected, emails
-                    still send via Rebban.
+                    Gmail and Outlook use OAuth with send-only access. Google
+                    Calendar and Zoom use OAuth for scheduling only. Rebban
+                    never stores your password. If neither mailbox is connected,
+                    emails still send via Rebban.
                   </p>
                 </div>
               </Section>

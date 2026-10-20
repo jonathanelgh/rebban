@@ -360,12 +360,19 @@ export async function sendEmailViaGmail(options: {
   useAdmin?: boolean;
 }) {
   const supabase = options.useAdmin ? createAdminClient() : await createClient();
-  const { data: connection } = await supabase
+  const { data: connection, error: connectionError } = await supabase
     .from("gmail_connections")
     .select("scope")
     .eq("user_id", options.userId)
     .is("revoked_at", null)
     .maybeSingle();
+
+  if (connectionError) {
+    console.error("[gmail] connection lookup failed", connectionError);
+    throw new Error(
+      connectionError.message || "Could not read Gmail connection."
+    );
+  }
 
   if (!connection) return null;
 
