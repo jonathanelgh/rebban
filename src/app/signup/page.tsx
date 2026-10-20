@@ -22,7 +22,7 @@ export default function SignupPage() {
     const supabase = createClient();
     const name = fullName.trim();
 
-    const { error: signUpError } = await supabase.auth.signUp({
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
       email: email.trim(),
       password,
       options: {
@@ -43,6 +43,15 @@ export default function SignupPage() {
     }
 
     trackSignUp("email");
+
+    // Best-effort internal celebration email (must not block signup).
+    if (signUpData.session) {
+      try {
+        await fetch("/api/lifecycle/notify-signup", { method: "POST" });
+      } catch {
+        // ignore
+      }
+    }
 
     // Full navigation so middleware + session cookies are applied cleanly.
     window.location.assign("/onboarding");

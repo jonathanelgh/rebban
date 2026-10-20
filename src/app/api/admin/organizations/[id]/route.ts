@@ -256,7 +256,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
     }
 
     const now = new Date().toISOString();
-    const { error: orgError } = await gate.db
+    const { data: deletedOrg, error: orgError } = await gate.db
       .from("organizations")
       .update({
         deleted_at: now,
@@ -264,10 +264,21 @@ export async function DELETE(_request: Request, context: RouteContext) {
         complimentary_pro: false,
         updated_at: now,
       })
-      .eq("id", id);
+      .eq("id", id)
+      .select("id")
+      .maybeSingle();
 
     if (orgError) {
       return NextResponse.json({ error: orgError.message }, { status: 500 });
+    }
+    if (!deletedOrg) {
+      return NextResponse.json(
+        {
+          error:
+            "Could not delete workspace. Check platform-admin permissions on organizations.",
+        },
+        { status: 500 }
+      );
     }
 
     if (org.created_by) {

@@ -44,22 +44,44 @@ export async function POST(request: Request, context: RouteContext) {
     const now = new Date().toISOString();
 
     if (action === "grant_pro") {
-      const { error } = await gate.db
+      const { data: updated, error } = await gate.db
         .from("organizations")
         .update({ complimentary_pro: true, updated_at: now })
-        .eq("id", id);
+        .eq("id", id)
+        .select("id, complimentary_pro")
+        .maybeSingle();
       if (error) {
         return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      if (!updated?.complimentary_pro) {
+        return NextResponse.json(
+          {
+            error:
+              "Could not grant Pro. Check platform-admin permissions on organizations.",
+          },
+          { status: 500 }
+        );
       }
     }
 
     if (action === "revoke_pro") {
-      const { error } = await gate.db
+      const { data: updated, error } = await gate.db
         .from("organizations")
         .update({ complimentary_pro: false, updated_at: now })
-        .eq("id", id);
+        .eq("id", id)
+        .select("id, complimentary_pro")
+        .maybeSingle();
       if (error) {
         return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      if (!updated || updated.complimentary_pro) {
+        return NextResponse.json(
+          {
+            error:
+              "Could not revoke Pro. Check platform-admin permissions on organizations.",
+          },
+          { status: 500 }
+        );
       }
     }
 

@@ -390,9 +390,9 @@ function LeadsPageInner() {
   ] as const;
 
   return (
-    <main className="w-full px-8 pt-10 pb-8 max-w-7xl mx-auto relative">
-      <div className="flex justify-between items-start mb-8 gap-4">
-        <div>
+    <main className="w-full min-w-0 max-w-7xl mx-auto relative px-4 md:px-8 pt-10 pb-8 overflow-x-hidden">
+      <div className="flex justify-between items-start mb-8 gap-4 min-w-0">
+        <div className="min-w-0">
           <h1 className="text-3xl font-semibold text-gray-900 tracking-tight">
             Leads
           </h1>
@@ -445,23 +445,23 @@ function LeadsPageInner() {
         />
       </div>
 
-      <div className="flex items-center justify-between mb-5 gap-3 flex-wrap">
-        <div className="relative w-72">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-5 gap-3 min-w-0">
+        <div className="relative w-full sm:w-72 sm:max-w-full shrink-0 min-w-0">
           <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search leads..."
-            className="w-full pl-10 pr-4 py-2.5 bg-white border border-line rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-100"
+            className="w-full min-w-0 pl-10 pr-4 py-2.5 bg-white border border-line rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-100"
           />
         </div>
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap min-w-0">
           {statusFilters.map(([key, label]) => (
             <button
               key={key}
               type="button"
               onClick={() => setFilter(key)}
-              className={`rounded-full border px-4 py-2 text-sm font-medium transition-colors cursor-pointer ${
+              className={`rounded-full border px-3 sm:px-4 py-2 text-sm font-medium transition-colors cursor-pointer shrink-0 ${
                 filter === key
                   ? "border-gray-900 bg-gray-900 text-white"
                   : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
@@ -473,9 +473,9 @@ function LeadsPageInner() {
         </div>
       </div>
 
-      <div className="surface-panel overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left">
+      <div className="surface-panel overflow-hidden min-w-0 max-w-full">
+        <div className="overflow-x-auto overscroll-x-contain max-w-full">
+          <table className="w-full min-w-[720px] text-sm text-left">
             <thead className="text-gray-400 font-medium">
               <tr className="border-b border-line">
                 <th className="px-6 py-3 font-medium">Lead</th>

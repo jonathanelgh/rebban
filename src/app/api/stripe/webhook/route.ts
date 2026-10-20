@@ -3,6 +3,7 @@ import type Stripe from "stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fulfillInvoiceCheckoutPaid } from "@/lib/invoices/fulfill-paid";
 import { handleSubscriptionInvoicePaymentFailed } from "@/lib/billing/payment-failed";
+import { notifyNewSubscription } from "@/lib/email/lifecycle-notify";
 import {
   getStripe,
   getStripeWebhookSecrets,
@@ -70,6 +71,51 @@ async function syncSubscriptionFromSession(session: Stripe.Checkout.Session) {
       stripe_price_id: priceId,
     })
     .eq("id", organizationId);
+
+  try {
+    const [{ data: org }, { data: ownerMember }] = await Promise.all([
+      admin
+        .from("organizations")
+        .select("name, created_by")
+        .eq("id", organizationId)
+        .maybeSingle(),
+      admin
+        .from("organization_members")
+        .select("user_id")
+        .eq("organization_id", organizationId)
+        .eq("role", "owner")
+        .eq("status", "active")
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    const ownerId = ownerMember?.user_id || org?.created_by || null;
+    const { data: profile } = ownerId
+      ? await admin
+          .from("profiles")
+          .select("full_name, email")
+          .eq("id", ownerId)
+          .maybeSingle()
+      : { data: null };
+
+    const interval =
+      session.metadata?.billing_interval ||
+      (priceId && process.env.STRIPE_PRICE_ID_YEARLY === priceId
+        ? "year"
+        : priceId
+          ? "month"
+          : null);
+
+    await notifyNewSubscription({
+      fullName: profile?.full_name,
+      email: profile?.email || session.customer_details?.email || session.customer_email,
+      organizationName: org?.name,
+      organizationId,
+      planInterval: interval,
+      subscriptionStatus: status,
+    });
+  } catch (error) {
+    console.error("[stripe webhook] subscription notify failed", error);
+  }
 }
 
 async function syncSubscription(subscription: Stripe.Subscription) {

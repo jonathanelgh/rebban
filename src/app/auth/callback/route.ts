@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import type { Enums } from "@/types/database";
+import { notifyNewSignup } from "@/lib/email/lifecycle-notify";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 function safeNextPath(next: string) {
   if (next.startsWith("/") && !next.startsWith("//") && !next.includes("://")) {
@@ -29,6 +31,11 @@ export async function GET(request: Request) {
         organizationName,
         marketingConsent,
       });
+      if (isSignupIntent) {
+        void notifySignupFromCallback().catch((error) => {
+          console.error("[lifecycle] google signup notify failed", error);
+        });
+      }
       const destination = safeNextPath(next);
       const destUrl = new URL(destination, origin);
       // Flag brand-new Google signups so the client can fire analytics once.
@@ -40,6 +47,44 @@ export async function GET(request: Request) {
   }
 
   return NextResponse.redirect(new URL("/login?error=auth", origin));
+}
+
+async function notifySignupFromCallback() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const createdAt = new Date(user.created_at).getTime();
+  if (Number.isNaN(createdAt) || Date.now() - createdAt > 15 * 60 * 1000) {
+    return;
+  }
+
+  const admin = createAdminClient();
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("full_name, email, active_organization_id")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (!profile) return;
+
+  let organizationName: string | null = null;
+  if (profile.active_organization_id) {
+    const { data: org } = await admin
+      .from("organizations")
+      .select("name")
+      .eq("id", profile.active_organization_id)
+      .maybeSingle();
+    organizationName = org?.name || null;
+  }
+
+  await notifyNewSignup({
+    fullName: profile.full_name,
+    email: profile.email || user.email,
+    organizationName,
+    source: "google",
+  });
 }
 
 async function applySignupPreferences(
