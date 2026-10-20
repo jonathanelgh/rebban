@@ -117,8 +117,10 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
             {/*
               Keep chrome outside the scroll container so the menu/create
               buttons stay pinned on every page (not only dashboard/tasks).
+              Offset by safe-area-inset-top so iOS notch/status bar never
+              clips the controls when the browser chrome collapses.
             */}
-            <div className="absolute top-4 inset-x-4 z-40 flex items-center justify-between gap-3 pointer-events-none">
+            <div className="absolute top-[calc(1rem+env(safe-area-inset-top,0px))] inset-x-4 z-40 flex items-center justify-between gap-3 pointer-events-none md:top-4">
               <button
                 type="button"
                 aria-label={mobileNavOpen ? "Close menu" : "Open menu"}
@@ -157,7 +159,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
               ) : null}
             </div>
             <div
-              className={`h-full min-h-0 min-w-0 flex flex-col max-md:pt-16 ${
+              className={`h-full min-h-0 min-w-0 flex flex-col max-md:pt-[calc(4rem+env(safe-area-inset-top,0px))] ${
                 pathname === "/" || pathname.startsWith("/tasks")
                   ? "overflow-hidden"
                   : "overflow-y-auto overflow-x-hidden no-scrollbar"

@@ -150,19 +150,11 @@ export function InvoiceActivityLog({
   if (variant === "panel") {
     if (!open) return null;
     return (
-      <div className="flex flex-col min-h-0 h-full animate-in fade-in duration-200">
-        <div className="bg-white border-b border-line px-6 py-5 shrink-0">
-          <div className="flex items-center gap-2">
-            <Activity className="w-4 h-4 text-[#2563EB]" />
-            <h3 className="font-semibold text-gray-900">Activity</h3>
-          </div>
-          <p className="text-[12px] text-gray-400 mt-1.5 leading-snug">
-            Sends and payment activity for this invoice.
-          </p>
-        </div>
-        <div className="flex-1 overflow-y-auto px-5 py-5 min-h-0">
-          <ActivityList events={events} loading={loading} compact />
-        </div>
+      <div className="flex flex-col min-h-0 flex-1 px-5 py-5">
+        <p className="text-[12px] text-gray-400 mb-4 leading-snug">
+          Sends and payment activity for this invoice.
+        </p>
+        <ActivityList events={events} loading={loading} compact />
       </div>
     );
   }

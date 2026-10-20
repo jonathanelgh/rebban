@@ -4,6 +4,7 @@ import {
   formatInvoiceQuantity,
   type InvoiceLineUnit,
 } from "@/lib/invoices/units";
+import { stripLinkedTimeEntryIds } from "@/lib/invoices/unbilled";
 
 export type InvoicePdfLine = {
   description: string;
@@ -207,7 +208,9 @@ export async function buildInvoicePdf(input: InvoicePdfInput): Promise<Buffer> {
     y += rowH;
 
     for (const line of input.lines) {
-      const descHeight = doc.heightOfString(line.description || "Item", {
+      const lineDescription =
+        stripLinkedTimeEntryIds(line.description || "") || "Item";
+      const descHeight = doc.heightOfString(lineDescription, {
         width: pageWidth * 0.48,
       });
       const thisRow = Math.max(rowH, descHeight + 12);
@@ -220,7 +223,7 @@ export async function buildInvoicePdf(input: InvoicePdfInput): Promise<Buffer> {
         .fillColor(ink)
         .font("Helvetica")
         .fontSize(9)
-        .text(line.description || "Item", colDesc + 8, y + 6, {
+        .text(lineDescription, colDesc + 8, y + 6, {
           width: pageWidth * 0.48,
         });
       const textY = y + 6;

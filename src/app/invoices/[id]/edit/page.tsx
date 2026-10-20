@@ -29,6 +29,9 @@ import {
   Clock,
   ListTodo,
   Download,
+  MoreHorizontal,
+  Settings,
+  X,
 } from "lucide-react";
 import { nanoid } from "nanoid";
 import { createClient } from "@/lib/supabase/client";
@@ -57,7 +60,12 @@ import {
 } from "@/lib/invoices/storage";
 import {
   addTimeEntriesToInvoice,
+  appendTimeSpecification,
+  collectLinkedTimeEntryIds,
+  embedLinkedTimeEntryIds,
   fetchUnbilledTimeEntries,
+  parseLinkedTimeEntryIds,
+  stripLinkedTimeEntryIds,
   summarizeUnbilled,
   unlockTimeEntriesByIds,
   unlockTimeEntriesForInvoice,
@@ -89,6 +97,7 @@ type LineItem = {
   unit: InvoiceLineUnit;
   unitPrice: string;
   timeEntryId?: string | null;
+  linkedTimeEntryIds?: string[];
   isNew?: boolean;
 };
 
@@ -168,6 +177,13 @@ export default function InvoiceEditorPage() {
   );
   const [error, setError] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<"settings" | "activity">(
+    "settings"
+  );
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [portalReady, setPortalReady] = useState(false);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
   const [setupOpen, setSetupOpen] = useState(true);
 
   const [number, setNumber] = useState("");
@@ -371,14 +387,23 @@ export default function InvoiceEditorPage() {
     );
 
     const loadedLines =
-      (linesRes.data ?? []).map((line) => ({
-        id: line.id,
-        description: line.description,
-        quantity: String(line.quantity ?? 1),
-        unit: asLineUnit(line.unit),
-        unitPrice: String(line.unit_price ?? 0),
-        timeEntryId: line.time_entry_id,
-      })) || [];
+      (linesRes.data ?? []).map((line) => {
+        const linkedTimeEntryIds = collectLinkedTimeEntryIds([
+          {
+            time_entry_id: line.time_entry_id,
+            description: line.description,
+          },
+        ]);
+        return {
+          id: line.id,
+          description: stripLinkedTimeEntryIds(line.description),
+          quantity: String(line.quantity ?? 1),
+          unit: asLineUnit(line.unit),
+          unitPrice: String(line.unit_price ?? 0),
+          timeEntryId: line.time_entry_id,
+          linkedTimeEntryIds,
+        };
+      }) || [];
     setLines(loadedLines.length ? loadedLines : [emptyLine()]);
     setOriginalLineIds(loadedLines.map((l) => l.id));
     setClients(clientsRes.data ?? []);
@@ -502,6 +527,37 @@ export default function InvoiceEditorPage() {
     };
   }, []);
 
+  useEffect(() => {
+    setPortalReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!moreMenuOpen) return;
+    function onPointer(e: MouseEvent) {
+      if (!moreMenuRef.current?.contains(e.target as Node)) {
+        setMoreMenuOpen(false);
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setMoreMenuOpen(false);
+    }
+    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [moreMenuOpen]);
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setSettingsOpen(false);
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [settingsOpen]);
+
   function flash(msg: string) {
     setMessage(msg);
     window.setTimeout(() => setMessage(null), 2400);
@@ -523,7 +579,14 @@ export default function InvoiceEditorPage() {
     });
   }
 
-  async function handleAddUnbilledTime(selected: UnbilledTimeEntry[]) {
+  async function handleAddUnbilledTime(
+    selected: UnbilledTimeEntry[],
+    options: { consolidateWithSpecification: boolean }
+  ) {
+    if (status !== "draft") {
+      setError("Only draft invoices can be edited.");
+      return;
+    }
     if (!organizationId || !invoiceId || selected.length === 0) return;
     setUnbilledBusy(true);
     setError(null);
@@ -538,12 +601,17 @@ export default function InvoiceEditorPage() {
         (Number(lines[0].unitPrice) === 0 || !lines[0].unitPrice)
           ? []
           : lines;
-      const created = await addTimeEntriesToInvoice(supabase, {
-        organizationId,
-        invoiceId,
-        entries: selected,
-        startPosition: baseLines.length,
-      });
+      const { created, specification } = await addTimeEntriesToInvoice(
+        supabase,
+        {
+          organizationId,
+          invoiceId,
+          entries: selected,
+          startPosition: baseLines.length,
+          consolidate: options.consolidateWithSpecification,
+          currency,
+        }
+      );
       const nextLines: LineItem[] = [
         ...baseLines,
         ...created.map((c) => ({
@@ -553,13 +621,30 @@ export default function InvoiceEditorPage() {
           unit: "hr" as const,
           unitPrice: String(c.unitPrice),
           timeEntryId: c.timeEntryId,
+          linkedTimeEntryIds: c.linkedTimeEntryIds,
         })),
       ];
       setLines(nextLines.length ? nextLines : [emptyLine()]);
       setOriginalLineIds(nextLines.map((l) => l.id));
+
+      if (specification) {
+        const nextNotes = appendTimeSpecification(notes, specification);
+        setNotes(nextNotes);
+        const { error: notesError } = await supabase
+          .from("invoices")
+          .update({ notes: nextNotes || null })
+          .eq("id", invoiceId)
+          .eq("organization_id", organizationId);
+        if (notesError) {
+          setError(notesError.message);
+        }
+      }
+
       setUnbilledModalOpen(false);
       flash(
-        `Added ${created.length} ${created.length === 1 ? "time entry" : "time entries"}`
+        options.consolidateWithSpecification
+          ? `Added ${selected.length} ${selected.length === 1 ? "hour" : "hours"} as one line`
+          : `Added ${created.length} ${created.length === 1 ? "time entry" : "time entries"}`
       );
       await refreshUnbilled();
     } catch (err) {
@@ -570,6 +655,10 @@ export default function InvoiceEditorPage() {
   }
 
   async function handleBannerUpload(file: File | null) {
+    if (status !== "draft") {
+      setError("Only draft invoices can be edited.");
+      return;
+    }
     if (!file || !organizationId || !invoiceId) return;
     if (!file.type.startsWith("image/")) {
       setError("Please choose a PNG or JPG image.");
@@ -598,6 +687,7 @@ export default function InvoiceEditorPage() {
   }
 
   async function removeBanner() {
+    if (status !== "draft") return;
     setBannerPath(null);
     setBannerPreviewUrl(null);
   }
@@ -605,6 +695,11 @@ export default function InvoiceEditorPage() {
   async function persist(nextStatus?: InvoiceStatus) {
     if (!organizationId || !invoiceId || !client) {
       setError("Client is required.");
+      return false;
+    }
+    // Content edits only on drafts. Status transitions (paid / void) still allowed.
+    if (status !== "draft" && !nextStatus) {
+      setError("Only draft invoices can be edited.");
       return false;
     }
 
@@ -721,15 +816,12 @@ export default function InvoiceEditorPage() {
     if (removedIds.length > 0) {
       const { data: removedRows } = await supabase
         .from("invoice_line_items")
-        .select("time_entry_id")
+        .select("time_entry_id, description")
         .eq("organization_id", organizationId)
         .in("id", removedIds);
-      const unlockIds = (removedRows || [])
-        .map((r) => r.time_entry_id)
-        .filter((id): id is string => Boolean(id));
       await unlockTimeEntriesByIds(supabase, {
         organizationId,
-        timeEntryIds: unlockIds,
+        timeEntryIds: collectLinkedTimeEntryIds(removedRows || []),
       });
       await supabase.from("invoice_line_items").delete().in("id", removedIds);
     }
@@ -739,7 +831,16 @@ export default function InvoiceEditorPage() {
       const qty = Number(line.quantity) || 0;
       const price = Number(line.unitPrice) || 0;
       const amount = lineAmount(qty, price);
-      const description = line.description.trim() || "Line item";
+      const linkedIds =
+        line.linkedTimeEntryIds && line.linkedTimeEntryIds.length > 0
+          ? line.linkedTimeEntryIds
+          : line.timeEntryId
+            ? [line.timeEntryId]
+            : parseLinkedTimeEntryIds(line.description);
+      const description = embedLinkedTimeEntryIds(
+        line.description.trim() || "Line item",
+        linkedIds
+      );
 
       if (line.isNew) {
         const { data, error: insertError } = await supabase
@@ -815,8 +916,10 @@ export default function InvoiceEditorPage() {
       setError("Client is required.");
       return;
     }
-    const saved = await persist();
-    if (!saved) return;
+    if (status === "draft") {
+      const saved = await persist();
+      if (!saved) return;
+    }
     setSendModalOpen(true);
   }
 
@@ -838,6 +941,7 @@ export default function InvoiceEditorPage() {
 
   const canSendInvoice =
     status !== "void" && status !== "paid" && Boolean(client);
+  const isDraft = status === "draft";
   const invoiceLabel = number.trim()
     ? `Invoice ${number.trim()}`
     : "Draft invoice";
@@ -1002,555 +1106,57 @@ export default function InvoiceEditorPage() {
 
   const documentLines = lines.map((l) => ({
     id: l.id,
-    description: l.description,
+    description: stripLinkedTimeEntryIds(l.description),
     quantity: l.quantity,
     unit: l.unit,
     unitPrice: l.unitPrice,
     amount: lineAmount(l.quantity, l.unitPrice),
   }));
 
-  return (
-    <div className="h-full flex flex-col min-h-0 bg-white">
-      <header className="shrink-0 h-14 border-b border-line px-3 sm:px-5 flex items-center justify-between gap-3 print:hidden">
-        <div className="flex items-center gap-2 min-w-0">
-          <Link
-            href="/invoices"
-            className="p-2 rounded-full hover:bg-gray-100 text-gray-500"
-            aria-label="Back"
-          >
-            <ChevronLeft className="w-5 h-5" />
-          </Link>
-          <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 min-w-0">
-            <CircleDollarSign className="w-4 h-4 text-emerald-500 shrink-0" />
-            <span className="truncate max-w-[240px]">{number || "Draft invoice"}</span>
-            <span
-              className={`text-[11px] font-semibold rounded-full px-2 py-0.5 ${STATUS_STYLES[status]}`}
-            >
-              {statusLabel(status)}
-            </span>
+  function SettingsBody() {
+    return (
+      <>
+          <div className="px-5 pt-3 border-b border-line shrink-0">
+            <div className="flex gap-1">
+              <button
+                type="button"
+                onClick={() => setSettingsTab("settings")}
+                className={`px-3 py-2 text-[13px] font-semibold border-b-2 -mb-px transition-colors ${
+                  settingsTab === "settings"
+                    ? "border-gray-900 text-gray-900"
+                    : "border-transparent text-gray-500 hover:text-gray-800"
+                }`}
+              >
+                Settings
+              </button>
+              <button
+                type="button"
+                onClick={() => setSettingsTab("activity")}
+                className={`px-3 py-2 text-[13px] font-semibold border-b-2 -mb-px transition-colors ${
+                  settingsTab === "activity"
+                    ? "border-gray-900 text-gray-900"
+                    : "border-transparent text-gray-500 hover:text-gray-800"
+                }`}
+              >
+                Activity
+              </button>
+            </div>
           </div>
-        </div>
 
-        <div className="flex items-center gap-2 sm:gap-3">
-          {message && (
-            <span className="hidden sm:inline text-[13px] font-medium text-emerald-600">
-              {message}
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={() => setPreviewMode((v) => !v)}
-            className={`flex items-center gap-1.5 text-sm font-semibold transition-colors ${
-              previewMode ? "text-[#2563EB]" : "text-gray-700 hover:text-gray-900"
-            }`}
-          >
-            <Eye className="w-4 h-4" />
-            {previewMode ? "Edit" : "Preview"}
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleDownloadPdf()}
-            disabled={saving || pdfBusy || !client}
-            className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors disabled:opacity-50"
-            title={
-              status === "draft"
-                ? "Download preview PDF"
-                : "Download invoice PDF"
-            }
-          >
-            <Download className="w-4 h-4 text-[#2563EB]" />
-            {pdfBusy ? "PDF…" : "PDF"}
-          </button>
-          <button
-            type="button"
-            onClick={() => void persist()}
-            disabled={saving}
-            className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors disabled:opacity-50"
-          >
-            <Save className="w-4 h-4 text-[#2563EB]" />
-            Save
-          </button>
-          {canSendInvoice && (
-            <button
-              type="button"
-              onClick={() => void handleOpenSend()}
-              disabled={saving}
-              className="btn-primary inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm disabled:opacity-50"
-            >
-              <Send className="w-4 h-4" />
-              {status === "draft" ? "Send invoice" : "Send again"}
-            </button>
-          )}
-        </div>
-      </header>
-
-      <div className="flex-1 flex min-h-0 overflow-hidden">
-        <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-8 relative custom-scrollbar">
-          {error && (
-            <div className="max-w-[820px] mx-auto mb-4 text-[13px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-3.5 py-2.5 print:hidden">
-              {error}
-            </div>
-          )}
-
-          {previewMode ? (
-            <div className="max-w-[820px] mx-auto">
-              <InvoiceDocument
-                bannerUrl={bannerPreviewUrl}
-                showLogo={showLogo}
-                logoUrl={logoUrl}
-                fromName={fromName}
-                fromAddress={orgAddress}
-                fromEmail={profileEmail}
-                showTaxId={showTaxId}
-                taxId={taxId || orgTaxId}
-                number={number}
-                issueDate={issueDate}
-                dueDate={dueDate}
-                showReference={showReference}
-                referenceNumber={referenceNumber}
-                billToName={client?.name}
-                billToCompany={client?.company}
-                billToEmail={client?.email}
-                showShippingAddress={showShippingAddress}
-                shippingAddress={shippingAddress}
-                currency={currency}
-                lines={documentLines}
-                subtotal={totals.subtotal}
-                taxEnabled={taxEnabled}
-                taxRate={Number(taxRate) || 0}
-                taxTotal={totals.taxTotal}
-                pricesIncludeTax={pricesIncludeTax}
-                total={totals.total}
-                lateFeeEnabled={lateFeeEnabled}
-                lateFeePercent={Number(lateFeePercent) || 0}
-                notes={notes}
-                paymentIban={paymentIban}
-                paymentBankgiro={paymentBankgiro}
-                paymentSwish={paymentSwish}
-                paymentMbway={paymentMbway}
-              />
-            </div>
-          ) : (
-            <article className="max-w-[820px] mx-auto bg-white border border-line rounded-2xl shadow-[0_1px_2px_rgba(16,24,40,0.04)] overflow-hidden">
-              {bannerPreviewUrl ? (
-                <div className="relative w-full h-[100px] bg-gray-100 group">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={bannerPreviewUrl}
-                    alt=""
-                    className="w-full h-full object-cover"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => void removeBanner()}
-                    className="absolute top-2 right-2 text-[12px] font-medium bg-white/90 border border-line rounded-full px-2.5 py-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    Remove
-                  </button>
-                </div>
-              ) : null}
-
-              <div className="px-6 sm:px-10 pt-8 sm:pt-10 pb-6 border-b border-line bg-gradient-to-b from-[#FAFBFC] to-white">
-                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-6">
-                  <div className="flex items-start gap-3 min-w-0">
-                    {showLogo &&
-                      (logoUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={logoUrl}
-                          alt=""
-                          className="w-12 h-12 rounded-xl object-contain border border-line bg-white"
-                        />
-                      ) : (
-                        <div className="w-12 h-12 rounded-xl bg-gray-950 text-white flex items-center justify-center font-semibold">
-                          R.
-                        </div>
-                      ))}
-                    <div className="min-w-0">
-                      <div className="text-lg font-semibold text-gray-900 tracking-tight">
-                        {fromName}
-                      </div>
-                      {orgAddress && (
-                        <p className="text-[13px] text-gray-500 mt-1 whitespace-pre-line">
-                          {orgAddress}
-                        </p>
-                      )}
-                      {profileEmail && (
-                        <p className="text-[13px] text-gray-500 mt-0.5">{profileEmail}</p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="text-left sm:text-right">
-                    <div className="text-[12px] font-semibold uppercase tracking-wider text-gray-400">
-                      Invoice
-                    </div>
-                    <input
-                      value={number}
-                      onChange={(e) => setNumber(e.target.value)}
-                      placeholder={
-                        status === "draft" ? "Draft" : "INV-0001"
-                      }
-                      readOnly={status === "draft" && !number.trim()}
-                      title={
-                        status === "draft" && !number.trim()
-                          ? "Number is assigned when you send the invoice"
-                          : undefined
-                      }
-                      className="mt-1 w-full sm:w-40 sm:text-right text-xl font-semibold text-gray-900 tracking-tight bg-transparent outline-none border-b border-transparent focus:border-gray-300 read-only:text-gray-400"
-                    />
-                    <div className="mt-3 text-[13px] text-gray-500 space-y-1">
-                      <div className="flex sm:justify-end items-center gap-2">
-                        <span>Issued</span>
-                        <input
-                          type="date"
-                          value={issueDate}
-                          onChange={(e) => setIssueDate(e.target.value)}
-                          className="border border-line rounded-lg px-2 py-1 text-gray-800 bg-white"
-                        />
-                      </div>
-                      <div className="flex sm:justify-end items-center gap-2">
-                        <span>Due</span>
-                        <input
-                          type="date"
-                          value={dueDate}
-                          onChange={(e) => setDueDate(e.target.value)}
-                          className="border border-line rounded-lg px-2 py-1 text-gray-800 bg-white"
-                        />
-                      </div>
-                      {showReference && (
-                        <div className="flex sm:justify-end items-center gap-2">
-                          <span>Ref</span>
-                          <input
-                            value={referenceNumber}
-                            onChange={(e) => setReferenceNumber(e.target.value)}
-                            placeholder="PO-100"
-                            className="border border-line rounded-lg px-2 py-1 text-gray-800 bg-white w-28"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="px-6 sm:px-10 py-6 grid grid-cols-1 sm:grid-cols-2 gap-6 border-b border-line">
-                <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
-                    Bill to
-                  </div>
-                  <select
-                    value={client?.id || ""}
-                    onChange={(e) => {
-                      const next = clients.find((c) => c.id === e.target.value) || null;
-                      setClient(next);
-                      setProjectId(null);
-                    }}
-                    className="w-full border border-line rounded-xl px-3 py-2.5 text-sm font-medium text-gray-900 bg-white outline-none focus:border-gray-300"
-                  >
-                    <option value="" disabled>
-                      Select client…
-                    </option>
-                    {clients.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.company || c.name}
-                      </option>
-                    ))}
-                  </select>
-                  {client && (
-                    <div className="mt-3 text-[13px] text-gray-600 space-y-0.5">
-                      <div className="font-medium text-gray-900">{billTo}</div>
-                      {client.company && client.name !== client.company && (
-                        <div>{client.name}</div>
-                      )}
-                      {client.email && <div>{client.email}</div>}
-                    </div>
-                  )}
-                </div>
-                {showShippingAddress ? (
-                  <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
-                      Shipping address
-                    </div>
-                    <textarea
-                      value={shippingAddress}
-                      onChange={(e) => setShippingAddress(e.target.value)}
-                      rows={3}
-                      placeholder="Street, city, postal code…"
-                      className="w-full border border-line rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white outline-none focus:border-gray-300 resize-none"
-                    />
-                  </div>
-                ) : (
-                  <div />
-                )}
-              </div>
-
-              <div className="px-6 sm:px-10 py-6">
-                {client && status !== "void" && unbilledSummary.count > 0 && (
-                  <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-2xl border border-[#BFDBFE] bg-[#EFF6FF] px-4 py-3">
-                    <div className="flex items-start gap-2.5 min-w-0">
-                      <div className="mt-0.5 w-8 h-8 rounded-full bg-white text-[#2563EB] flex items-center justify-center shrink-0 border border-[#BFDBFE]">
-                        <Clock className="w-4 h-4" />
-                      </div>
-                      <div className="min-w-0 text-[13px] text-gray-700">
-                        <span className="font-semibold text-gray-900">
-                          {unbilledSummary.totalHours} unbilled hours
-                        </span>
-                        <span className="text-gray-500">
-                          {" "}
-                          · ~{formatInvoiceMoney(unbilledSummary.totalAmount, currency)}{" "}
-                          available
-                        </span>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setUnbilledModalOpen(true)}
-                      className="inline-flex items-center justify-center gap-1.5 self-start sm:self-auto px-3.5 py-2 rounded-full text-[13px] font-medium bg-white text-[#2563EB] border border-[#BFDBFE] hover:bg-[#DBEAFE] transition-colors"
-                    >
-                      Add time
-                    </button>
-                  </div>
-                )}
-
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
-                  <div className="min-w-0">
-                    <h2 className="text-sm font-semibold text-gray-900">Line items</h2>
-                    {taxEnabled && (
-                      <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                        <span className="text-[12px] text-gray-500">Unit prices are</span>
-                        <div className="inline-flex rounded-full border border-line p-0.5 bg-[#FAFBFC]">
-                          <button
-                            type="button"
-                            onClick={() => setPricesIncludeTax(false)}
-                            className={`px-2.5 py-1 rounded-full text-[12px] font-medium transition-colors ${
-                              !pricesIncludeTax
-                                ? "bg-white text-gray-900 shadow-sm border border-line"
-                                : "text-gray-500 hover:text-gray-800"
-                            }`}
-                          >
-                            Excl. tax
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setPricesIncludeTax(true)}
-                            className={`px-2.5 py-1 rounded-full text-[12px] font-medium transition-colors ${
-                              pricesIncludeTax
-                                ? "bg-white text-gray-900 shadow-sm border border-line"
-                                : "text-gray-500 hover:text-gray-800"
-                            }`}
-                          >
-                            Incl. tax
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setLines((prev) => [...prev, emptyLine()])}
-                    className="inline-flex items-center gap-1.5 text-sm font-medium text-[#2563EB] hover:text-[#1d4ed8] self-start sm:self-auto"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Add line
-                  </button>
-                </div>
-
-                <div className="rounded-2xl border border-line overflow-visible">
-                  <div className="hidden sm:grid grid-cols-[24px_minmax(0,1.6fr)_64px_76px_110px_110px_36px] gap-2 px-3 py-2.5 bg-[#FAFBFC] border-b border-line rounded-t-2xl text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-                    <span />
-                    <span>Description</span>
-                    <span className="text-right">Qty</span>
-                    <span>Unit</span>
-                    <span className="text-right">
-                      Rate
-                      {linePricesLabel ? (
-                        <span className="block normal-case tracking-normal font-medium text-gray-400">
-                          {pricesIncludeTax ? "incl. tax" : "excl. tax"}
-                        </span>
-                      ) : null}
-                    </span>
-                    <span className="text-right">Amount</span>
-                    <span />
-                  </div>
-                  {lines.map((line, lineIndex) => (
-                    <div
-                      key={line.id}
-                      className={`grid grid-cols-1 sm:grid-cols-[24px_minmax(0,1.6fr)_64px_76px_110px_110px_36px] gap-2 px-3 py-2.5 border-b border-line last:border-b-0 items-center ${
-                        lineIndex === lines.length - 1 ? "rounded-b-2xl" : ""
-                      }`}
-                    >
-                      <GripVertical className="hidden sm:block w-4 h-4 text-gray-300" />
-                      <LineDescriptionInput
-                        value={line.description}
-                        tasks={clientTasks}
-                        onChange={(description) =>
-                          updateLine(line.id, { description })
-                        }
-                      />
-                      <input
-                        value={line.quantity}
-                        onChange={(e) =>
-                          updateLine(line.id, { quantity: e.target.value })
-                        }
-                        className="w-full sm:text-right text-sm border border-line sm:border-0 rounded-lg sm:rounded-none px-2 py-1.5 sm:px-0 sm:py-0 outline-none"
-                      />
-                      <div className="relative inline-flex w-fit max-w-full items-center justify-self-start">
-                        <select
-                          value={line.unit}
-                          onChange={(e) =>
-                            updateLine(line.id, {
-                              unit: e.target.value as InvoiceLineUnit,
-                            })
-                          }
-                          className="appearance-none w-auto text-sm border border-line sm:border-0 rounded-lg sm:rounded-none pl-2 pr-5 sm:pl-0 sm:pr-[1.1rem] py-1.5 sm:py-0 outline-none bg-transparent text-gray-700 cursor-pointer"
-                          aria-label="Unit"
-                        >
-                          {INVOICE_LINE_UNIT_OPTIONS.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))}
-                        </select>
-                        <ChevronDown className="pointer-events-none absolute right-1.5 sm:right-0 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-                      </div>
-                      <input
-                        value={line.unitPrice}
-                        onChange={(e) =>
-                          updateLine(line.id, { unitPrice: e.target.value })
-                        }
-                        className="w-full sm:text-right text-sm border border-line sm:border-0 rounded-lg sm:rounded-none px-2 py-1.5 sm:px-0 sm:py-0 outline-none"
-                      />
-                      <div className="sm:text-right text-sm font-medium text-gray-900">
-                        {formatInvoiceMoney(
-                          lineAmount(line.quantity, line.unitPrice),
-                          currency
-                        )}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => removeLine(line.id)}
-                        className="p-1.5 text-gray-400 hover:text-red-600 justify-self-end"
-                        aria-label="Remove line"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="mt-6 ml-auto w-full max-w-xs space-y-2">
-                  <div className="flex justify-between text-sm text-gray-600">
-                    <span>
-                      Subtotal{taxEnabled ? " (excl. tax)" : ""}
-                    </span>
-                    <span>{formatInvoiceMoney(totals.subtotal, currency)}</span>
-                  </div>
-                  {taxEnabled && (
-                    <div className="flex justify-between text-sm text-gray-600">
-                      <span>
-                        Tax ({Number(taxRate) || 0}%)
-                        {pricesIncludeTax ? " · included in rates" : ""}
-                      </span>
-                      <span>{formatInvoiceMoney(totals.taxTotal, currency)}</span>
-                    </div>
-                  )}
-                  <div className="h-px bg-line" />
-                  <div className="flex justify-between text-sm font-semibold text-gray-900">
-                    <span>Total</span>
-                    <span>{formatInvoiceMoney(totals.total, currency)}</span>
-                  </div>
-                </div>
-
-                {(paymentIban ||
-                  paymentBankgiro ||
-                  paymentSwish ||
-                  paymentMbway) && (
-                  <div className="mt-8 pt-6 border-t border-line">
-                    <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
-                      Payment details
-                    </div>
-                    <div className="text-[13px] text-gray-700 space-y-1">
-                      {paymentIban && (
-                        <p>
-                          <span className="text-gray-500">IBAN</span>{" "}
-                          <span className="font-medium tracking-wide">
-                            {paymentIban}
-                          </span>
-                        </p>
-                      )}
-                      {paymentBankgiro && (
-                        <p>
-                          <span className="text-gray-500">Bankgiro</span>{" "}
-                          <span className="font-medium">{paymentBankgiro}</span>
-                        </p>
-                      )}
-                      {paymentSwish && (
-                        <p>
-                          <span className="text-gray-500">Swish</span>{" "}
-                          <span className="font-medium tracking-wide">
-                            {paymentSwish}
-                          </span>
-                        </p>
-                      )}
-                      {paymentMbway && (
-                        <p>
-                          <span className="text-gray-500">MB Way</span>{" "}
-                          <span className="font-medium tracking-wide">
-                            {paymentMbway}
-                          </span>
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                <div className="mt-8">
-                  <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
-                    Notes
-                  </div>
-                  <textarea
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    rows={3}
-                    placeholder="Payment terms, thank-you note…"
-                    className="w-full border border-line rounded-xl px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-gray-300 resize-none"
-                  />
-                </div>
-              </div>
-
-              <footer className="px-6 sm:px-10 py-5 border-t border-line bg-[#FAFBFC]">
-                <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
-                  From
-                </div>
-                <div className="text-[13px] text-gray-700 space-y-0.5">
-                  <div className="font-medium text-gray-900">{fromName}</div>
-                  {orgAddress && (
-                    <p className="whitespace-pre-line text-gray-600">{orgAddress}</p>
-                  )}
-                  {profileEmail && (
-                    <p className="text-gray-600">{profileEmail}</p>
-                  )}
-                  {(taxEnabled || showTaxId) && (taxId || orgTaxId) && (
-                    <p className="text-gray-600">
-                      VAT / Tax ID: {taxId || orgTaxId}
-                    </p>
-                  )}
-                </div>
-              </footer>
-            </article>
-          )}
-        </div>
-
-        <aside className="hidden lg:flex w-[320px] shrink-0 border-l border-line bg-white flex-col min-h-0 overflow-y-auto print:hidden">
-          {(status !== "draft" || activityRefreshKey > 0) && (
+          {settingsTab === "activity" ? (
             <InvoiceActivityLog
               invoiceId={invoiceId}
               open
-              variant="inline"
+              variant="panel"
               refreshKey={activityRefreshKey}
             />
-          )}
+          ) : (
+          <>
+          <div
+            className={
+              isDraft ? undefined : "pointer-events-none opacity-60 select-none"
+            }
+          >
           <div className="p-5 border-b border-line">
             <h2 className="text-sm font-semibold text-gray-900">Overview</h2>
             <div className="mt-4 space-y-3">
@@ -1897,6 +1503,7 @@ export default function InvoiceEditorPage() {
               </div>
             )}
           </div>
+          </div>
 
           <div className="p-5 space-y-3">
             {!stripeReady && (
@@ -1946,37 +1553,16 @@ export default function InvoiceEditorPage() {
               </div>
             )}
 
-            <button
-              type="button"
-              onClick={() => void persist()}
-              disabled={saving}
-              className="w-full btn-primary px-4 py-2.5 rounded-xl text-sm disabled:opacity-50"
-            >
-              {saving ? "Saving…" : "Save changes"}
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleDownloadPdf()}
-              disabled={saving || pdfBusy || !client}
-              className="w-full inline-flex items-center justify-center gap-2 border border-line bg-white px-4 py-2.5 rounded-xl text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50"
-            >
-              <Download className="w-4 h-4 text-[#2563EB]" />
-              {pdfBusy
-                ? "Preparing PDF…"
-                : status === "draft"
-                  ? "Download preview PDF"
-                  : "Download PDF"}
-            </button>
-            {canSendInvoice && (
+            {isDraft ? (
               <button
                 type="button"
-                onClick={() => void handleOpenSend()}
+                onClick={() => void persist()}
                 disabled={saving}
-                className="w-full border border-line bg-white px-4 py-2.5 rounded-xl text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+                className="w-full btn-primary px-4 py-2.5 rounded-xl text-sm disabled:opacity-50"
               >
-                {status === "draft" ? "Send invoice" : "Send again"}
+                {saving ? "Saving…" : "Save changes"}
               </button>
-            )}
+            ) : null}
             {(status === "sent" || status === "viewed" || status === "overdue") && (
               <>
                 {stripeReady && (
@@ -2052,8 +1638,722 @@ export default function InvoiceEditorPage() {
               <p className="text-[11px] text-gray-400 pt-1">Project: {projectName}</p>
             )}
           </div>
+          </>
+          )}
+      </>
+    );
+  }
+
+  return (
+    <div className="h-full flex flex-col min-h-0 bg-white">
+      <header className="shrink-0 h-14 border-b border-line px-3 sm:px-5 flex items-center justify-between gap-3 print:hidden">
+        <div className="flex items-center gap-2 min-w-0">
+          <Link
+            href="/invoices"
+            className="p-2 rounded-full hover:bg-gray-100 text-gray-500"
+            aria-label="Back"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </Link>
+          <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 min-w-0">
+            <CircleDollarSign className="w-4 h-4 text-emerald-500 shrink-0" />
+            <span className="truncate max-w-[140px] sm:max-w-[240px]">
+              {number || "Draft invoice"}
+            </span>
+            <span
+              className={`text-[11px] font-semibold rounded-full px-2 py-0.5 ${STATUS_STYLES[status]}`}
+            >
+              {statusLabel(status)}
+            </span>
+          </div>
+        </div>
+
+        {/* Desktop actions */}
+        <div className="hidden lg:flex items-center gap-2 sm:gap-3">
+          {message && (
+            <span className="text-[13px] font-medium text-emerald-600">
+              {message}
+            </span>
+          )}
+          {isDraft ? (
+            <button
+              type="button"
+              onClick={() => setPreviewMode((v) => !v)}
+              className={`flex items-center gap-1.5 text-sm font-semibold transition-colors ${
+                previewMode
+                  ? "text-[#2563EB]"
+                  : "text-gray-700 hover:text-gray-900"
+              }`}
+            >
+              <Eye className="w-4 h-4" />
+              {previewMode ? "Edit" : "Preview"}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => void handleDownloadPdf()}
+            disabled={saving || pdfBusy || !client}
+            className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors disabled:opacity-50"
+            title={
+              status === "draft"
+                ? "Download preview PDF"
+                : "Download invoice PDF"
+            }
+          >
+            <Download className="w-4 h-4 text-[#2563EB]" />
+            {pdfBusy ? "PDF…" : "PDF"}
+          </button>
+          {isDraft ? (
+            <button
+              type="button"
+              onClick={() => void persist()}
+              disabled={saving}
+              className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors disabled:opacity-50"
+            >
+              <Save className="w-4 h-4 text-[#2563EB]" />
+              Save
+            </button>
+          ) : null}
+          {canSendInvoice && (
+            <button
+              type="button"
+              onClick={() => void handleOpenSend()}
+              disabled={saving}
+              className="btn-primary inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm disabled:opacity-50"
+            >
+              <Send className="w-4 h-4" />
+              {status === "draft" ? "Send invoice" : "Send again"}
+            </button>
+          )}
+        </div>
+
+        {/* Mobile actions: settings + overflow menu */}
+        <div className="flex lg:hidden items-center gap-1.5 shrink-0">
+          {message ? (
+            <span className="text-[12px] font-medium text-emerald-600 max-w-[72px] truncate">
+              {message}
+            </span>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => setSettingsOpen(true)}
+            className="p-2 rounded-full border border-line text-gray-600 hover:bg-gray-50"
+            aria-label="Invoice settings"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+          <div ref={moreMenuRef} className="relative">
+            <button
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={moreMenuOpen}
+              aria-label="More actions"
+              onClick={() => setMoreMenuOpen((open) => !open)}
+              className={`p-2 rounded-full border transition-colors ${
+                moreMenuOpen
+                  ? "border-gray-300 bg-gray-50 text-gray-900"
+                  : "border-line text-gray-600 hover:bg-gray-50"
+              }`}
+            >
+              <MoreHorizontal className="w-4 h-4" />
+            </button>
+            {moreMenuOpen ? (
+              <div
+                role="menu"
+                className="absolute right-0 z-50 mt-1.5 w-[200px] rounded-2xl border border-gray-200 bg-white py-1.5 shadow-[0_12px_40px_rgba(16,24,40,0.14)]"
+              >
+                {isDraft ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMoreMenuOpen(false);
+                      setPreviewMode((v) => !v);
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50"
+                  >
+                    <Eye className="w-4 h-4 text-gray-400 shrink-0" />
+                    {previewMode ? "Edit" : "Preview"}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={saving || pdfBusy || !client}
+                  onClick={() => {
+                    setMoreMenuOpen(false);
+                    void handleDownloadPdf();
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  <Download className="w-4 h-4 text-[#2563EB] shrink-0" />
+                  {pdfBusy ? "Preparing PDF…" : "PDF"}
+                </button>
+                {canSendInvoice && !isDraft ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={saving}
+                    onClick={() => {
+                      setMoreMenuOpen(false);
+                      void handleOpenSend();
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    <Send className="w-4 h-4 text-[#2563EB] shrink-0" />
+                    Send again
+                  </button>
+                ) : null}
+                {(paymentUrl || paymentToken) && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMoreMenuOpen(false);
+                      const url =
+                        paymentUrl ||
+                        `${window.location.origin}/pay/${paymentToken}`;
+                      void navigator.clipboard.writeText(url).then(() => {
+                        flash("Client invoice link copied");
+                      });
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50"
+                  >
+                    <Copy className="w-4 h-4 text-[#2563EB] shrink-0" />
+                    Copy link
+                  </button>
+                )}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </header>
+
+      <div className="flex-1 flex min-h-0 overflow-hidden">
+        <div
+          className={`flex-1 min-h-0 overflow-y-auto p-4 sm:p-8 relative custom-scrollbar ${
+            isDraft ? "pb-28 lg:pb-8" : ""
+          }`}
+        >
+          {error && (
+            <div className="max-w-[820px] mx-auto mb-4 text-[13px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-3.5 py-2.5 print:hidden">
+              {error}
+            </div>
+          )}
+
+          {previewMode || !isDraft ? (
+            <div className="max-w-[820px] mx-auto">
+              <InvoiceDocument
+                bannerUrl={bannerPreviewUrl}
+                showLogo={showLogo}
+                logoUrl={logoUrl}
+                fromName={fromName}
+                fromAddress={orgAddress}
+                fromEmail={profileEmail}
+                showTaxId={showTaxId}
+                taxId={taxId || orgTaxId}
+                number={number}
+                issueDate={issueDate}
+                dueDate={dueDate}
+                showReference={showReference}
+                referenceNumber={referenceNumber}
+                billToName={client?.name}
+                billToCompany={client?.company}
+                billToEmail={client?.email}
+                showShippingAddress={showShippingAddress}
+                shippingAddress={shippingAddress}
+                currency={currency}
+                lines={documentLines}
+                subtotal={totals.subtotal}
+                taxEnabled={taxEnabled}
+                taxRate={Number(taxRate) || 0}
+                taxTotal={totals.taxTotal}
+                pricesIncludeTax={pricesIncludeTax}
+                total={totals.total}
+                lateFeeEnabled={lateFeeEnabled}
+                lateFeePercent={Number(lateFeePercent) || 0}
+                notes={notes}
+                paymentIban={paymentIban}
+                paymentBankgiro={paymentBankgiro}
+                paymentSwish={paymentSwish}
+                paymentMbway={paymentMbway}
+              />
+            </div>
+          ) : (
+            <article className="max-w-[820px] mx-auto bg-white border border-line rounded-2xl shadow-[0_1px_2px_rgba(16,24,40,0.04)] overflow-hidden">
+              {bannerPreviewUrl ? (
+                <div className="relative w-full h-[100px] bg-gray-100 group">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={bannerPreviewUrl}
+                    alt=""
+                    className="w-full h-full object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void removeBanner()}
+                    className="absolute top-2 right-2 text-[12px] font-medium bg-white/90 border border-line rounded-full px-2.5 py-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : null}
+
+              <div className="px-6 sm:px-10 pt-8 sm:pt-10 pb-6 border-b border-line bg-gradient-to-b from-[#FAFBFC] to-white">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-6">
+                  <div className="flex items-start gap-3 min-w-0">
+                    {showLogo &&
+                      (logoUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={logoUrl}
+                          alt=""
+                          className="w-12 h-12 rounded-xl object-contain border border-line bg-white"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-xl bg-gray-950 text-white flex items-center justify-center font-semibold">
+                          R.
+                        </div>
+                      ))}
+                    <div className="min-w-0">
+                      <div className="text-lg font-semibold text-gray-900 tracking-tight">
+                        {fromName}
+                      </div>
+                      {orgAddress && (
+                        <p className="text-[13px] text-gray-500 mt-1 whitespace-pre-line">
+                          {orgAddress}
+                        </p>
+                      )}
+                      {profileEmail && (
+                        <p className="text-[13px] text-gray-500 mt-0.5">{profileEmail}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="text-left sm:text-right">
+                    <div className="text-[12px] font-semibold uppercase tracking-wider text-gray-400">
+                      Invoice
+                    </div>
+                    <input
+                      value={number}
+                      onChange={(e) => setNumber(e.target.value)}
+                      placeholder={
+                        status === "draft" ? "Draft" : "INV-0001"
+                      }
+                      readOnly={status === "draft" && !number.trim()}
+                      title={
+                        status === "draft" && !number.trim()
+                          ? "Number is assigned when you send the invoice"
+                          : undefined
+                      }
+                      className="mt-1 w-full sm:w-40 sm:text-right text-xl font-semibold text-gray-900 tracking-tight bg-transparent outline-none border-b border-transparent focus:border-gray-300 read-only:text-gray-400"
+                    />
+                    <div className="mt-3 text-[13px] text-gray-500 space-y-1">
+                      <div className="flex sm:justify-end items-center gap-2">
+                        <span>Issued</span>
+                        <input
+                          type="date"
+                          value={issueDate}
+                          onChange={(e) => setIssueDate(e.target.value)}
+                          className="border border-line rounded-lg px-2 py-1 text-gray-800 bg-white"
+                        />
+                      </div>
+                      <div className="flex sm:justify-end items-center gap-2">
+                        <span>Due</span>
+                        <input
+                          type="date"
+                          value={dueDate}
+                          onChange={(e) => setDueDate(e.target.value)}
+                          className="border border-line rounded-lg px-2 py-1 text-gray-800 bg-white"
+                        />
+                      </div>
+                      {showReference && (
+                        <div className="flex sm:justify-end items-center gap-2">
+                          <span>Ref</span>
+                          <input
+                            value={referenceNumber}
+                            onChange={(e) => setReferenceNumber(e.target.value)}
+                            placeholder="PO-100"
+                            className="border border-line rounded-lg px-2 py-1 text-gray-800 bg-white w-28"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="px-6 sm:px-10 py-6 grid grid-cols-1 sm:grid-cols-2 gap-6 border-b border-line">
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
+                    Bill to
+                  </div>
+                  <select
+                    value={client?.id || ""}
+                    onChange={(e) => {
+                      const next = clients.find((c) => c.id === e.target.value) || null;
+                      setClient(next);
+                      setProjectId(null);
+                    }}
+                    className="w-full border border-line rounded-xl px-3 py-2.5 text-sm font-medium text-gray-900 bg-white outline-none focus:border-gray-300"
+                  >
+                    <option value="" disabled>
+                      Select client…
+                    </option>
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.company || c.name}
+                      </option>
+                    ))}
+                  </select>
+                  {client && (
+                    <div className="mt-3 text-[13px] text-gray-600 space-y-0.5">
+                      <div className="font-medium text-gray-900">{billTo}</div>
+                      {client.company && client.name !== client.company && (
+                        <div>{client.name}</div>
+                      )}
+                      {client.email && <div>{client.email}</div>}
+                    </div>
+                  )}
+                </div>
+                {showShippingAddress ? (
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
+                      Shipping address
+                    </div>
+                    <textarea
+                      value={shippingAddress}
+                      onChange={(e) => setShippingAddress(e.target.value)}
+                      rows={3}
+                      placeholder="Street, city, postal code…"
+                      className="w-full border border-line rounded-xl px-3 py-2.5 text-sm text-gray-900 bg-white outline-none focus:border-gray-300 resize-none"
+                    />
+                  </div>
+                ) : (
+                  <div />
+                )}
+              </div>
+
+              <div className="px-6 sm:px-10 py-6">
+                {client && unbilledSummary.count > 0 && (
+                  <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-2xl border border-[#BFDBFE] bg-[#EFF6FF] px-4 py-3">
+                    <div className="flex items-start gap-2.5 min-w-0">
+                      <div className="mt-0.5 w-8 h-8 rounded-full bg-white text-[#2563EB] flex items-center justify-center shrink-0 border border-[#BFDBFE]">
+                        <Clock className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0 text-[13px] text-gray-700">
+                        <span className="font-semibold text-gray-900">
+                          {unbilledSummary.totalHours} unbilled hours
+                        </span>
+                        <span className="text-gray-500">
+                          {" "}
+                          · ~{formatInvoiceMoney(unbilledSummary.totalAmount, currency)}{" "}
+                          available
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setUnbilledModalOpen(true)}
+                      className="inline-flex items-center justify-center gap-1.5 self-start sm:self-auto px-3.5 py-2 rounded-full text-[13px] font-medium bg-white text-[#2563EB] border border-[#BFDBFE] hover:bg-[#DBEAFE] transition-colors"
+                    >
+                      Add time
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+                  <div className="min-w-0">
+                    <h2 className="text-sm font-semibold text-gray-900">Line items</h2>
+                    {taxEnabled && (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                        <span className="text-[12px] text-gray-500">Unit prices are</span>
+                        <div className="inline-flex rounded-full border border-line p-0.5 bg-[#FAFBFC]">
+                          <button
+                            type="button"
+                            onClick={() => setPricesIncludeTax(false)}
+                            className={`px-2.5 py-1 rounded-full text-[12px] font-medium transition-colors ${
+                              !pricesIncludeTax
+                                ? "bg-white text-gray-900 shadow-sm border border-line"
+                                : "text-gray-500 hover:text-gray-800"
+                            }`}
+                          >
+                            Excl. tax
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPricesIncludeTax(true)}
+                            className={`px-2.5 py-1 rounded-full text-[12px] font-medium transition-colors ${
+                              pricesIncludeTax
+                                ? "bg-white text-gray-900 shadow-sm border border-line"
+                                : "text-gray-500 hover:text-gray-800"
+                            }`}
+                          >
+                            Incl. tax
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setLines((prev) => [...prev, emptyLine()])}
+                    className="inline-flex items-center gap-1.5 text-sm font-medium text-[#2563EB] hover:text-[#1d4ed8] self-start sm:self-auto"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add line
+                  </button>
+                </div>
+
+                <div className="rounded-2xl border border-line overflow-visible">
+                  <div className="hidden sm:grid grid-cols-[24px_minmax(0,1.6fr)_64px_76px_110px_110px_36px] gap-2 px-3 py-2.5 bg-[#FAFBFC] border-b border-line rounded-t-2xl text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                    <span />
+                    <span>Description</span>
+                    <span className="text-right">Qty</span>
+                    <span>Unit</span>
+                    <span className="text-right">
+                      Rate
+                      {linePricesLabel ? (
+                        <span className="block normal-case tracking-normal font-medium text-gray-400">
+                          {pricesIncludeTax ? "incl. tax" : "excl. tax"}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="text-right">Amount</span>
+                    <span />
+                  </div>
+                  {lines.map((line, lineIndex) => (
+                    <div
+                      key={line.id}
+                      className={`grid grid-cols-1 sm:grid-cols-[24px_minmax(0,1.6fr)_64px_76px_110px_110px_36px] gap-2 px-3 py-2.5 border-b border-line last:border-b-0 items-center ${
+                        lineIndex === lines.length - 1 ? "rounded-b-2xl" : ""
+                      }`}
+                    >
+                      <GripVertical className="hidden sm:block w-4 h-4 text-gray-300" />
+                      <LineDescriptionInput
+                        value={line.description}
+                        tasks={clientTasks}
+                        onChange={(description) =>
+                          updateLine(line.id, { description })
+                        }
+                      />
+                      <input
+                        value={line.quantity}
+                        onChange={(e) =>
+                          updateLine(line.id, { quantity: e.target.value })
+                        }
+                        className="w-full sm:text-right text-sm border border-line sm:border-0 rounded-lg sm:rounded-none px-2 py-1.5 sm:px-0 sm:py-0 outline-none"
+                      />
+                      <div className="relative inline-flex w-fit max-w-full items-center justify-self-start">
+                        <select
+                          value={line.unit}
+                          onChange={(e) =>
+                            updateLine(line.id, {
+                              unit: e.target.value as InvoiceLineUnit,
+                            })
+                          }
+                          className="appearance-none w-auto text-sm border border-line sm:border-0 rounded-lg sm:rounded-none pl-2 pr-5 sm:pl-0 sm:pr-[1.1rem] py-1.5 sm:py-0 outline-none bg-transparent text-gray-700 cursor-pointer"
+                          aria-label="Unit"
+                        >
+                          {INVOICE_LINE_UNIT_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown className="pointer-events-none absolute right-1.5 sm:right-0 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                      </div>
+                      <input
+                        value={line.unitPrice}
+                        onChange={(e) =>
+                          updateLine(line.id, { unitPrice: e.target.value })
+                        }
+                        className="w-full sm:text-right text-sm border border-line sm:border-0 rounded-lg sm:rounded-none px-2 py-1.5 sm:px-0 sm:py-0 outline-none"
+                      />
+                      <div className="sm:text-right text-sm font-medium text-gray-900">
+                        {formatInvoiceMoney(
+                          lineAmount(line.quantity, line.unitPrice),
+                          currency
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeLine(line.id)}
+                        className="p-1.5 text-gray-400 hover:text-red-600 justify-self-end"
+                        aria-label="Remove line"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-6 ml-auto w-full max-w-xs space-y-2">
+                  <div className="flex justify-between text-sm text-gray-600">
+                    <span>
+                      Subtotal{taxEnabled ? " (excl. tax)" : ""}
+                    </span>
+                    <span>{formatInvoiceMoney(totals.subtotal, currency)}</span>
+                  </div>
+                  {taxEnabled && (
+                    <div className="flex justify-between text-sm text-gray-600">
+                      <span>
+                        Tax ({Number(taxRate) || 0}%)
+                        {pricesIncludeTax ? " · included in rates" : ""}
+                      </span>
+                      <span>{formatInvoiceMoney(totals.taxTotal, currency)}</span>
+                    </div>
+                  )}
+                  <div className="h-px bg-line" />
+                  <div className="flex justify-between text-sm font-semibold text-gray-900">
+                    <span>Total</span>
+                    <span>{formatInvoiceMoney(totals.total, currency)}</span>
+                  </div>
+                </div>
+
+                {(paymentIban ||
+                  paymentBankgiro ||
+                  paymentSwish ||
+                  paymentMbway) && (
+                  <div className="mt-8 pt-6 border-t border-line">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
+                      Payment details
+                    </div>
+                    <div className="text-[13px] text-gray-700 space-y-1">
+                      {paymentIban && (
+                        <p>
+                          <span className="text-gray-500">IBAN</span>{" "}
+                          <span className="font-medium tracking-wide">
+                            {paymentIban}
+                          </span>
+                        </p>
+                      )}
+                      {paymentBankgiro && (
+                        <p>
+                          <span className="text-gray-500">Bankgiro</span>{" "}
+                          <span className="font-medium">{paymentBankgiro}</span>
+                        </p>
+                      )}
+                      {paymentSwish && (
+                        <p>
+                          <span className="text-gray-500">Swish</span>{" "}
+                          <span className="font-medium tracking-wide">
+                            {paymentSwish}
+                          </span>
+                        </p>
+                      )}
+                      {paymentMbway && (
+                        <p>
+                          <span className="text-gray-500">MB Way</span>{" "}
+                          <span className="font-medium tracking-wide">
+                            {paymentMbway}
+                          </span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-8">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
+                    Notes
+                  </div>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    rows={3}
+                    placeholder="Payment terms, thank-you note…"
+                    className="w-full border border-line rounded-xl px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-gray-300 resize-none"
+                  />
+                </div>
+              </div>
+
+              <footer className="px-6 sm:px-10 py-5 border-t border-line bg-[#FAFBFC]">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
+                  From
+                </div>
+                <div className="text-[13px] text-gray-700 space-y-0.5">
+                  <div className="font-medium text-gray-900">{fromName}</div>
+                  {orgAddress && (
+                    <p className="whitespace-pre-line text-gray-600">{orgAddress}</p>
+                  )}
+                  {profileEmail && (
+                    <p className="text-gray-600">{profileEmail}</p>
+                  )}
+                  {(taxEnabled || showTaxId) && (taxId || orgTaxId) && (
+                    <p className="text-gray-600">
+                      VAT / Tax ID: {taxId || orgTaxId}
+                    </p>
+                  )}
+                </div>
+              </footer>
+            </article>
+          )}
+        </div>
+
+        <aside className="hidden lg:flex w-[320px] shrink-0 border-l border-line bg-white flex-col min-h-0 overflow-y-auto print:hidden">
+          <SettingsBody />
         </aside>
+
       </div>
+
+      {portalReady &&
+        settingsOpen &&
+        createPortal(
+          <div className="lg:hidden print:hidden">
+            <button
+              type="button"
+              className="fixed inset-0 z-[70] bg-black/40"
+              aria-label="Close settings"
+              onClick={() => setSettingsOpen(false)}
+            />
+            <aside className="fixed inset-y-0 right-0 z-[71] w-[min(100vw,320px)] border-l border-line bg-white flex flex-col min-h-0 overflow-y-auto shadow-2xl">
+              <div className="flex items-center justify-between gap-3 px-4 h-14 border-b border-line shrink-0">
+                <h2 className="text-sm font-semibold text-gray-900">Settings</h2>
+                <button
+                  type="button"
+                  onClick={() => setSettingsOpen(false)}
+                  className="p-2 rounded-full hover:bg-gray-100 text-gray-500"
+                  aria-label="Close settings"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <SettingsBody />
+            </aside>
+          </div>,
+          document.body
+        )}
+
+      {portalReady &&
+        isDraft &&
+        createPortal(
+          <div className="lg:hidden fixed bottom-0 inset-x-0 z-[60] border-t border-line bg-white/95 backdrop-blur-sm print:hidden pb-[env(safe-area-inset-bottom)]">
+            <div className="px-4 py-3 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => void persist()}
+                disabled={saving}
+                className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-full text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                <Save className="w-4 h-4 text-[#2563EB]" />
+                Save as draft
+              </button>
+              {canSendInvoice ? (
+                <button
+                  type="button"
+                  onClick={() => void handleOpenSend()}
+                  disabled={saving}
+                  className="btn-primary inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full text-sm disabled:opacity-50"
+                >
+                  <Send className="w-4 h-4" />
+                  Send invoice
+                </button>
+              ) : null}
+            </div>
+          </div>,
+          document.body
+        )}
 
       <AddUnbilledTimeModal
         open={unbilledModalOpen}

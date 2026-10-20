@@ -11,6 +11,7 @@ import {
   normalizeBankgiro,
   normalizePaymentPhone,
 } from "@/lib/invoices/payment-details";
+import { stripLinkedTimeEntryIds } from "@/lib/invoices/unbilled";
 
 export type InvoiceDocumentLine = {
   id?: string;
@@ -241,7 +242,7 @@ export function InvoiceDocument({
                 className="grid grid-cols-1 sm:grid-cols-[minmax(0,1.8fr)_90px_110px_110px] gap-1 sm:gap-2 px-3 py-3 border-b border-line last:border-b-0 text-[13px]"
               >
                 <div className="font-medium text-gray-900">
-                  {line.description || "Item"}
+                  {stripLinkedTimeEntryIds(line.description || "") || "Item"}
                 </div>
                 <div className="sm:text-right text-gray-600">
                   <span className="sm:hidden text-gray-400 mr-1">Qty</span>
@@ -330,9 +331,15 @@ export function InvoiceDocument({
             {notes && (
               <div>
                 <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
-                  Notes
+                  {notes.trimStart().startsWith("Time specification")
+                    ? "Time specification"
+                    : "Notes"}
                 </div>
-                <p className="text-[13px] text-gray-600 whitespace-pre-line">{notes}</p>
+                <p className="text-[13px] text-gray-600 whitespace-pre-line">
+                  {notes.trimStart().startsWith("Time specification")
+                    ? notes.trimStart().replace(/^Time specification\s*/i, "")
+                    : notes}
+                </p>
               </div>
             )}
           </div>

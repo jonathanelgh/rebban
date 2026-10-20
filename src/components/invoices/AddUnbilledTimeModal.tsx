@@ -42,16 +42,22 @@ export function AddUnbilledTimeModal({
   loading?: boolean;
   busy?: boolean;
   onClose: () => void;
-  onConfirm: (selected: UnbilledTimeEntry[]) => void | Promise<void>;
+  onConfirm: (
+    selected: UnbilledTimeEntry[],
+    options: { consolidateWithSpecification: boolean }
+  ) => void | Promise<void>;
 }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [consolidateWithSpecification, setConsolidateWithSpecification] =
+    useState(true);
 
   useEffect(() => {
     if (!open) return;
     setFromDate("");
     setToDate("");
+    setConsolidateWithSpecification(true);
   }, [open]);
 
   const filtered = useMemo(
@@ -60,10 +66,13 @@ export function AddUnbilledTimeModal({
     [entries, fromDate, toDate]
   );
 
+  // Reset selection when the modal opens or the filter set changes — not on
+  // every parent re-render (unstable `filtered` array identity).
+  const filteredIdsKey = filtered.map((e) => e.id).join(",");
   useEffect(() => {
     if (!open) return;
-    setSelectedIds(new Set(filtered.map((e) => e.id)));
-  }, [open, filtered]);
+    setSelectedIds(new Set(filteredIdsKey ? filteredIdsKey.split(",") : []));
+  }, [open, filteredIdsKey]);
 
   const selected = useMemo(
     () => filtered.filter((e) => selectedIds.has(e.id)),
@@ -242,25 +251,50 @@ export function AddUnbilledTimeModal({
           )}
         </div>
 
-        <div className="px-5 sm:px-6 py-4 border-t border-line flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            className="px-4 py-2.5 rounded-full text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            disabled={busy || selected.length === 0}
-            onClick={() => void onConfirm(selected)}
-            className="btn-primary px-5 py-2.5 rounded-full text-sm disabled:opacity-50"
-          >
-            {busy
-              ? "Adding…"
-              : `Add ${selected.length} ${selected.length === 1 ? "entry" : "entries"}`}
-          </button>
+        <div className="px-5 sm:px-6 py-4 border-t border-line shrink-0 space-y-3">
+          <label className="flex items-start gap-2.5 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={consolidateWithSpecification}
+              onChange={(e) =>
+                setConsolidateWithSpecification(e.target.checked)
+              }
+              className="mt-0.5 rounded border-gray-300 text-[#2563EB] focus:ring-[#2563EB]"
+            />
+            <span className="min-w-0">
+              <span className="block text-[13px] font-medium text-gray-900">
+                One line item with detailed specification
+              </span>
+              <span className="block text-[12px] text-gray-500 mt-0.5">
+                Total hours on one line; hour-by-hour breakdown in invoice notes.
+              </span>
+            </span>
+          </label>
+          <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={busy}
+              className="px-4 py-2.5 rounded-full text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={busy || selected.length === 0}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (busy || selected.length === 0) return;
+                void onConfirm(selected, { consolidateWithSpecification });
+              }}
+              className="btn-primary px-5 py-2.5 rounded-full text-sm disabled:opacity-50"
+            >
+              {busy
+                ? "Adding…"
+                : `Add ${selected.length} ${selected.length === 1 ? "entry" : "entries"}`}
+            </button>
+          </div>
         </div>
       </div>
     </ModalOverlay>

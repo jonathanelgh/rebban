@@ -55,9 +55,22 @@ export function ModalOverlay({
   const overlay = (
     <div className={`${modalOverlayClass} ${zClass}`}>
       {onClose ? (
-        <div className="absolute inset-0" onClick={onClose} aria-hidden />
+        <div
+          className="absolute inset-0 z-0"
+          onClick={onClose}
+          aria-hidden
+        />
       ) : null}
-      {children}
+      {/*
+        Keep the panel above the full-screen backdrop. Without this, mobile
+        Safari sometimes delivers taps on footer buttons to the backdrop
+        instead (modal closes / action never runs).
+      */}
+      <div className="relative z-10 w-full min-w-0 flex justify-center items-end sm:items-center pointer-events-none">
+        <div className="pointer-events-auto w-full min-w-0 flex justify-center items-end sm:items-center">
+          {children}
+        </div>
+      </div>
     </div>
   );
 
