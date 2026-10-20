@@ -9,6 +9,7 @@ import {
 import {
   formatIbanDisplay,
   normalizeBankgiro,
+  normalizePaymentPhone,
 } from "@/lib/invoices/payment-details";
 
 export type InvoiceDocumentLine = {
@@ -52,6 +53,8 @@ export type InvoiceDocumentProps = {
   notes?: string | null;
   paymentIban?: string | null;
   paymentBankgiro?: string | null;
+  paymentSwish?: string | null;
+  paymentMbway?: string | null;
   /** When true, hide interactive chrome for print/PDF */
   printMode?: boolean;
 };
@@ -101,6 +104,8 @@ export function InvoiceDocument({
   notes,
   paymentIban,
   paymentBankgiro,
+  paymentSwish,
+  paymentMbway,
 }: InvoiceDocumentProps) {
   const billTo =
     billToCompany && billToName && billToCompany !== billToName
@@ -109,7 +114,11 @@ export function InvoiceDocument({
   const rateLabel = pricesTaxLabel({ taxEnabled, pricesIncludeTax });
   const ibanDisplay = formatIbanDisplay(paymentIban);
   const bankgiroDisplay = normalizeBankgiro(paymentBankgiro);
-  const hasBankDetails = Boolean(ibanDisplay || bankgiroDisplay);
+  const swishDisplay = normalizePaymentPhone(paymentSwish);
+  const mbwayDisplay = normalizePaymentPhone(paymentMbway);
+  const hasBankDetails = Boolean(
+    ibanDisplay || bankgiroDisplay || swishDisplay || mbwayDisplay
+  );
 
   return (
     <article
@@ -279,7 +288,7 @@ export function InvoiceDocument({
             {hasBankDetails && (
               <div>
                 <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
-                  Bank transfer
+                  Payment details
                 </div>
                 <div className="text-[13px] text-gray-700 space-y-1">
                   {ibanDisplay && (
@@ -292,6 +301,22 @@ export function InvoiceDocument({
                     <p>
                       <span className="text-gray-500">Bankgiro</span>{" "}
                       <span className="font-medium">{bankgiroDisplay}</span>
+                    </p>
+                  )}
+                  {swishDisplay && (
+                    <p>
+                      <span className="text-gray-500">Swish</span>{" "}
+                      <span className="font-medium tracking-wide">
+                        {swishDisplay}
+                      </span>
+                    </p>
+                  )}
+                  {mbwayDisplay && (
+                    <p>
+                      <span className="text-gray-500">MB Way</span>{" "}
+                      <span className="font-medium tracking-wide">
+                        {mbwayDisplay}
+                      </span>
                     </p>
                   )}
                   {number && (

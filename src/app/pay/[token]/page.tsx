@@ -43,6 +43,8 @@ type PayPayload = {
     address: string | null;
     paymentIban?: string | null;
     paymentBankgiro?: string | null;
+    paymentSwish?: string | null;
+    paymentMbway?: string | null;
   };
   client: {
     name: string | null;
@@ -308,6 +310,8 @@ export default function PublicInvoicePayPage() {
               notes={data.invoice.notes}
               paymentIban={data.business.paymentIban}
               paymentBankgiro={data.business.paymentBankgiro}
+              paymentSwish={data.business.paymentSwish}
+              paymentMbway={data.business.paymentMbway}
             />
           </div>
 
@@ -326,10 +330,12 @@ export default function PublicInvoicePayPage() {
               {bankTransferAvailable && (
                 <div className="rounded-2xl border border-line bg-white px-5 py-5 shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
                   <div className="text-[15px] font-semibold text-gray-900">
-                    {stripePayable ? "Or pay by bank transfer" : "Pay by bank transfer"}
+                    {stripePayable
+                      ? "Or pay with these details"
+                      : "Pay with these details"}
                   </div>
                   <p className="text-[13px] text-gray-500 mt-1 leading-snug">
-                    Transfer {data.invoice.totalFormatted}
+                    Pay {data.invoice.totalFormatted}
                     {data.invoice.number
                       ? ` and use ${data.invoice.number} as the reference.`
                       : "."}
@@ -352,6 +358,26 @@ export default function PublicInvoicePayPage() {
                         </div>
                         <div className="mt-1 font-medium text-gray-900">
                           {data.business.paymentBankgiro}
+                        </div>
+                      </div>
+                    )}
+                    {data.business.paymentSwish && (
+                      <div>
+                        <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                          Swish
+                        </div>
+                        <div className="mt-1 font-medium text-gray-900 tracking-wide">
+                          {data.business.paymentSwish}
+                        </div>
+                      </div>
+                    )}
+                    {data.business.paymentMbway && (
+                      <div>
+                        <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                          MB Way
+                        </div>
+                        <div className="mt-1 font-medium text-gray-900 tracking-wide">
+                          {data.business.paymentMbway}
                         </div>
                       </div>
                     )}

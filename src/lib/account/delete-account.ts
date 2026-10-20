@@ -51,6 +51,8 @@ export async function deleteUserAccount(userId: string) {
         logo_url: null,
         payment_iban: null,
         payment_bankgiro: null,
+        payment_swish: null,
+        payment_mbway: null,
         updated_at: now,
       })
       .eq("id", org.id);

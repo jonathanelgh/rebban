@@ -25,9 +25,16 @@ import {
   Check,
   Eye,
   Send,
+  X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "@/components/ProfileContext";
+import {
+  ModalOverlay,
+  modalFooterClass,
+  modalHeaderClass,
+  modalPanelClass,
+} from "@/components/ModalFrame";
 import {
   LEAD_STATUSES,
   LEAD_STATUS_LABELS,
@@ -694,94 +701,114 @@ function LeadsPageInner() {
       ) : null}
 
       {showNew ? (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/40"
-            aria-label="Close"
-            onClick={() => {
-              setShowNew(false);
-              setNewSource("manual");
-            }}
-          />
+        <ModalOverlay
+          onClose={() => {
+            setShowNew(false);
+            setNewSource("manual");
+          }}
+        >
           <form
             onSubmit={(e) => void handleCreateLead(e)}
-            className="relative w-full max-w-md bg-white rounded-2xl border border-line p-6 shadow-xl space-y-4 overflow-visible"
+            className={modalPanelClass("max-w-[520px]")}
           >
-            <h2 className="text-lg font-semibold text-gray-900">Add lead</h2>
-            <label className="block">
-              <span className="text-[13px] font-medium text-gray-700 mb-1.5 block">
-                Name
-              </span>
-              <input
-                required
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                className="w-full rounded-xl border border-line px-3 py-2.5 text-sm"
-              />
-            </label>
-            <label className="block">
-              <span className="text-[13px] font-medium text-gray-700 mb-1.5 block">
-                Email
-              </span>
-              <input
-                type="email"
-                value={newEmail}
-                onChange={(e) => setNewEmail(e.target.value)}
-                className="w-full rounded-xl border border-line px-3 py-2.5 text-sm"
-              />
-            </label>
-            <label className="block">
-              <span className="text-[13px] font-medium text-gray-700 mb-1.5 block">
-                Company
-              </span>
-              <input
-                value={newCompany}
-                onChange={(e) => setNewCompany(e.target.value)}
-                className="w-full rounded-xl border border-line px-3 py-2.5 text-sm"
-              />
-            </label>
-            <div className="block">
-              <span className="text-[13px] font-medium text-gray-700 mb-1.5 block">
-                Source
-              </span>
-              <LeadSourceSelect
-                value={newSource}
-                onChange={setNewSource}
-                sources={sources}
-              />
-            </div>
-            <label className="block">
-              <span className="text-[13px] font-medium text-gray-700 mb-1.5 block">
-                Notes
-              </span>
-              <textarea
-                rows={3}
-                value={newNotes}
-                onChange={(e) => setNewNotes(e.target.value)}
-                className="w-full rounded-xl border border-line px-3 py-2.5 text-sm"
-              />
-            </label>
-            <div className="flex justify-end gap-2 pt-2">
+            <div className={modalHeaderClass}>
+              <div className="min-w-0">
+                <h2 className="text-xl font-semibold text-gray-900 tracking-tight">
+                  Add lead
+                </h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  Capture a prospect you can convert to a client or proposal.
+                </p>
+              </div>
               <button
                 type="button"
                 onClick={() => {
                   setShowNew(false);
                   setNewSource("manual");
                 }}
-                className="rounded-xl px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+                className="p-2 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors shrink-0"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="px-5 sm:px-6 pb-2 space-y-4 overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0">
+              <label className="block min-w-0">
+                <span className="text-[13px] font-medium text-gray-700 mb-1.5 block">
+                  Name
+                </span>
+                <input
+                  required
+                  autoFocus
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  className="w-full min-w-0 rounded-xl border border-line px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-100"
+                />
+              </label>
+              <label className="block min-w-0">
+                <span className="text-[13px] font-medium text-gray-700 mb-1.5 block">
+                  Email
+                </span>
+                <input
+                  type="email"
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  className="w-full min-w-0 rounded-xl border border-line px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-100"
+                />
+              </label>
+              <label className="block min-w-0">
+                <span className="text-[13px] font-medium text-gray-700 mb-1.5 block">
+                  Company
+                </span>
+                <input
+                  value={newCompany}
+                  onChange={(e) => setNewCompany(e.target.value)}
+                  className="w-full min-w-0 rounded-xl border border-line px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-100"
+                />
+              </label>
+              <div className="block min-w-0">
+                <span className="text-[13px] font-medium text-gray-700 mb-1.5 block">
+                  Source
+                </span>
+                <LeadSourceSelect
+                  value={newSource}
+                  onChange={setNewSource}
+                  sources={sources}
+                />
+              </div>
+              <label className="block min-w-0">
+                <span className="text-[13px] font-medium text-gray-700 mb-1.5 block">
+                  Notes
+                </span>
+                <textarea
+                  rows={3}
+                  value={newNotes}
+                  onChange={(e) => setNewNotes(e.target.value)}
+                  className="w-full min-w-0 rounded-xl border border-line px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-100 resize-none"
+                />
+              </label>
+            </div>
+
+            <div className={`${modalFooterClass} bg-[#FAFBFC]`}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowNew(false);
+                  setNewSource("manual");
+                }}
+                className="px-4 py-2.5 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="rounded-xl px-4 py-2 text-sm font-semibold text-white bg-[#2563EB] hover:bg-[#1d4ed8]"
+                className="btn-primary px-5 py-2.5 rounded-xl text-sm"
               >
                 Save lead
               </button>
             </div>
           </form>
-        </div>
+        </ModalOverlay>
       ) : null}
     </main>
   );

@@ -6,6 +6,7 @@ import {
   formatIbanDisplay,
   hasBankPaymentDetails,
   normalizeBankgiro,
+  normalizePaymentPhone,
 } from "@/lib/invoices/payment-details";
 
 type RouteContext = { params: Promise<{ token: string }> };
@@ -65,6 +66,8 @@ type PublicInvoicePayload = {
     stripe_charges_enabled: boolean | null;
     payment_iban: string | null;
     payment_bankgiro: string | null;
+    payment_swish: string | null;
+    payment_mbway: string | null;
   } | null;
   client: {
     name: string | null;
@@ -115,11 +118,15 @@ export async function GET(_request: Request, context: RouteContext) {
       openStatus && Boolean(org?.stripe_charges_enabled);
     const bankIban = formatIbanDisplay(org?.payment_iban);
     const bankBankgiro = normalizeBankgiro(org?.payment_bankgiro);
+    const bankSwish = normalizePaymentPhone(org?.payment_swish);
+    const bankMbway = normalizePaymentPhone(org?.payment_mbway);
     const bankTransferAvailable =
       openStatus &&
       hasBankPaymentDetails({
         iban: org?.payment_iban,
         bankgiro: org?.payment_bankgiro,
+        swish: org?.payment_swish,
+        mbway: org?.payment_mbway,
       });
 
     return NextResponse.json({
@@ -158,6 +165,8 @@ export async function GET(_request: Request, context: RouteContext) {
         address: org?.address || null,
         paymentIban: bankIban,
         paymentBankgiro: bankBankgiro,
+        paymentSwish: bankSwish,
+        paymentMbway: bankMbway,
       },
       client: {
         name: client?.name || null,

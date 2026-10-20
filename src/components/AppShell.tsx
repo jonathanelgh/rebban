@@ -79,10 +79,12 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
           isPrintLayout
             ? "overflow-y-auto bg-white"
             : pathname.startsWith("/p/") || pathname.startsWith("/pay/")
-            ? "overflow-y-auto bg-[#F3F4F6]"
-            : isAuthLayout
-              ? "overflow-y-auto bg-[#F0F1F3]"
-              : "overflow-hidden bg-white"
+              ? "overflow-y-auto bg-[#F3F4F6]"
+              : pathname.startsWith("/f/")
+                ? "h-auto min-h-0 overflow-visible bg-transparent"
+                : isAuthLayout
+                  ? "overflow-y-auto bg-[#F0F1F3]"
+                  : "overflow-hidden bg-white"
         }`}
       >
         {children}

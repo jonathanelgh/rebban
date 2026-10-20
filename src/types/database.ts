@@ -1194,6 +1194,8 @@ export type Database = {
           org_number: string | null
           payment_bankgiro: string | null
           payment_iban: string | null
+          payment_mbway: string | null
+          payment_swish: string | null
           slug: string
           stripe_account_id: string | null
           stripe_charges_enabled: boolean
@@ -1232,6 +1234,8 @@ export type Database = {
           org_number?: string | null
           payment_bankgiro?: string | null
           payment_iban?: string | null
+          payment_mbway?: string | null
+          payment_swish?: string | null
           slug: string
           stripe_account_id?: string | null
           stripe_charges_enabled?: boolean
@@ -1270,6 +1274,8 @@ export type Database = {
           org_number?: string | null
           payment_bankgiro?: string | null
           payment_iban?: string | null
+          payment_mbway?: string | null
+          payment_swish?: string | null
           slug?: string
           stripe_account_id?: string | null
           stripe_charges_enabled?: boolean
@@ -3073,6 +3079,8 @@ export type Database = {
           org_number: string | null
           payment_bankgiro: string | null
           payment_iban: string | null
+          payment_mbway: string | null
+          payment_swish: string | null
           slug: string
           stripe_account_id: string | null
           stripe_charges_enabled: boolean

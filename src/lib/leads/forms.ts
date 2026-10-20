@@ -362,10 +362,17 @@ export function normalizeLeadFormFields(raw: unknown): LeadFormField[] {
   });
 }
 
+/** postMessage type used by the public form → parent embed script. */
+export const LEAD_FORM_EMBED_RESIZE = "rebban-form-resize";
+
 export function leadFormEmbedSnippet(appUrl: string, token: string) {
   const base = appUrl.replace(/\/$/, "");
-  const src = `${base}/f/${token}`;
-  return `<iframe src="${src}" title="Contact form" style="width:100%;min-height:520px;border:0;border-radius:16px;" loading="lazy"></iframe>`;
+  const src = `${base}/f/${encodeURIComponent(token)}?embed=1`;
+  const iframeId = `rebban-form-${token}`;
+  return [
+    `<iframe id="${iframeId}" src="${src}" title="Contact form" loading="lazy" scrolling="no" style="width:100%;height:0;border:0;background:transparent;display:block;overflow:hidden;"></iframe>`,
+    `<script>(function(){var i=${JSON.stringify(iframeId)},t=${JSON.stringify(token)};function s(e){if(!e||!e.data||e.data.type!==${JSON.stringify(LEAD_FORM_EMBED_RESIZE)}||e.data.token!==t)return;var el=document.getElementById(i);if(el&&typeof e.data.height==="number")el.style.height=Math.ceil(e.data.height)+"px";}window.addEventListener("message",s);})();</script>`,
+  ].join("\n");
 }
 
 export function normalizeLeadFormTheme(

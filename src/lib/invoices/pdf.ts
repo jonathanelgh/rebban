@@ -34,6 +34,8 @@ export type InvoicePdfInput = {
   taxTotal: number;
   total: number;
   pricesIncludeTax?: boolean;
+  /** Drawn diagonally over each page (e.g. "PREVIEW" for drafts). */
+  watermark?: string | null;
 };
 
 function formatDate(iso: string | null) {
@@ -71,6 +73,23 @@ export async function buildInvoicePdf(input: InvoicePdfInput): Promise<Buffer> {
     const rule = "#E2E5EA";
     const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
     let y = doc.page.margins.top;
+    const watermark = input.watermark?.trim() || null;
+
+    function stampWatermark() {
+      if (!watermark) return;
+      const { width, height } = doc.page;
+      doc.save();
+      doc.fillOpacity(0.14);
+      doc.fillColor("#111827");
+      doc.font("Helvetica-Bold").fontSize(72);
+      doc.rotate(-32, { origin: [width / 2, height / 2] });
+      doc.text(watermark, 40, height / 2 - 28, {
+        width: width - 80,
+        align: "center",
+        lineBreak: false,
+      });
+      doc.restore();
+    }
 
     // Header bar accent
     doc.rect(0, 0, doc.page.width, 6).fill(accent);
@@ -193,6 +212,7 @@ export async function buildInvoicePdf(input: InvoicePdfInput): Promise<Buffer> {
       });
       const thisRow = Math.max(rowH, descHeight + 12);
       if (y + thisRow > doc.page.height - 120) {
+        stampWatermark();
         doc.addPage();
         y = doc.page.margins.top;
       }
@@ -268,6 +288,12 @@ export async function buildInvoicePdf(input: InvoicePdfInput): Promise<Buffer> {
 
     if (input.notes?.trim()) {
       y += 16;
+      // Keep notes clear of the footer block (~110px).
+      if (y > doc.page.height - 160) {
+        stampWatermark();
+        doc.addPage();
+        y = doc.page.margins.top;
+      }
       doc.fillColor(muted).font("Helvetica-Bold").fontSize(8).text("NOTES", 48, y);
       y = doc.y + 6;
       doc
@@ -275,26 +301,85 @@ export async function buildInvoicePdf(input: InvoicePdfInput): Promise<Buffer> {
         .font("Helvetica")
         .fontSize(9)
         .text(input.notes.trim(), 48, y, { width: pageWidth });
+      y = doc.y;
     }
 
-    // Footer
-    const footerY = doc.page.height - 48;
-    doc
-      .fillColor(muted)
-      .font("Helvetica")
-      .fontSize(8)
-      .text(
-        [
-          input.fromName,
-          input.showTaxId && input.taxId ? `Tax ID ${input.taxId}` : null,
-          "Paid via Rebban",
-        ]
-          .filter(Boolean)
-          .join(" · "),
-        48,
-        footerY,
-        { width: pageWidth, align: "center" }
-      );
+    // Watermark under the footer so "From" stays fully readable.
+    stampWatermark();
+
+    // Footer — match on-screen invoice "From" block (never in the clipped margin).
+    const footerTop = Math.max(y + 28, doc.page.height - 120);
+    if (footerTop > doc.page.height - 100) {
+      // Content already used the footer zone — new page for from-details.
+      doc.addPage();
+      stampWatermark();
+      drawFromFooter(doc.page.margins.top);
+    } else {
+      drawFromFooter(footerTop);
+    }
+
+    function drawFromFooter(startY: number) {
+      let fy = startY;
+      doc
+        .moveTo(48, fy)
+        .lineTo(48 + pageWidth, fy)
+        .strokeColor(rule)
+        .lineWidth(1)
+        .stroke();
+      fy += 14;
+
+      doc
+        .fillColor(muted)
+        .font("Helvetica-Bold")
+        .fontSize(8)
+        .text("FROM", 48, fy);
+      fy = doc.y + 6;
+
+      doc
+        .fillColor(ink)
+        .font("Helvetica-Bold")
+        .fontSize(10)
+        .text(input.fromName, 48, fy, { width: pageWidth });
+      fy = doc.y + 2;
+
+      if (input.fromAddress?.trim()) {
+        doc
+          .fillColor(muted)
+          .font("Helvetica")
+          .fontSize(9)
+          .text(input.fromAddress.trim(), 48, fy, { width: pageWidth });
+        fy = doc.y + 2;
+      }
+      if (input.fromEmail?.trim()) {
+        doc
+          .fillColor(muted)
+          .font("Helvetica")
+          .fontSize(9)
+          .text(input.fromEmail.trim(), 48, fy, { width: pageWidth });
+        fy = doc.y + 2;
+      }
+      if ((input.showTaxId || input.taxEnabled) && input.taxId?.trim()) {
+        doc
+          .fillColor(muted)
+          .font("Helvetica")
+          .fontSize(9)
+          .text(`VAT / Tax ID: ${input.taxId.trim()}`, 48, fy, {
+            width: pageWidth,
+          });
+        fy = doc.y + 2;
+      }
+
+      doc
+        .fillColor(muted)
+        .font("Helvetica")
+        .fontSize(8)
+        .text(
+          watermark ? "Draft preview · Rebban" : "Created with Rebban",
+          48,
+          Math.max(fy + 10, doc.page.height - 36),
+          { width: pageWidth, align: "center" }
+        );
+    }
 
     doc.end();
   });

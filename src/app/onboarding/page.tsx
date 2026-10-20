@@ -36,8 +36,12 @@ import {
 } from "@/lib/onboarding";
 import { TAX_RATE_PRESETS } from "@/lib/invoices/totals";
 import {
+  formatIbanDisplay,
+  maskIbanInput,
+  maskPaymentPhoneInput,
   normalizeBankgiro,
   normalizeIban,
+  normalizePaymentPhone,
 } from "@/lib/invoices/payment-details";
 import { trackSignUp } from "@/lib/analytics/track";
 
@@ -106,6 +110,8 @@ export default function OnboardingPage() {
   const [taxRateDraft, setTaxRateDraft] = useState("25");
   const [paymentIban, setPaymentIban] = useState("");
   const [paymentBankgiro, setPaymentBankgiro] = useState("");
+  const [paymentSwish, setPaymentSwish] = useState("");
+  const [paymentMbway, setPaymentMbway] = useState("");
 
   const [stripeConnected, setStripeConnected] = useState(false);
   const [stripeReady, setStripeReady] = useState(false);
@@ -173,7 +179,7 @@ export default function OnboardingPage() {
       const { data } = await supabase
         .from("organizations")
         .select(
-          "address, country, tax_id, currency, default_tax_enabled, default_tax_rate, description, website, stripe_account_id, stripe_charges_enabled, stripe_details_submitted, payment_iban, payment_bankgiro"
+          "address, country, tax_id, currency, default_tax_enabled, default_tax_rate, description, website, stripe_account_id, stripe_charges_enabled, stripe_details_submitted, payment_iban, payment_bankgiro, payment_swish, payment_mbway"
         )
         .eq("id", organizationId)
         .maybeSingle();
@@ -190,8 +196,10 @@ export default function OnboardingPage() {
       }
       setBio(data.description || "");
       setWebsite(data.website || "");
-      setPaymentIban(data.payment_iban || "");
+      setPaymentIban(formatIbanDisplay(data.payment_iban) || "");
       setPaymentBankgiro(data.payment_bankgiro || "");
+      setPaymentSwish(normalizePaymentPhone(data.payment_swish) || "");
+      setPaymentMbway(normalizePaymentPhone(data.payment_mbway) || "");
       setStripeConnected(Boolean(data.stripe_account_id));
       setStripeReady(
         Boolean(data.stripe_charges_enabled && data.stripe_details_submitted)
@@ -388,7 +396,12 @@ export default function OnboardingPage() {
         country: country || null,
         currency,
         payment_iban: normalizeIban(paymentIban),
-        payment_bankgiro: normalizeBankgiro(paymentBankgiro),
+        payment_bankgiro:
+          country === "SE" ? normalizeBankgiro(paymentBankgiro) : null,
+        payment_swish:
+          country === "SE" ? normalizePaymentPhone(paymentSwish) : null,
+        payment_mbway:
+          country === "PT" ? normalizePaymentPhone(paymentMbway) : null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", organizationId);
@@ -868,11 +881,15 @@ export default function OnboardingPage() {
                 <div className="rounded-2xl border border-line p-4 space-y-3">
                   <div>
                     <div className="text-[14px] font-semibold text-gray-900">
-                      Bank transfer
+                      Manual payment details
                     </div>
                     <p className="text-[13px] text-gray-500 mt-0.5 leading-snug">
-                      Add your account details so clients can pay without Stripe.
-                      You can change this later in Settings.
+                      Add details so clients can pay without Stripe. You can
+                      change this later in Settings.
+                    </p>
+                    <p className="text-[12px] text-amber-800/80 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mt-3 leading-relaxed">
+                      These aren’t tracked automatically — mark invoices as paid
+                      yourself when you’ve received the money.
                     </p>
                   </div>
                   <label className="block">
@@ -884,29 +901,75 @@ export default function OnboardingPage() {
                       </span>
                     </span>
                     <input
-                      className={inputClass}
+                      className={`${inputClass} font-mono tracking-wide`}
                       value={paymentIban}
-                      onChange={(e) => setPaymentIban(e.target.value)}
+                      onChange={(e) => setPaymentIban(maskIbanInput(e.target.value))}
                       placeholder="SE45 5000 0000 0583 9825 7466"
+                      inputMode="text"
                       autoComplete="off"
                       spellCheck={false}
+                      maxLength={42}
                     />
                   </label>
-                  {(country === "SE" || paymentBankgiro) && (
+                  {country === "SE" && (
+                    <>
+                      <label className="block">
+                        <span className="block text-[12px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
+                          Bankgiro
+                          <span className="font-medium normal-case tracking-normal text-gray-300">
+                            {" "}
+                            · optional
+                          </span>
+                        </span>
+                        <input
+                          className={inputClass}
+                          value={paymentBankgiro}
+                          onChange={(e) => setPaymentBankgiro(e.target.value)}
+                          placeholder="123-4567"
+                          autoComplete="off"
+                          spellCheck={false}
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="block text-[12px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
+                          Swish
+                          <span className="font-medium normal-case tracking-normal text-gray-300">
+                            {" "}
+                            · optional
+                          </span>
+                        </span>
+                        <input
+                          className={`${inputClass} font-mono tracking-wide`}
+                          value={paymentSwish}
+                          onChange={(e) =>
+                            setPaymentSwish(maskPaymentPhoneInput(e.target.value))
+                          }
+                          placeholder="+46 70 123 45 67"
+                          inputMode="tel"
+                          autoComplete="tel"
+                          spellCheck={false}
+                        />
+                      </label>
+                    </>
+                  )}
+                  {country === "PT" && (
                     <label className="block">
                       <span className="block text-[12px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
-                        Bankgiro
+                        MB Way
                         <span className="font-medium normal-case tracking-normal text-gray-300">
                           {" "}
                           · optional
                         </span>
                       </span>
                       <input
-                        className={inputClass}
-                        value={paymentBankgiro}
-                        onChange={(e) => setPaymentBankgiro(e.target.value)}
-                        placeholder="123-4567"
-                        autoComplete="off"
+                        className={`${inputClass} font-mono tracking-wide`}
+                        value={paymentMbway}
+                        onChange={(e) =>
+                          setPaymentMbway(maskPaymentPhoneInput(e.target.value))
+                        }
+                        placeholder="+351 912 345 678"
+                        inputMode="tel"
+                        autoComplete="tel"
                         spellCheck={false}
                       />
                     </label>

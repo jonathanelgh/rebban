@@ -280,7 +280,7 @@ export function SendInvoiceModal({
                   className="font-medium text-[#2563EB] hover:text-[#1d4ed8]"
                   onClick={onClose}
                 >
-                  Settings → Preferences
+                  Settings → Automations
                 </Link>
                 .
               </p>

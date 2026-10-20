@@ -7,25 +7,31 @@ import {
   Building2,
   Bell,
   CreditCard,
-  Palette,
+  Zap,
   Link2,
   Shield,
   Check,
   Sparkles,
   ImageIcon,
-  Percent,
+  Receipt,
   Trash2,
   Download,
   Scale,
   ExternalLink,
   Cookie,
+  FileText,
+  CircleDollarSign,
 } from "lucide-react";
 import { openCookiePreferences } from "@/lib/cookies/consent";
 import { trackSubscribed } from "@/lib/analytics/track";
 import { TAX_RATE_PRESETS } from "@/lib/invoices/totals";
 import {
+  formatIbanDisplay,
+  maskIbanInput,
+  maskPaymentPhoneInput,
   normalizeBankgiro,
   normalizeIban,
+  normalizePaymentPhone,
 } from "@/lib/invoices/payment-details";
 import {
   ORG_REMINDER_SEQUENCES,
@@ -49,17 +55,36 @@ import {
   normalizeWebsite,
 } from "@/lib/onboarding";
 import { FancySelect } from "@/components/onboarding/FancySelect";
-
 type SectionId =
   | "profile"
   | "business"
   | "branding"
   | "notifications"
   | "billing"
-  | "tax"
+  | "invoicing"
   | "preferences"
   | "integrations"
   | "legal";
+
+const SETTINGS_SECTIONS: SectionId[] = [
+  "profile",
+  "business",
+  "branding",
+  "notifications",
+  "billing",
+  "invoicing",
+  "preferences",
+  "integrations",
+  "legal",
+];
+
+function resolveSettingsSection(raw: string | null): SectionId {
+  if (raw === "tax") return "invoicing";
+  if (raw && (SETTINGS_SECTIONS as string[]).includes(raw)) {
+    return raw as SectionId;
+  }
+  return "profile";
+}
 
 type NavSection = {
   id: SectionId;
@@ -130,6 +155,12 @@ function SettingsPageInner() {
       icon: Building2,
     },
     {
+      id: "invoicing",
+      label: "Invoicing",
+      description: "Rates, tax, and bank details",
+      icon: Receipt,
+    },
+    {
       id: "notifications",
       label: "Notifications",
       description: "Alerts and reminders",
@@ -138,20 +169,14 @@ function SettingsPageInner() {
     {
       id: "billing",
       label: "Billing",
-      description: "Plan and payment method",
+      description: "Your Rebban plan",
       icon: CreditCard,
     },
     {
-      id: "tax",
-      label: "Tax",
-      description: "Default invoice tax rate",
-      icon: Percent,
-    },
-    {
       id: "preferences",
-      label: "Preferences",
-      description: "Time tracking and invoice defaults",
-      icon: Palette,
+      label: "Automations",
+      description: "Invoice and proposal sequences",
+      icon: Zap,
     },
     {
       id: "integrations",
@@ -167,21 +192,8 @@ function SettingsPageInner() {
     },
   ];
 
-  const initialSection = (searchParams.get("section") as SectionId | null) || "profile";
-  const [section, setSection] = useState<SectionId>(
-    [
-      "profile",
-      "business",
-      "branding",
-      "notifications",
-      "billing",
-      "tax",
-      "preferences",
-      "integrations",
-      "legal",
-    ].includes(initialSection)
-      ? initialSection
-      : "profile"
+  const [section, setSection] = useState<SectionId>(() =>
+    resolveSettingsSection(searchParams.get("section"))
   );
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -255,6 +267,8 @@ function SettingsPageInner() {
     taxId: "",
     paymentIban: "",
     paymentBankgiro: "",
+    paymentSwish: "",
+    paymentMbway: "",
   });
 
   const [notifications, setNotifications] = useState({
@@ -332,7 +346,7 @@ function SettingsPageInner() {
       const { data } = await supabase
         .from("organizations")
         .select(
-          "name, legal_name, address, country, website, org_number, default_tax_rate, default_tax_enabled, default_prices_include_tax, custom_tax_rates, tax_id, currency, default_hourly_rate, default_reminder_sequence, default_proposal_followup_sequence, payment_iban, payment_bankgiro"
+          "name, legal_name, address, country, website, org_number, default_tax_rate, default_tax_enabled, default_prices_include_tax, custom_tax_rates, tax_id, currency, default_hourly_rate, default_reminder_sequence, default_proposal_followup_sequence, payment_iban, payment_bankgiro, payment_swish, payment_mbway"
         )
         .eq("id", organizationId!)
         .maybeSingle();
@@ -352,8 +366,10 @@ function SettingsPageInner() {
         country: data.country || "SE",
         taxId: data.tax_id || prev.taxId,
         currency: data.currency || prev.currency,
-        paymentIban: data.payment_iban || "",
+        paymentIban: formatIbanDisplay(data.payment_iban) || "",
         paymentBankgiro: data.payment_bankgiro || "",
+        paymentSwish: normalizePaymentPhone(data.payment_swish) || "",
+        paymentMbway: normalizePaymentPhone(data.payment_mbway) || "",
       }));
       setBranding((prev) => ({
         ...prev,
@@ -883,8 +899,6 @@ function SettingsPageInner() {
           country: business.country || null,
           currency: business.currency || "USD",
           tax_id: business.taxId.trim() || null,
-          payment_iban: normalizeIban(business.paymentIban),
-          payment_bankgiro: normalizeBankgiro(business.paymentBankgiro),
           updated_at: new Date().toISOString(),
           ...(!isSolo
             ? {
@@ -895,6 +909,47 @@ function SettingsPageInner() {
                   : {}),
               }
             : {}),
+        })
+        .eq("id", organizationId);
+
+      if (updateError) {
+        setError(updateError.message);
+        setSaving(false);
+        return;
+      }
+
+      await refresh();
+    } else if (section === "invoicing" && organizationId) {
+      const hourly = Number(preferences.defaultHourlyRate);
+      if (!Number.isFinite(hourly) || hourly < 0) {
+        setError("Enter a valid hourly rate.");
+        setSaving(false);
+        return;
+      }
+      const taxRate = Math.max(0, Number(taxSettings.rate) || 0);
+      const { error: updateError } = await supabase
+        .from("organizations")
+        .update({
+          default_hourly_rate: Math.round(hourly * 100) / 100,
+          payment_iban: normalizeIban(business.paymentIban),
+          payment_bankgiro:
+            business.country === "SE"
+              ? normalizeBankgiro(business.paymentBankgiro)
+              : null,
+          payment_swish:
+            business.country === "SE"
+              ? normalizePaymentPhone(business.paymentSwish)
+              : null,
+          payment_mbway:
+            business.country === "PT"
+              ? normalizePaymentPhone(business.paymentMbway)
+              : null,
+          default_tax_enabled: taxSettings.enabled,
+          default_tax_rate: taxRate,
+          default_prices_include_tax: taxSettings.pricesIncludeTax,
+          custom_tax_rates: taxSettings.customRates,
+          tax_id: business.taxId.trim() || null,
+          updated_at: new Date().toISOString(),
         })
         .eq("id", organizationId);
 
@@ -924,38 +979,13 @@ function SettingsPageInner() {
         return;
       }
     } else if (section === "preferences" && organizationId) {
-      const rate = Number(preferences.defaultHourlyRate);
-      if (!Number.isFinite(rate) || rate < 0) {
-        setError("Enter a valid hourly rate.");
-        setSaving(false);
-        return;
-      }
       const { error: updateError } = await supabase
         .from("organizations")
         .update({
-          default_hourly_rate: Math.round(rate * 100) / 100,
           default_reminder_sequence: preferences.reminderSequence,
           default_proposal_followup_sequence:
             preferences.proposalFollowUpSequence,
           updated_at: new Date().toISOString(),
-        })
-        .eq("id", organizationId);
-
-      if (updateError) {
-        setError(updateError.message);
-        setSaving(false);
-        return;
-      }
-    } else if (section === "tax" && organizationId) {
-      const rate = Math.max(0, Number(taxSettings.rate) || 0);
-      const { error: updateError } = await supabase
-        .from("organizations")
-        .update({
-          default_tax_enabled: taxSettings.enabled,
-          default_tax_rate: rate,
-          default_prices_include_tax: taxSettings.pricesIncludeTax,
-          custom_tax_rates: taxSettings.customRates,
-          tax_id: business.taxId.trim() || null,
         })
         .eq("id", organizationId);
 
@@ -1207,7 +1237,7 @@ function SettingsPageInner() {
             {section === "business" && (
               <Section
                 title="Business"
-                subtitle="Used on invoices, proposals, and tax documents."
+                subtitle="Company identity shown on invoices and proposals."
               >
                 <div className="space-y-4">
                   {!isSolo && (
@@ -1298,53 +1328,6 @@ function SettingsPageInner() {
                       />
                     </Field>
                   </div>
-                  <div className="pt-2 border-t border-line">
-                    <div className="text-[13px] font-medium text-gray-900 mb-1">
-                      Bank transfer details
-                    </div>
-                    <p className="text-[12px] text-gray-400 mb-3">
-                      Shown on invoices when Stripe isn’t connected, so clients
-                      can pay by transfer.
-                    </p>
-                    <div className="space-y-4">
-                      <Field label="IBAN">
-                        <input
-                          value={business.paymentIban}
-                          onChange={(e) =>
-                            setBusiness({
-                              ...business,
-                              paymentIban: e.target.value,
-                            })
-                          }
-                          className={inputClass}
-                          placeholder="SE45 5000 0000 0583 9825 7466"
-                          autoComplete="off"
-                          spellCheck={false}
-                        />
-                      </Field>
-                      {(business.country === "SE" ||
-                        business.paymentBankgiro) && (
-                        <Field label="Bankgiro">
-                          <input
-                            value={business.paymentBankgiro}
-                            onChange={(e) =>
-                              setBusiness({
-                                ...business,
-                                paymentBankgiro: e.target.value,
-                              })
-                            }
-                            className={inputClass}
-                            placeholder="123-4567"
-                            autoComplete="off"
-                            spellCheck={false}
-                          />
-                          <p className="text-[12px] text-gray-400 mt-1.5">
-                            Optional — common for Swedish freelancers.
-                          </p>
-                        </Field>
-                      )}
-                    </div>
-                  </div>
                 </div>
               </Section>
             )}
@@ -1391,155 +1374,310 @@ function SettingsPageInner() {
               </Section>
             )}
 
-            {section === "tax" && (
+            {section === "invoicing" && (
               <Section
-                title="Tax"
-                subtitle="Tell Rebban whether you charge tax or VAT. When enabled, new invoices turn tax options on by default."
+                title="Invoicing"
+                subtitle="Defaults for rates, tax, and how clients can pay by bank transfer."
               >
-                <div className="space-y-5">
-                  <ToggleRow
-                    label="I charge tax / VAT"
-                    description="Turn this on if your invoices need tax. Off hides tax on new invoices."
-                    active={taxSettings.enabled}
-                    onChange={(v) =>
-                      setTaxSettings((prev) => ({
-                        ...prev,
-                        enabled: v,
-                        rate: v && !prev.rate ? 25 : prev.rate,
-                      }))
-                    }
-                  />
-
-                  {!taxSettings.enabled ? (
-                    <div className="rounded-2xl border border-line bg-[#FAFBFC] px-4 py-3.5 text-[13px] text-gray-500 leading-relaxed">
-                      Tax is off. Invoices won’t add tax or show a VAT number in
-                      the footer unless you enable it per invoice.
+                <div className="space-y-8">
+                  <div>
+                    <div className="text-[13px] font-semibold text-gray-900 mb-1">
+                      Rates
                     </div>
-                  ) : (
-                    <>
-                      <ToggleRow
-                        label="Prices include tax by default"
-                        description="Line item rates are tax-inclusive on new invoices"
-                        active={taxSettings.pricesIncludeTax}
-                        onChange={(v) =>
-                          setTaxSettings((prev) => ({
-                            ...prev,
-                            pricesIncludeTax: v,
-                          }))
-                        }
-                      />
-                      <div>
-                        <div className="text-[13px] font-medium text-gray-700 mb-2">
-                          Default rate
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {TAX_RATE_PRESETS.filter((r) => r > 0).map((rate) => (
-                            <button
-                              key={rate}
-                              type="button"
-                              onClick={() =>
-                                setTaxSettings((prev) => ({ ...prev, rate }))
-                              }
-                              className={`px-3.5 py-2 rounded-full text-sm font-medium border transition-colors ${
-                                taxSettings.rate === rate
-                                  ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB]"
-                                  : "border-line bg-white text-gray-700 hover:bg-gray-50"
-                              }`}
-                            >
-                              {rate}%
-                            </button>
-                          ))}
-                          {taxSettings.customRates.map((rate) => (
-                            <button
-                              key={`custom-${rate}`}
-                              type="button"
-                              onClick={() =>
-                                setTaxSettings((prev) => ({ ...prev, rate }))
-                              }
-                              className={`px-3.5 py-2 rounded-full text-sm font-medium border transition-colors ${
-                                taxSettings.rate === rate
-                                  ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB]"
-                                  : "border-line bg-white text-gray-700 hover:bg-gray-50"
-                              }`}
-                            >
-                              {rate}%
-                            </button>
-                          ))}
-                        </div>
-                        <p className="mt-2 text-[13px] text-gray-500">
-                          Selected default:{" "}
-                          <span className="font-medium text-gray-800">
-                            {taxSettings.rate}%
-                          </span>
-                        </p>
+                    <p className="text-[12px] text-gray-400 mb-3">
+                      Used when you track time without a custom rate.
+                    </p>
+                    <Field label="Default hourly rate">
+                      <div className="relative max-w-xs">
+                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-gray-400">
+                          {business.currency || "USD"}
+                        </span>
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.01}
+                          value={preferences.defaultHourlyRate}
+                          onChange={(e) =>
+                            setPreferences({
+                              ...preferences,
+                              defaultHourlyRate: e.target.value,
+                            })
+                          }
+                          className={`${inputClass} pl-14`}
+                        />
                       </div>
-                      <Field label="Add custom rate (%)">
-                        <div className="flex gap-2">
+                    </Field>
+                  </div>
+
+                  <div className="border-t border-line pt-6">
+                    <div className="text-[13px] font-semibold text-gray-900 mb-1">
+                      Manual payment details
+                    </div>
+                    <p className="text-[12px] text-gray-400 mb-3">
+                      Shown on invoices so clients can pay you outside Stripe
+                      (bank transfer, Swish, MB Way, etc.).
+                    </p>
+                    <div className="mb-4 rounded-xl border border-amber-100 bg-amber-50/70 px-3.5 py-3 text-[12px] text-amber-900/80 leading-relaxed">
+                      These options are not tracked automatically. When a client
+                      pays this way, mark the invoice as paid yourself in
+                      Rebban.
+                    </div>
+                    <div className="space-y-4">
+                      <Field label="IBAN">
+                        <input
+                          value={business.paymentIban}
+                          onChange={(e) =>
+                            setBusiness({
+                              ...business,
+                              paymentIban: maskIbanInput(e.target.value),
+                            })
+                          }
+                          className={`${inputClass} font-mono tracking-wide`}
+                          placeholder="SE45 5000 0000 0583 9825 7466"
+                          inputMode="text"
+                          autoComplete="off"
+                          spellCheck={false}
+                          maxLength={42}
+                        />
+                      </Field>
+                      {business.country === "SE" && (
+                        <>
+                          <Field label="Bankgiro">
+                            <input
+                              value={business.paymentBankgiro}
+                              onChange={(e) =>
+                                setBusiness({
+                                  ...business,
+                                  paymentBankgiro: e.target.value,
+                                })
+                              }
+                              className={inputClass}
+                              placeholder="123-4567"
+                              autoComplete="off"
+                              spellCheck={false}
+                            />
+                            <p className="text-[12px] text-gray-400 mt-1.5">
+                              Optional — common for Swedish freelancers.
+                            </p>
+                          </Field>
+                          <Field label="Swish">
+                            <input
+                              value={business.paymentSwish}
+                              onChange={(e) =>
+                                setBusiness({
+                                  ...business,
+                                  paymentSwish: maskPaymentPhoneInput(
+                                    e.target.value
+                                  ),
+                                })
+                              }
+                              className={`${inputClass} font-mono tracking-wide`}
+                              placeholder="+46 70 123 45 67"
+                              inputMode="tel"
+                              autoComplete="tel"
+                              spellCheck={false}
+                            />
+                            <p className="text-[12px] text-gray-400 mt-1.5">
+                              Phone number linked to your Swish account.
+                            </p>
+                          </Field>
+                        </>
+                      )}
+                      {business.country === "PT" && (
+                        <Field label="MB Way">
                           <input
-                            type="number"
-                            min={0}
-                            max={100}
-                            step={0.01}
-                            value={taxSettings.customDraft}
+                            value={business.paymentMbway}
                             onChange={(e) =>
-                              setTaxSettings((prev) => ({
-                                ...prev,
-                                customDraft: e.target.value,
-                              }))
+                              setBusiness({
+                                ...business,
+                                paymentMbway: maskPaymentPhoneInput(
+                                  e.target.value
+                                ),
+                              })
                             }
-                            placeholder="e.g. 12.5"
+                            className={`${inputClass} font-mono tracking-wide`}
+                            placeholder="+351 912 345 678"
+                            inputMode="tel"
+                            autoComplete="tel"
+                            spellCheck={false}
+                          />
+                          <p className="text-[12px] text-gray-400 mt-1.5">
+                            Phone number linked to your MB Way account.
+                          </p>
+                        </Field>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="border-t border-line pt-6 space-y-5">
+                    <div>
+                      <div className="text-[13px] font-semibold text-gray-900 mb-1">
+                        Tax
+                      </div>
+                      <p className="text-[12px] text-gray-400">
+                        When enabled, new invoices turn tax options on by
+                        default.
+                      </p>
+                    </div>
+                    <ToggleRow
+                      label="I charge tax / VAT"
+                      description="Turn this on if your invoices need tax. Off hides tax on new invoices."
+                      active={taxSettings.enabled}
+                      onChange={(v) =>
+                        setTaxSettings((prev) => ({
+                          ...prev,
+                          enabled: v,
+                          rate: v && !prev.rate ? 25 : prev.rate,
+                        }))
+                      }
+                    />
+
+                    {!taxSettings.enabled ? (
+                      <div className="rounded-2xl border border-line bg-[#FAFBFC] px-4 py-3.5 text-[13px] text-gray-500 leading-relaxed">
+                        Tax is off. Invoices won’t add tax or show a VAT number
+                        in the footer unless you enable it per invoice.
+                      </div>
+                    ) : (
+                      <>
+                        <ToggleRow
+                          label="Prices include tax by default"
+                          description="Line item rates are tax-inclusive on new invoices"
+                          active={taxSettings.pricesIncludeTax}
+                          onChange={(v) =>
+                            setTaxSettings((prev) => ({
+                              ...prev,
+                              pricesIncludeTax: v,
+                            }))
+                          }
+                        />
+                        <div>
+                          <div className="text-[13px] font-medium text-gray-700 mb-2">
+                            Default rate
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {TAX_RATE_PRESETS.filter((r) => r > 0).map(
+                              (rate) => (
+                                <button
+                                  key={rate}
+                                  type="button"
+                                  onClick={() =>
+                                    setTaxSettings((prev) => ({
+                                      ...prev,
+                                      rate,
+                                    }))
+                                  }
+                                  className={`px-3.5 py-2 rounded-full text-sm font-medium border transition-colors ${
+                                    taxSettings.rate === rate
+                                      ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB]"
+                                      : "border-line bg-white text-gray-700 hover:bg-gray-50"
+                                  }`}
+                                >
+                                  {rate}%
+                                </button>
+                              )
+                            )}
+                            {taxSettings.customRates.map((rate) => (
+                              <button
+                                key={`custom-${rate}`}
+                                type="button"
+                                onClick={() =>
+                                  setTaxSettings((prev) => ({
+                                    ...prev,
+                                    rate,
+                                  }))
+                                }
+                                className={`px-3.5 py-2 rounded-full text-sm font-medium border transition-colors ${
+                                  taxSettings.rate === rate
+                                    ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB]"
+                                    : "border-line bg-white text-gray-700 hover:bg-gray-50"
+                                }`}
+                              >
+                                {rate}%
+                              </button>
+                            ))}
+                          </div>
+                          <p className="mt-2 text-[13px] text-gray-500">
+                            Selected default:{" "}
+                            <span className="font-medium text-gray-800">
+                              {taxSettings.rate}%
+                            </span>
+                          </p>
+                        </div>
+                        <Field label="Add custom rate (%)">
+                          <div className="flex gap-2">
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              step={0.01}
+                              value={taxSettings.customDraft}
+                              onChange={(e) =>
+                                setTaxSettings((prev) => ({
+                                  ...prev,
+                                  customDraft: e.target.value,
+                                }))
+                              }
+                              placeholder="e.g. 12.5"
+                              className={inputClass}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const value = Number(taxSettings.customDraft);
+                                if (
+                                  !Number.isFinite(value) ||
+                                  value < 0 ||
+                                  value > 100
+                                ) {
+                                  setError(
+                                    "Enter a tax rate between 0 and 100."
+                                  );
+                                  return;
+                                }
+                                const rounded = Math.round(value * 100) / 100;
+                                setTaxSettings((prev) => ({
+                                  ...prev,
+                                  rate: rounded,
+                                  customRates: prev.customRates.includes(
+                                    rounded
+                                  )
+                                    ? prev.customRates
+                                    : [...prev.customRates, rounded].sort(
+                                        (a, b) => b - a
+                                      ),
+                                  customDraft: "",
+                                }));
+                                setError(null);
+                              }}
+                              className="shrink-0 px-4 py-2.5 rounded-xl text-sm font-medium border border-line bg-white hover:bg-gray-50"
+                            >
+                              Add & use
+                            </button>
+                          </div>
+                        </Field>
+                        <Field label="Tax / VAT number">
+                          <input
+                            value={business.taxId}
+                            onChange={(e) =>
+                              setBusiness({
+                                ...business,
+                                taxId: e.target.value,
+                              })
+                            }
+                            placeholder="TAX-123456"
                             className={inputClass}
                           />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const value = Number(taxSettings.customDraft);
-                              if (
-                                !Number.isFinite(value) ||
-                                value < 0 ||
-                                value > 100
-                              ) {
-                                setError("Enter a tax rate between 0 and 100.");
-                                return;
-                              }
-                              const rounded = Math.round(value * 100) / 100;
-                              setTaxSettings((prev) => ({
-                                ...prev,
-                                rate: rounded,
-                                customRates: prev.customRates.includes(rounded)
-                                  ? prev.customRates
-                                  : [...prev.customRates, rounded].sort(
-                                      (a, b) => b - a
-                                    ),
-                                customDraft: "",
-                              }));
-                              setError(null);
-                            }}
-                            className="shrink-0 px-4 py-2.5 rounded-xl text-sm font-medium border border-line bg-white hover:bg-gray-50"
-                          >
-                            Add & use
-                          </button>
+                          <p className="mt-1.5 text-[12px] text-gray-400">
+                            Shown in the invoice footer when tax is active.
+                          </p>
+                        </Field>
+                        <div className="rounded-2xl border border-line bg-[#FAFBFC] px-4 py-3.5 text-[13px] text-gray-500 leading-relaxed">
+                          New invoices will enable Apply tax, Display Tax / VAT
+                          ID, and your default rate automatically.
                         </div>
-                      </Field>
-                      <Field label="Tax / VAT number">
-                        <input
-                          value={business.taxId}
-                          onChange={(e) =>
-                            setBusiness({ ...business, taxId: e.target.value })
-                          }
-                          placeholder="TAX-123456"
-                          className={inputClass}
-                        />
-                        <p className="mt-1.5 text-[12px] text-gray-400">
-                          Shown in the invoice footer when tax is active.
-                        </p>
-                      </Field>
-                      <div className="rounded-2xl border border-line bg-[#FAFBFC] px-4 py-3.5 text-[13px] text-gray-500 leading-relaxed">
-                        New invoices will enable Apply tax, Display Tax / VAT ID,
-                        and your default rate automatically.
-                      </div>
-                    </>
-                  )}
+                      </>
+                    )}
+                  </div>
                 </div>
               </Section>
             )}
@@ -1547,7 +1685,7 @@ function SettingsPageInner() {
             {section === "billing" && (
               <Section
                 title="Billing"
-                subtitle="Your Rebban plan, invoices, and subscription."
+                subtitle="Your Rebban plan and subscription."
               >
                 {!billingSectionReady ? (
                   <BillingSkeleton />
@@ -1767,149 +1905,52 @@ function SettingsPageInner() {
 
             {section === "preferences" && (
               <Section
-                title="Preferences"
-                subtitle="Defaults for tracking time, invoices, and proposals."
+                title="Automations"
+                subtitle="Default sequences when you turn automation on while sending. You can still change them per send."
               >
-                <div className="space-y-6">
-                  <Field label="Default hourly rate">
-                    <div className="relative">
-                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-gray-400">
-                        {business.currency || "USD"}
-                      </span>
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.01}
-                        value={preferences.defaultHourlyRate}
-                        onChange={(e) =>
-                          setPreferences({
-                            ...preferences,
-                            defaultHourlyRate: e.target.value,
-                          })
-                        }
-                        className={`${inputClass} pl-14`}
-                      />
-                    </div>
-                    <p className="text-[12px] text-gray-400 mt-1.5">
-                      Used when you start a timer or add time without a custom rate.
-                    </p>
-                  </Field>
-
-                  <div>
-                    <div className="text-[13px] font-medium text-gray-700 mb-1.5">
-                      Invoice payment reminders
-                    </div>
-                    <p className="text-[12px] text-gray-400 mb-3">
-                      Used when you turn automation on while sending an invoice.
-                      New accounts start on Standard.
-                    </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                      {ORG_REMINDER_SEQUENCES.map((option) => {
-                        const selected =
-                          preferences.reminderSequence === option.key;
-                        return (
-                          <button
-                            key={option.key}
-                            type="button"
-                            onClick={() =>
-                              setPreferences({
-                                ...preferences,
-                                reminderSequence: asOrgReminderSequence(
-                                  option.key
-                                ),
-                              })
-                            }
-                            className={`text-left rounded-2xl border p-3.5 transition-all ${
-                              selected
-                                ? "border-emerald-500 bg-emerald-50/50 ring-1 ring-emerald-200"
-                                : "border-gray-200 hover:border-gray-300 bg-white"
-                            }`}
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="text-[14px] font-semibold text-gray-900">
-                                {option.label}
-                              </div>
-                              {selected && (
-                                <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0">
-                                  <Check
-                                    className="w-3 h-3"
-                                    strokeWidth={2.5}
-                                  />
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-[12px] text-gray-500 mt-1 leading-snug">
-                              {option.description}
-                            </p>
-                            <p className="text-[11px] font-medium text-gray-400 mt-2">
-                              {option.steps
-                                .map((s) =>
-                                  formatReminderOffsetLabel(s.offsetDays)
-                                )
-                                .join(" · ")}
-                            </p>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="text-[13px] font-medium text-gray-700 mb-1.5">
-                      Proposal follow-ups
-                    </div>
-                    <p className="text-[12px] text-gray-400 mb-3">
-                      Used when you turn automation on while sending a proposal.
-                      New accounts start on Standard.
-                    </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                      {ORG_FOLLOW_UP_SEQUENCES.map((option) => {
-                        const selected =
-                          preferences.proposalFollowUpSequence === option.key;
-                        return (
-                          <button
-                            key={option.key}
-                            type="button"
-                            onClick={() =>
-                              setPreferences({
-                                ...preferences,
-                                proposalFollowUpSequence: asOrgFollowUpSequence(
-                                  option.key
-                                ),
-                              })
-                            }
-                            className={`text-left rounded-2xl border p-3.5 transition-all ${
-                              selected
-                                ? "border-emerald-500 bg-emerald-50/50 ring-1 ring-emerald-200"
-                                : "border-gray-200 hover:border-gray-300 bg-white"
-                            }`}
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="text-[14px] font-semibold text-gray-900">
-                                {option.label}
-                              </div>
-                              {selected && (
-                                <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0">
-                                  <Check
-                                    className="w-3 h-3"
-                                    strokeWidth={2.5}
-                                  />
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-[12px] text-gray-500 mt-1 leading-snug">
-                              {option.description}
-                            </p>
-                            <p className="text-[11px] font-medium text-gray-400 mt-2">
-                              {option.steps
-                                .map((s) => `Day ${s.delayDays}`)
-                                .join(" · ")}
-                            </p>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
+                <div className="space-y-5">
+                  <AutomationPanel
+                    icon={CircleDollarSign}
+                    iconClassName="bg-emerald-50 text-emerald-600"
+                    title="Invoice payment reminders"
+                    description="Nudges clients until the invoice is paid."
+                    options={ORG_REMINDER_SEQUENCES.map((option) => ({
+                      key: option.key,
+                      label: option.label,
+                      description: option.description,
+                      steps: option.steps.map((step) =>
+                        formatReminderOffsetLabel(step.offsetDays)
+                      ),
+                    }))}
+                    value={preferences.reminderSequence}
+                    onChange={(key) =>
+                      setPreferences({
+                        ...preferences,
+                        reminderSequence: asOrgReminderSequence(key),
+                      })
+                    }
+                  />
+                  <AutomationPanel
+                    icon={FileText}
+                    iconClassName="bg-[#EFF6FF] text-[#2563EB]"
+                    title="Proposal follow-ups"
+                    description="Follows up if a proposal hasn’t been accepted yet."
+                    options={ORG_FOLLOW_UP_SEQUENCES.map((option) => ({
+                      key: option.key,
+                      label: option.label,
+                      description: option.description,
+                      steps: option.steps.map(
+                        (step) => `Day ${step.delayDays}`
+                      ),
+                    }))}
+                    value={preferences.proposalFollowUpSequence}
+                    onChange={(key) =>
+                      setPreferences({
+                        ...preferences,
+                        proposalFollowUpSequence: asOrgFollowUpSequence(key),
+                      })
+                    }
+                  />
                 </div>
               </Section>
             )}
@@ -1927,6 +1968,10 @@ function SettingsPageInner() {
                 <div className="space-y-3">
                   <IntegrationRow
                     name="Gmail"
+                    icon={
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src="/gmail.svg" alt="" className="w-6 h-6" />
+                    }
                     description={
                       gmailConnected && gmailEmail
                         ? gmailCanSend
@@ -1961,6 +2006,10 @@ function SettingsPageInner() {
                   />
                   <IntegrationRow
                     name="Outlook"
+                    icon={
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src="/outlook.svg" alt="" className="w-6 h-6" />
+                    }
                     description={
                       outlookConnected && outlookEmail
                         ? outlookCanSend
@@ -1995,6 +2044,10 @@ function SettingsPageInner() {
                   />
                   <IntegrationRow
                     name="Stripe"
+                    icon={
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src="/stripe.svg" alt="" className="w-6 h-6" />
+                    }
                     description={
                       !stripeConfigured
                         ? "Add STRIPE_SECRET_KEY to enable payouts"
@@ -2035,13 +2088,27 @@ function SettingsPageInner() {
                   />
                   <IntegrationRow
                     name="Google Calendar"
+                    icon={
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src="/google-calendar.svg"
+                        alt=""
+                        className="w-6 h-6"
+                      />
+                    }
                     description="Block time for tracked work"
                     connected={false}
+                    actionLabel="Coming soon"
                   />
                   <IntegrationRow
                     name="Slack"
+                    icon={
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src="/slack.svg" alt="" className="w-6 h-6" />
+                    }
                     description="Post invoice and proposal alerts"
                     connected={false}
+                    actionLabel="Coming soon"
                   />
                 </div>
                 <div className="mt-6 flex items-start gap-2.5 rounded-xl bg-[#FAFBFC] border border-line px-3.5 py-3">
@@ -2278,6 +2345,100 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+function AutomationPanel({
+  icon: Icon,
+  iconClassName,
+  title,
+  description,
+  options,
+  value,
+  onChange,
+}: {
+  icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
+  iconClassName: string;
+  title: string;
+  description: string;
+  options: {
+    key: string;
+    label: string;
+    description: string;
+    steps: string[];
+  }[];
+  value: string;
+  onChange: (key: string) => void;
+}) {
+  const selected = options.find((option) => option.key === value) || options[0];
+
+  return (
+    <div className="rounded-2xl border border-line bg-white overflow-hidden">
+      <div className="flex items-start gap-3 px-4 sm:px-5 pt-4 sm:pt-5 pb-4 border-b border-line bg-[#FAFBFC]">
+        <div
+          className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${iconClassName}`}
+        >
+          <Icon className="w-5 h-5" strokeWidth={1.75} />
+        </div>
+        <div className="min-w-0">
+          <h3 className="text-[15px] font-semibold text-gray-900 tracking-tight">
+            {title}
+          </h3>
+          <p className="text-[13px] text-gray-500 mt-0.5 leading-snug">
+            {description}
+          </p>
+        </div>
+      </div>
+
+      <div className="p-4 sm:p-5 space-y-4">
+        <div className="flex flex-wrap gap-2">
+          {options.map((option) => {
+            const active = option.key === value;
+            return (
+              <button
+                key={option.key}
+                type="button"
+                onClick={() => onChange(option.key)}
+                className={`px-3.5 py-2 rounded-full text-sm font-medium border transition-colors ${
+                  active
+                    ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB]"
+                    : "border-line bg-white text-gray-700 hover:bg-gray-50"
+                }`}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {selected ? (
+          <div className="rounded-xl border border-line bg-[#FAFBFC] px-4 py-3.5">
+            <p className="text-[13px] text-gray-600 leading-relaxed">
+              {selected.description}
+            </p>
+            {selected.steps.length > 0 ? (
+              <ol className="mt-3 space-y-2">
+                {selected.steps.map((step, index) => (
+                  <li
+                    key={`${selected.key}-${step}-${index}`}
+                    className="flex items-center gap-2.5 text-[13px] text-gray-800"
+                  >
+                    <span className="w-5 h-5 rounded-full bg-white border border-line text-[11px] font-semibold text-gray-500 flex items-center justify-center shrink-0">
+                      {index + 1}
+                    </span>
+                    <span className="font-medium">{step}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="mt-2 text-[12px] text-gray-400">
+                No automated messages in this sequence.
+              </p>
+            )}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function ToggleRow({
   label,
   description,
@@ -2316,6 +2477,7 @@ function ToggleRow({
 
 function IntegrationRow({
   name,
+  icon,
   description,
   connected,
   actionLabel,
@@ -2323,6 +2485,7 @@ function IntegrationRow({
   onDisconnect,
 }: {
   name: string;
+  icon?: React.ReactNode;
   description: string;
   connected: boolean;
   actionLabel?: string;
@@ -2331,9 +2494,18 @@ function IntegrationRow({
 }) {
   return (
     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl border border-line px-4 py-3.5">
-      <div className="min-w-0">
-        <div className="text-[14px] font-medium text-gray-900">{name}</div>
-        <div className="text-[13px] text-gray-500 mt-0.5 leading-snug">{description}</div>
+      <div className="flex items-start gap-3 min-w-0">
+        {icon ? (
+          <div className="w-10 h-10 rounded-xl border border-line bg-white flex items-center justify-center shrink-0 shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
+            {icon}
+          </div>
+        ) : null}
+        <div className="min-w-0">
+          <div className="text-[14px] font-medium text-gray-900">{name}</div>
+          <div className="text-[13px] text-gray-500 mt-0.5 leading-snug">
+            {description}
+          </div>
+        </div>
       </div>
       <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
         {connected ? (

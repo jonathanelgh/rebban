@@ -28,6 +28,7 @@ import {
   Info,
   Clock,
   ListTodo,
+  Download,
 } from "lucide-react";
 import { nanoid } from "nanoid";
 import { createClient } from "@/lib/supabase/client";
@@ -67,6 +68,7 @@ import {
   formatIbanDisplay,
   hasBankPaymentDetails,
   normalizeBankgiro,
+  normalizePaymentPhone,
 } from "@/lib/invoices/payment-details";
 import {
   firstRecurrenceAt,
@@ -191,12 +193,15 @@ export default function InvoiceEditorPage() {
   const [paymentToken, setPaymentToken] = useState<string | null>(null);
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
   const [paymentBusy, setPaymentBusy] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
   const [stripeConfigured, setStripeConfigured] = useState(false);
   const [stripeReady, setStripeReady] = useState(false);
   const [stripeConnected, setStripeConnected] = useState(false);
   const [stripeBusy, setStripeBusy] = useState(false);
   const [paymentIban, setPaymentIban] = useState<string | null>(null);
   const [paymentBankgiro, setPaymentBankgiro] = useState<string | null>(null);
+  const [paymentSwish, setPaymentSwish] = useState<string | null>(null);
+  const [paymentMbway, setPaymentMbway] = useState<string | null>(null);
   const [bannerUploading, setBannerUploading] = useState(false);
 
   // Setup options
@@ -289,7 +294,7 @@ export default function InvoiceEditorPage() {
         supabase
           .from("organizations")
           .select(
-            "name, legal_name, address, tax_id, default_tax_rate, default_tax_enabled, default_prices_include_tax, custom_tax_rates, default_reminder_sequence, payment_iban, payment_bankgiro"
+            "name, legal_name, address, tax_id, default_tax_rate, default_tax_enabled, default_prices_include_tax, custom_tax_rates, default_reminder_sequence, payment_iban, payment_bankgiro, payment_swish, payment_mbway"
           )
           .eq("id", organizationId)
           .maybeSingle(),
@@ -391,6 +396,8 @@ export default function InvoiceEditorPage() {
     setCustomTaxRates((orgRes.data?.custom_tax_rates || []).map((n) => Number(n)));
     setPaymentIban(formatIbanDisplay(orgRes.data?.payment_iban));
     setPaymentBankgiro(normalizeBankgiro(orgRes.data?.payment_bankgiro));
+    setPaymentSwish(normalizePaymentPhone(orgRes.data?.payment_swish));
+    setPaymentMbway(normalizePaymentPhone(orgRes.data?.payment_mbway));
     setDefaultReminderSequence(
       asOrgReminderSequence(orgRes.data?.default_reminder_sequence)
     );
@@ -936,9 +943,42 @@ export default function InvoiceEditorPage() {
     }
   }
 
-  function handlePreviewPdf() {
-    setPreviewMode(true);
-    window.setTimeout(() => window.print(), 200);
+  async function handleDownloadPdf() {
+    if (!invoiceId || pdfBusy) return;
+    setPdfBusy(true);
+    setError(null);
+    try {
+      const saved = await persist();
+      if (!saved) return;
+
+      const res = await fetch(`/api/invoices/${invoiceId}/pdf`);
+      if (!res.ok) {
+        const json = (await res.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        throw new Error(json?.error || "Could not download PDF.");
+      }
+
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename="([^"]+)"/);
+      const filename =
+        match?.[1] ||
+        (status === "draft" ? "Invoice_preview.pdf" : "Invoice.pdf");
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      flash(status === "draft" ? "Preview PDF downloaded" : "PDF downloaded");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not download PDF.");
+    } finally {
+      setPdfBusy(false);
+    }
   }
 
   if (profileLoading || loading) {
@@ -1009,6 +1049,20 @@ export default function InvoiceEditorPage() {
           </button>
           <button
             type="button"
+            onClick={() => void handleDownloadPdf()}
+            disabled={saving || pdfBusy || !client}
+            className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors disabled:opacity-50"
+            title={
+              status === "draft"
+                ? "Download preview PDF"
+                : "Download invoice PDF"
+            }
+          >
+            <Download className="w-4 h-4 text-[#2563EB]" />
+            {pdfBusy ? "PDF…" : "PDF"}
+          </button>
+          <button
+            type="button"
             onClick={() => void persist()}
             disabled={saving}
             className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors disabled:opacity-50"
@@ -1072,6 +1126,8 @@ export default function InvoiceEditorPage() {
                 notes={notes}
                 paymentIban={paymentIban}
                 paymentBankgiro={paymentBankgiro}
+                paymentSwish={paymentSwish}
+                paymentMbway={paymentMbway}
               />
             </div>
           ) : (
@@ -1406,10 +1462,13 @@ export default function InvoiceEditorPage() {
                   </div>
                 </div>
 
-                {(paymentIban || paymentBankgiro) && (
+                {(paymentIban ||
+                  paymentBankgiro ||
+                  paymentSwish ||
+                  paymentMbway) && (
                   <div className="mt-8 pt-6 border-t border-line">
                     <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
-                      Bank transfer
+                      Payment details
                     </div>
                     <div className="text-[13px] text-gray-700 space-y-1">
                       {paymentIban && (
@@ -1424,6 +1483,22 @@ export default function InvoiceEditorPage() {
                         <p>
                           <span className="text-gray-500">Bankgiro</span>{" "}
                           <span className="font-medium">{paymentBankgiro}</span>
+                        </p>
+                      )}
+                      {paymentSwish && (
+                        <p>
+                          <span className="text-gray-500">Swish</span>{" "}
+                          <span className="font-medium tracking-wide">
+                            {paymentSwish}
+                          </span>
+                        </p>
+                      )}
+                      {paymentMbway && (
+                        <p>
+                          <span className="text-gray-500">MB Way</span>{" "}
+                          <span className="font-medium tracking-wide">
+                            {paymentMbway}
+                          </span>
                         </p>
                       )}
                     </div>
@@ -1781,7 +1856,7 @@ export default function InvoiceEditorPage() {
                     <p className="mt-1.5 text-[11px] text-gray-400">
                       Defaults from{" "}
                       <Link
-                        href="/settings?section=tax"
+                        href="/settings?section=invoicing"
                         className="text-[#2563EB] hover:underline"
                       >
                         Settings → Tax
@@ -1834,9 +1909,11 @@ export default function InvoiceEditorPage() {
                     {hasBankPaymentDetails({
                       iban: paymentIban,
                       bankgiro: paymentBankgiro,
+                      swish: paymentSwish,
+                      mbway: paymentMbway,
                     })
-                      ? "Bank details are on this invoice. Connect Stripe if you also want card payments."
-                      : "Connect Stripe for card payments, or add an IBAN / Bankgiro in Settings for bank transfer."}
+                      ? "Manual payment details are on this invoice. Mark as paid yourself when money arrives. Connect Stripe for card payments."
+                      : "Connect Stripe for card payments, or add IBAN / Swish / MB Way in Settings."}
                   </p>
                 </div>
                 <button
@@ -1856,12 +1933,14 @@ export default function InvoiceEditorPage() {
                 {!hasBankPaymentDetails({
                   iban: paymentIban,
                   bankgiro: paymentBankgiro,
+                  swish: paymentSwish,
+                  mbway: paymentMbway,
                 }) && (
                   <Link
-                    href="/settings?section=business"
+                    href="/settings?section=invoicing"
                     className="block text-center text-[13px] font-medium text-[#2563EB] hover:text-[#1d4ed8]"
                   >
-                    Add bank transfer details
+                    Add payment details
                   </Link>
                 )}
               </div>
@@ -1877,10 +1956,16 @@ export default function InvoiceEditorPage() {
             </button>
             <button
               type="button"
-              onClick={handlePreviewPdf}
-              className="w-full border border-line bg-white px-4 py-2.5 rounded-xl text-sm font-medium text-gray-800 hover:bg-gray-50"
+              onClick={() => void handleDownloadPdf()}
+              disabled={saving || pdfBusy || !client}
+              className="w-full inline-flex items-center justify-center gap-2 border border-line bg-white px-4 py-2.5 rounded-xl text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50"
             >
-              Preview / Download PDF
+              <Download className="w-4 h-4 text-[#2563EB]" />
+              {pdfBusy
+                ? "Preparing PDF…"
+                : status === "draft"
+                  ? "Download preview PDF"
+                  : "Download PDF"}
             </button>
             {canSendInvoice && (
               <button

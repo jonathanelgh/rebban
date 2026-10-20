@@ -22,6 +22,8 @@ type LeadFormCanvasProps = {
   fields: LeadFormField[];
   theme?: LeadFormTheme | null;
   mode: "preview" | "live";
+  /** When true (iframe embed), skip the page background — only the card shows. */
+  embedded?: boolean;
   selection?: LeadFormSelection | null;
   onSelect?: (selection: LeadFormSelection | null) => void;
   values?: Record<string, string>;
@@ -88,6 +90,7 @@ export function LeadFormCanvas({
   fields,
   theme: themeProp,
   mode,
+  embedded = false,
   selection,
   onSelect,
   values = {},
@@ -406,8 +409,10 @@ export function LeadFormCanvas({
 
   return (
     <div
-      className="w-full h-full min-h-full"
-      style={{ backgroundColor: theme.pageBg }}
+      className={
+        embedded ? "w-full" : "w-full h-full min-h-full"
+      }
+      style={embedded ? undefined : { backgroundColor: theme.pageBg }}
       onClick={
         editable
           ? (e) => {
