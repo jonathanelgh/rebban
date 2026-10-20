@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, Suspense, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -11,7 +12,7 @@ import {
   Columns, CreditCard, BoxSelect, AppWindow, GalleryHorizontalEnd,
   Layout, Users, Calendar, ScrollText, ListChecks,
   Target, Package, Route, Ban, UserCheck, RefreshCw, ArrowRight, PenLine, BookmarkPlus, X,
-  UploadCloud, Loader2, Send, Sparkles, FolderKanban, PanelRight
+  UploadCloud, Loader2, Send, Sparkles, FolderKanban, PanelRight, Save
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "@/components/ProfileContext";
@@ -879,7 +880,10 @@ function ProposalEditorContent() {
     to: string;
   } | null>(null);
   const [activityRefreshKey, setActivityRefreshKey] = useState(0);
+  const [activityModalOpen, setActivityModalOpen] = useState(false);
   const [sendMenuBusy, setSendMenuBusy] = useState(false);
+  const [draftSaving, setDraftSaving] = useState(false);
+  const [portalReady, setPortalReady] = useState(false);
   const [proposalStatus, setProposalStatus] = useState<Enums<"proposal_status"> | null>(null);
   const [resumeStatus, setResumeStatus] = useState<Enums<"proposal_status"> | null>(null);
   const [clientShareUrl, setClientShareUrl] = useState<string | null>(null);
@@ -1646,6 +1650,22 @@ function ProposalEditorContent() {
       })
       .eq('id', proposalId);
   }
+
+  async function handleSaveDraft() {
+    if (!proposalId || draftSaving || sendMenuBusy) return;
+    setDraftSaving(true);
+    try {
+      await persistProposalContent();
+      setTemplateMessage("Draft saved");
+      window.setTimeout(() => setTemplateMessage(null), 2200);
+    } finally {
+      setDraftSaving(false);
+    }
+  }
+
+  useEffect(() => {
+    setPortalReady(true);
+  }, []);
 
   async function persistOverviewPricing(next: {
     amount?: number;
@@ -4133,7 +4153,7 @@ function ProposalEditorContent() {
             editingPreviouslySent={
               proposalStatus === "draft" && Boolean(resumeStatus)
             }
-            busy={sendMenuBusy}
+            busy={sendMenuBusy || draftSaving}
             onSend={async () => {
               setSendMenuBusy(true);
               await persistProposalContent();
@@ -4280,6 +4300,11 @@ function ProposalEditorContent() {
                   }
                 : undefined
             }
+            onViewActivity={
+              proposalId
+                ? () => setActivityModalOpen(true)
+                : undefined
+            }
           />
           <button
             type="button"
@@ -4359,6 +4384,51 @@ function ProposalEditorContent() {
           }}
         />
       )}
+
+      {portalReady &&
+        !isProposalAlreadySent(proposalStatus) &&
+        createPortal(
+          <div className="md:hidden fixed bottom-0 inset-x-0 z-[35] border-t border-line bg-white/95 backdrop-blur-sm pb-[env(safe-area-inset-bottom)]">
+            <div className="px-4 py-3 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                disabled={!proposalId || draftSaving || sendMenuBusy}
+                onClick={() => void handleSaveDraft()}
+                className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-full text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                <Save className="w-4 h-4 text-[#2563EB]" />
+                {draftSaving ? "Saving…" : "Save as draft"}
+              </button>
+              <button
+                type="button"
+                disabled={!proposalId || draftSaving || sendMenuBusy}
+                onClick={() => {
+                  void (async () => {
+                    setSendMenuBusy(true);
+                    await persistProposalContent();
+                    setSendMenuBusy(false);
+                    setSendOpen(true);
+                  })();
+                }}
+                className="btn-primary inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full text-sm disabled:opacity-50"
+              >
+                <Send className="w-4 h-4" />
+                {sendMenuBusy ? "Preparing…" : "Send proposal"}
+              </button>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {activityModalOpen && proposalId ? (
+        <ProposalActivityLog
+          proposalId={proposalId}
+          open={activityModalOpen}
+          onClose={() => setActivityModalOpen(false)}
+          variant="modal"
+          refreshKey={activityRefreshKey}
+        />
+      ) : null}
 
       {sendOpen && proposalId && (
         <SendProposalModal
@@ -4655,7 +4725,9 @@ function ProposalEditorContent() {
         
         {/* Main Canvas Area */}
         <main 
-          className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-6 md:p-12 relative custom-scrollbar block"
+          className={`flex-1 min-h-0 overflow-y-auto p-3 sm:p-6 md:p-12 relative custom-scrollbar block ${
+            !isProposalAlreadySent(proposalStatus) ? "pb-28 md:pb-12" : ""
+          }`}
           onClick={handleCanvasClick}
         >
           {/* The "Paper" Document */}
@@ -5506,24 +5578,31 @@ function SectionAddMenu({
   onPick: (item: PaletteItem) => void;
   onClose: () => void;
 }) {
+  const iconClass = "w-5 h-5 md:w-3.5 md:h-3.5";
   return (
     <>
-      <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-50 max-h-[70dvh] bg-white border border-line shadow-xl rounded-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 md:absolute md:inset-x-auto md:bottom-auto md:left-1/2 md:top-full md:mt-2 md:w-[280px] md:max-h-[320px] md:-translate-x-1/2 md:rounded-xl">
-        <div className="px-4 py-3 md:px-3 md:py-2 border-b border-line flex items-center justify-between gap-3">
-          <div className="text-[13px] md:text-[11px] font-semibold text-gray-700 md:text-gray-500 md:uppercase md:tracking-wide">
+      <div
+        className="fixed inset-0 z-40 bg-gray-900/40 md:bg-transparent"
+        onClick={onClose}
+      />
+      <div className="fixed inset-x-0 bottom-0 z-50 max-h-[88dvh] bg-white border-t border-line shadow-[0_-12px_40px_rgba(16,24,40,0.16)] rounded-t-[1.75rem] overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200 pb-[env(safe-area-inset-bottom)] md:absolute md:inset-x-auto md:bottom-auto md:left-1/2 md:top-full md:mt-2 md:w-[280px] md:max-h-[320px] md:-translate-x-1/2 md:rounded-xl md:border md:shadow-xl md:pb-0 md:animate-in md:zoom-in-95">
+        <div className="md:hidden flex justify-center pt-2.5 pb-1">
+          <div className="w-10 h-1 rounded-full bg-gray-200" />
+        </div>
+        <div className="px-5 py-3.5 md:px-3 md:py-2 border-b border-line flex items-center justify-between gap-3">
+          <div className="text-[16px] md:text-[11px] font-semibold text-gray-900 md:text-gray-500 md:uppercase md:tracking-wide">
             Add section
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="md:hidden p-1.5 -mr-1 rounded-full text-gray-500 hover:bg-gray-100"
+            className="md:hidden p-2 -mr-1 rounded-full text-gray-500 hover:bg-gray-100"
             aria-label="Close"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
           </button>
         </div>
-        <div className="p-2 grid grid-cols-2 gap-1.5 max-h-[min(60dvh,360px)] md:max-h-[280px] overflow-y-auto">
+        <div className="p-3 sm:p-3 md:p-2 grid grid-cols-2 gap-2 md:gap-1.5 max-h-[min(76dvh,640px)] md:max-h-[280px] overflow-y-auto">
           {SECTION_PALETTE.map((item) => (
             <button
               key={`${item.type}-${item.variant || 'default'}`}
@@ -5532,28 +5611,28 @@ function SectionAddMenu({
                 e.stopPropagation();
                 onPick(item);
               }}
-              className="flex items-center gap-2 px-2.5 py-2.5 md:py-2 rounded-lg text-left text-[13px] md:text-[12px] font-medium text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors"
+              className="flex items-center gap-3 md:gap-2 px-3.5 py-3.5 md:px-2.5 md:py-2 rounded-xl md:rounded-lg text-left text-[15px] md:text-[12px] font-medium text-gray-800 md:text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 active:bg-emerald-50 transition-colors border border-transparent md:border-0 bg-[#FAFBFC] md:bg-transparent"
             >
-              <span className="text-gray-400">
-                {item.type === 'summary' && <AlignLeft className="w-3.5 h-3.5" />}
-                {item.type === 'goals' && <Target className="w-3.5 h-3.5" />}
-                {item.type === 'scope' && <ListChecks className="w-3.5 h-3.5" />}
-                {item.type === 'deliverables' && <Package className="w-3.5 h-3.5" />}
-                {item.type === 'approach' && <Route className="w-3.5 h-3.5" />}
-                {item.type === 'timeline' && <Calendar className="w-3.5 h-3.5" />}
-                {item.type === 'pricing' && <CreditCard className="w-3.5 h-3.5" />}
-                {item.type === 'payment' && <CreditCard className="w-3.5 h-3.5" />}
-                {item.type === 'exclusions' && <Ban className="w-3.5 h-3.5" />}
-                {item.type === 'responsibilities' && <UserCheck className="w-3.5 h-3.5" />}
-                {item.type === 'revisions' && <RefreshCw className="w-3.5 h-3.5" />}
-                {item.type === 'terms' && <ScrollText className="w-3.5 h-3.5" />}
-                {item.type === 'next-steps' && <ArrowRight className="w-3.5 h-3.5" />}
-                {item.type === 'signature' && <PenLine className="w-3.5 h-3.5" />}
-                {item.type === 'content' && <Type className="w-3.5 h-3.5" />}
-                {item.type === 'image' && <ImageIcon className="w-3.5 h-3.5" />}
-                {item.type === 'about' && <Users className="w-3.5 h-3.5" />}
+              <span className="text-gray-400 shrink-0">
+                {item.type === 'summary' && <AlignLeft className={iconClass} />}
+                {item.type === 'goals' && <Target className={iconClass} />}
+                {item.type === 'scope' && <ListChecks className={iconClass} />}
+                {item.type === 'deliverables' && <Package className={iconClass} />}
+                {item.type === 'approach' && <Route className={iconClass} />}
+                {item.type === 'timeline' && <Calendar className={iconClass} />}
+                {item.type === 'pricing' && <CreditCard className={iconClass} />}
+                {item.type === 'payment' && <CreditCard className={iconClass} />}
+                {item.type === 'exclusions' && <Ban className={iconClass} />}
+                {item.type === 'responsibilities' && <UserCheck className={iconClass} />}
+                {item.type === 'revisions' && <RefreshCw className={iconClass} />}
+                {item.type === 'terms' && <ScrollText className={iconClass} />}
+                {item.type === 'next-steps' && <ArrowRight className={iconClass} />}
+                {item.type === 'signature' && <PenLine className={iconClass} />}
+                {item.type === 'content' && <Type className={iconClass} />}
+                {item.type === 'image' && <ImageIcon className={iconClass} />}
+                {item.type === 'about' && <Users className={iconClass} />}
               </span>
-              {item.label}
+              <span className="min-w-0 leading-snug">{item.label}</span>
             </button>
           ))}
         </div>

@@ -341,7 +341,7 @@ function TimeTrackingPageInner() {
   }
 
   return (
-    <main className="w-full px-4 md:px-8 pt-10 pb-8 md:pr-36 max-w-7xl mx-auto">
+    <main className="w-full px-4 md:px-8 pt-10 pb-36 md:pb-8 md:pr-36 max-w-7xl mx-auto">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start mb-8 gap-4">
         <div>
           <h1 className="text-2xl md:text-3xl font-semibold text-gray-900 tracking-tight">
@@ -407,10 +407,10 @@ function TimeTrackingPageInner() {
         </div>
       </div>
 
-      <div className="mb-8">
+      <div className="mb-8 md:mb-8">
         <TimerStartForm variant="page" />
         {isTracking && selectedClient && (
-          <p className="text-xs text-gray-600 mt-2.5 ml-1 flex items-center gap-1.5">
+          <p className="hidden md:flex text-xs text-gray-600 mt-2.5 ml-1 items-center gap-1.5">
             <span className="relative flex h-1.5 w-1.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-gray-400 opacity-75" />
               <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-gray-900" />

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Timer,
   Play,
@@ -50,6 +51,11 @@ export function TimerStartForm({
 
   const isPage = variant === "page";
   const isSidebar = variant === "sidebar";
+  const [portalReady, setPortalReady] = useState(false);
+
+  useEffect(() => {
+    setPortalReady(true);
+  }, []);
 
   const clientProjects = useMemo(
     () =>
@@ -162,56 +168,8 @@ export function TimerStartForm({
     );
   }
 
-  return (
-    <div className={isPage ? "space-y-2" : undefined}>
-    <div
-      className={
-        isPage
-          ? `rounded-2xl border border-line bg-white p-3 flex flex-wrap items-center gap-3 transition-colors ${
-              isTracking ? "border-gray-900 bg-gray-50" : ""
-            }`
-          : "flex items-center gap-2 pl-1 pr-1 w-full"
-      }
-    >
-      {showBackButton && (
-        <button
-          type="button"
-          onClick={onBackToAi}
-          className="size-8 rounded-full bg-gray-100 text-gray-700 border border-line flex items-center justify-center shrink-0 hover:bg-gray-200 transition-colors"
-          title="Back to AI"
-        >
-          <Timer className="w-4 h-4" />
-        </button>
-      )}
-
-      {isPage && (
-        <div
-          className={`size-10 rounded-2xl flex items-center justify-center shrink-0 ${
-            isTracking ? "bg-[#2563EB] text-white" : "bg-gray-100 text-gray-700"
-          }`}
-        >
-          <Timer className="w-5 h-5" />
-        </div>
-      )}
-
-      <TimerClientSelect
-        clients={clients}
-        selected={selectedClient}
-        onChange={setSelectedClient}
-        disabled={isTracking || busy}
-        variant={variant}
-      />
-
-      {isPage && selectedClient && clientProjects.length > 0 && (
-        <TimerProjectSelect
-          projects={clientProjects}
-          selected={selectedProject}
-          onChange={setSelectedProject}
-          disabled={isTracking || busy}
-          variant="page"
-        />
-      )}
-
+  function renderTaskField(className: string) {
+    return (
       <TaskSuggestInput
         value={workDescription}
         tasks={taskOptions}
@@ -228,35 +186,27 @@ export function TimerStartForm({
         }}
         placeholder="What are you working on?"
         disabled={isTracking || busy}
-        className={`flex-1 min-w-0 ${
-          isPage ? "text-base py-2.5 px-1" : "text-sm py-2.5"
-        }`}
+        className={className}
       />
+    );
+  }
 
-      {isTracking && (
-        <div className="flex items-center gap-2 shrink-0">
-          {isPage && (
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-gray-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-gray-900" />
-            </span>
-          )}
-          <span
-            className={`font-mono font-semibold text-gray-900 tabular-nums ${
-              isPage ? "text-lg" : "text-sm px-1"
-            }`}
-          >
-            {formatElapsed(elapsedSeconds)}
-          </span>
-        </div>
-      )}
-
+  function renderToggleButton(opts?: {
+    fullWidth?: boolean;
+    showLabel?: boolean;
+  }) {
+    const showLabel = opts?.showLabel ?? isPage;
+    return (
       <button
         type="button"
         onClick={() => void handleToggle()}
         disabled={busy || (!isTracking && !workDescription.trim())}
         className={`${
-          isPage ? "h-10 px-5 rounded-xl text-sm font-medium gap-2" : "size-8 rounded-full mr-0.5"
+          opts?.fullWidth
+            ? "w-full h-11 rounded-xl text-sm font-semibold gap-2"
+            : isPage
+              ? "h-10 px-5 rounded-xl text-sm font-medium gap-2"
+              : "size-8 rounded-full mr-0.5"
         } flex items-center justify-center shrink-0 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
           isTracking
             ? "bg-white text-gray-900 border border-gray-900 hover:bg-gray-50"
@@ -267,17 +217,181 @@ export function TimerStartForm({
         {isTracking ? (
           <>
             <Square className="w-3.5 h-3.5 fill-current" />
-            {isPage && <span>{busy ? "Stopping…" : "Stop"}</span>}
+            {showLabel && <span>{busy ? "Stopping…" : "Stop"}</span>}
           </>
         ) : (
           <>
-            <Play className={`w-3.5 h-3.5 fill-current ${isPage ? "" : "ml-0.5"}`} />
-            {isPage && <span>{busy ? "Starting…" : "Start"}</span>}
+            <Play
+              className={`w-3.5 h-3.5 fill-current ${showLabel ? "" : "ml-0.5"}`}
+            />
+            {showLabel && <span>{busy ? "Starting…" : "Start"}</span>}
           </>
         )}
       </button>
-    </div>
-    {isPage && errorBlock}
+    );
+  }
+
+  if (isPage) {
+    const desktopForm = (
+      <div className="space-y-2">
+        <div
+          className={`rounded-2xl border border-line bg-white p-3 flex flex-wrap items-center gap-3 transition-colors ${
+            isTracking ? "border-gray-900 bg-gray-50" : ""
+          }`}
+        >
+          <div
+            className={`size-10 rounded-2xl flex items-center justify-center shrink-0 ${
+              isTracking ? "bg-[#2563EB] text-white" : "bg-gray-100 text-gray-700"
+            }`}
+          >
+            <Timer className="w-5 h-5" />
+          </div>
+
+          <TimerClientSelect
+            clients={clients}
+            selected={selectedClient}
+            onChange={setSelectedClient}
+            disabled={isTracking || busy}
+            variant="page"
+          />
+
+          {selectedClient && clientProjects.length > 0 && (
+            <TimerProjectSelect
+              projects={clientProjects}
+              selected={selectedProject}
+              onChange={setSelectedProject}
+              disabled={isTracking || busy}
+              variant="page"
+            />
+          )}
+
+          {renderTaskField("flex-1 min-w-0 text-base py-2.5 px-1")}
+
+          {isTracking && (
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-gray-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-gray-900" />
+              </span>
+              <span className="font-mono font-semibold text-gray-900 tabular-nums text-lg">
+                {formatElapsed(elapsedSeconds)}
+              </span>
+            </div>
+          )}
+
+          {renderToggleButton()}
+        </div>
+        {errorBlock}
+      </div>
+    );
+
+    const mobileDock = (
+      <div
+        className={`border-t border-line bg-white/95 backdrop-blur-sm shadow-[0_-8px_30px_rgba(16,24,40,0.1)] pb-[env(safe-area-inset-bottom)] ${
+          isTracking ? "border-gray-900/20" : ""
+        }`}
+      >
+        <div className="px-3 pt-3 pb-3 space-y-2.5">
+          <div className="flex items-center gap-2">
+            <div
+              className={`size-9 rounded-xl flex items-center justify-center shrink-0 ${
+                isTracking
+                  ? "bg-[#2563EB] text-white"
+                  : "bg-gray-100 text-gray-700"
+              }`}
+            >
+              <Timer className="w-4 h-4" />
+            </div>
+            <div className="flex-1 min-w-0 flex items-center gap-2 overflow-x-auto scrollbar-none">
+              <TimerClientSelect
+                clients={clients}
+                selected={selectedClient}
+                onChange={setSelectedClient}
+                disabled={isTracking || busy}
+                variant="page"
+                menuPlacement="up"
+              />
+              {selectedClient && clientProjects.length > 0 && (
+                <TimerProjectSelect
+                  projects={clientProjects}
+                  selected={selectedProject}
+                  onChange={setSelectedProject}
+                  disabled={isTracking || busy}
+                  variant="page"
+                  menuPlacement="up"
+                />
+              )}
+            </div>
+            {isTracking && (
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-gray-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-gray-900" />
+                </span>
+                <span className="font-mono font-semibold text-gray-900 tabular-nums text-base">
+                  {formatElapsed(elapsedSeconds)}
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-line bg-[#FAFBFC] px-3 py-2.5 focus-within:border-gray-300 focus-within:bg-white">
+            {renderTaskField("w-full text-base py-0.5")}
+          </div>
+
+          {errorBlock}
+          {renderToggleButton({ fullWidth: true, showLabel: true })}
+        </div>
+      </div>
+    );
+
+    return (
+      <>
+        <div className="hidden md:block">{desktopForm}</div>
+        {portalReady
+          ? createPortal(
+              <div className="md:hidden fixed bottom-0 inset-x-0 z-[40]">
+                {mobileDock}
+              </div>,
+              document.body
+            )
+          : null}
+      </>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 pl-1 pr-1 w-full">
+      {showBackButton && (
+        <button
+          type="button"
+          onClick={onBackToAi}
+          className="size-8 rounded-full bg-gray-100 text-gray-700 border border-line flex items-center justify-center shrink-0 hover:bg-gray-200 transition-colors"
+          title="Back to AI"
+        >
+          <Timer className="w-4 h-4" />
+        </button>
+      )}
+
+      <TimerClientSelect
+        clients={clients}
+        selected={selectedClient}
+        onChange={setSelectedClient}
+        disabled={isTracking || busy}
+        variant={variant}
+      />
+
+      {renderTaskField("flex-1 min-w-0 text-sm py-2.5")}
+
+      {isTracking && (
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="font-mono font-semibold text-gray-900 tabular-nums text-sm px-1">
+            {formatElapsed(elapsedSeconds)}
+          </span>
+        </div>
+      )}
+
+      {renderToggleButton({ showLabel: false })}
     </div>
   );
 }
@@ -288,18 +402,21 @@ function TimerClientSelect({
   onChange,
   disabled = false,
   variant = "page",
+  menuPlacement = "down",
 }: {
   clients: TimerClient[];
   selected: TimerClient | null;
   onChange: (client: TimerClient) => void;
   disabled?: boolean;
   variant?: "compact" | "page" | "sidebar";
+  menuPlacement?: "up" | "down";
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
   const isPage = variant === "page";
   const isSidebar = variant === "sidebar";
+  const openUp = menuPlacement === "up";
 
   const filtered = clients.filter(
     (c) =>
@@ -349,7 +466,11 @@ function TimerClientSelect({
         <div
           className={`absolute left-0 bg-white rounded-2xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.15)] border border-line overflow-hidden z-50 ${
             isSidebar ? "w-full" : "w-[280px]"
-          } ${isPage || isSidebar ? "top-full mt-2" : "bottom-full mb-2"}`}
+          } ${
+            openUp || !(isPage || isSidebar)
+              ? "bottom-full mb-2"
+              : "top-full mt-2"
+          }`}
         >
           <div className="p-3 border-b border-gray-50 flex items-center gap-2">
             <input
@@ -413,16 +534,19 @@ function TimerProjectSelect({
   onChange,
   disabled = false,
   variant = "page",
+  menuPlacement = "down",
 }: {
   projects: TimerProject[];
   selected: TimerProject | null;
   onChange: (project: TimerProject | null) => void;
   disabled?: boolean;
   variant?: "page" | "sidebar";
+  menuPlacement?: "up" | "down";
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const isSidebar = variant === "sidebar";
+  const openUp = menuPlacement === "up";
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -462,9 +586,9 @@ function TimerProjectSelect({
 
       {isOpen && (
         <div
-          className={`absolute left-0 top-full mt-2 bg-white rounded-2xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.15)] border border-line overflow-hidden z-50 ${
+          className={`absolute left-0 bg-white rounded-2xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.15)] border border-line overflow-hidden z-50 ${
             isSidebar ? "w-full" : "w-[260px]"
-          }`}
+          } ${openUp ? "bottom-full mb-2" : "top-full mt-2"}`}
         >
           <div className="max-h-[200px] overflow-y-auto p-2 space-y-1">
             <button

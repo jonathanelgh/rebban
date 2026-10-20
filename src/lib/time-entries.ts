@@ -66,7 +66,7 @@ export function dayLabelForDate(isoDate: string) {
   that.setHours(0, 0, 0, 0);
   const dayDiff = Math.round((today.getTime() - that.getTime()) / 86400000);
 
-  const weekday = date.toLocaleDateString(undefined, {
+  const weekday = date.toLocaleDateString("en-US", {
     weekday: "short",
     month: "short",
     day: "numeric",
@@ -78,8 +78,9 @@ export function dayLabelForDate(isoDate: string) {
 }
 
 export function formatWeekRange(start: Date, end: Date) {
+  // Pin locale so SSR and the browser don't disagree (en-US vs en-GB, etc.).
   const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
-  return `${start.toLocaleDateString(undefined, opts)} – ${end.toLocaleDateString(undefined, opts)}`;
+  return `${start.toLocaleDateString("en-US", opts)} – ${end.toLocaleDateString("en-US", opts)}`;
 }
 
 export function clientDisplayName(client: {

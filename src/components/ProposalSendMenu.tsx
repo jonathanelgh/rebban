@@ -2,6 +2,7 @@
 
 import React, { useEffect, useId, useRef, useState } from "react";
 import {
+  Activity,
   Ban,
   Copy,
   Download,
@@ -54,6 +55,7 @@ export function ProposalSendMenu({
   onCloseEditing,
   onResendSigned,
   onCancelAutomation,
+  onViewActivity,
   busy = false,
 }: {
   status: ProposalStatus | null;
@@ -66,6 +68,7 @@ export function ProposalSendMenu({
   onCloseEditing?: () => void | Promise<void>;
   onResendSigned?: () => void | Promise<void>;
   onCancelAutomation?: () => void | Promise<void>;
+  onViewActivity?: () => void;
   busy?: boolean;
 }) {
   const alreadySent = isProposalAlreadySent(status);
@@ -118,7 +121,7 @@ export function ProposalSendMenu({
           type="button"
           disabled={busy}
           onClick={() => void onSend()}
-          className="btn-primary px-5 py-2 rounded-lg text-sm font-semibold disabled:opacity-60"
+          className="hidden md:inline-flex btn-primary px-5 py-2 rounded-lg text-sm font-semibold disabled:opacity-60"
         >
           Send Proposal
         </button>
@@ -189,6 +192,18 @@ export function ProposalSendMenu({
                   ) : null}
                 </>
               ) : null}
+              {onViewActivity ? (
+                <MenuItem
+                  icon={<Activity className="w-4 h-4" />}
+                  label="Activity"
+                  description="Opens, sends, and client decisions"
+                  className="md:hidden"
+                  onClick={() => {
+                    setOpen(false);
+                    onViewActivity();
+                  }}
+                />
+              ) : null}
               <MenuItem
                 icon={<Send className="w-4 h-4" />}
                 label={busy ? "Sending…" : "Send again"}
@@ -255,12 +270,14 @@ function MenuItem({
   description,
   onClick,
   disabled = false,
+  className = "",
 }: {
   icon: React.ReactNode;
   label: string;
   description?: string;
   onClick: () => void;
   disabled?: boolean;
+  className?: string;
 }) {
   return (
     <button
@@ -268,7 +285,7 @@ function MenuItem({
       role="menuitem"
       disabled={disabled}
       onClick={onClick}
-      className="w-full flex items-start gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-[#FAFBFC] disabled:opacity-50"
+      className={`w-full flex items-start gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-[#FAFBFC] disabled:opacity-50 ${className}`}
     >
       <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#F4F5F7] text-gray-600">
         {icon}
