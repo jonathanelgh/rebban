@@ -10,6 +10,7 @@ import {
   Check,
   Building2,
   FolderKanban,
+  X,
 } from "lucide-react";
 import {
   useTimeTracking,
@@ -18,6 +19,7 @@ import {
   type TimerProject,
 } from "@/components/TimeTrackingContext";
 import { TaskSuggestInput } from "@/components/TaskSuggestInput";
+import { ModalOverlay, modalPanelClass } from "@/components/ModalFrame";
 
 type TimerStartFormProps = {
   variant?: "compact" | "page" | "sidebar";
@@ -70,16 +72,113 @@ export function TimerStartForm({
     [clientTasks]
   );
 
+  const [stopPromptOpen, setStopPromptOpen] = useState(false);
+  const [stopDescription, setStopDescription] = useState("");
+  const [stopPromptError, setStopPromptError] = useState<string | null>(null);
+
   async function handleToggle() {
     if (isTracking) {
+      if (!workDescription.trim()) {
+        setStopDescription("");
+        setStopPromptError(null);
+        setStopPromptOpen(true);
+        return;
+      }
       await stopTimer();
-    } else {
-      await startTimer();
+      return;
     }
+    await startTimer();
+  }
+
+  async function confirmStopWithDescription() {
+    const next = stopDescription.trim();
+    if (!next) {
+      setStopPromptError("Add a short note about what you worked on.");
+      return;
+    }
+    setStopPromptError(null);
+    setWorkDescription(next);
+    setStopPromptOpen(false);
+    await stopTimer({ description: next });
   }
 
   const errorBlock = error ? (
     <p className="text-[12px] text-red-600 leading-snug">{error}</p>
+  ) : null;
+
+  const stopPromptModal = stopPromptOpen ? (
+    <ModalOverlay
+      onClose={() => {
+        if (!busy) setStopPromptOpen(false);
+      }}
+      zClass="z-[90]"
+    >
+      <div className={modalPanelClass("max-w-[440px]")}>
+        <div className="px-5 sm:px-6 pt-5 sm:pt-6 pb-4 flex items-start justify-between gap-3 border-b border-line shrink-0">
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold text-gray-900 tracking-tight">
+              What did you work on?
+            </h2>
+            <p className="text-[13px] text-gray-500 mt-1 leading-snug">
+              Add a quick note before stopping the timer
+              {elapsedSeconds > 0
+                ? ` · ${formatElapsed(elapsedSeconds)}`
+                : ""}
+              .
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setStopPromptOpen(false)}
+            className="p-2 rounded-full text-gray-500 hover:bg-gray-100 disabled:opacity-50"
+            aria-label="Close"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="px-5 sm:px-6 py-4 space-y-3">
+          <textarea
+            value={stopDescription}
+            onChange={(e) => {
+              setStopDescription(e.target.value);
+              if (stopPromptError) setStopPromptError(null);
+            }}
+            rows={3}
+            autoFocus
+            placeholder="e.g. Homepage redesign, client call notes…"
+            className="w-full rounded-xl border border-line bg-[#FAFBFC] px-3.5 py-3 text-[15px] text-gray-900 outline-none resize-none focus:bg-white focus:border-gray-300"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                void confirmStopWithDescription();
+              }
+            }}
+          />
+          {stopPromptError ? (
+            <p className="text-[13px] text-red-600">{stopPromptError}</p>
+          ) : null}
+        </div>
+        <div className="px-5 sm:px-6 py-4 border-t border-line flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2 shrink-0">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setStopPromptOpen(false)}
+            className="px-4 py-2.5 rounded-full text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+          >
+            Keep timing
+          </button>
+          <button
+            type="button"
+            disabled={busy || !stopDescription.trim()}
+            onClick={() => void confirmStopWithDescription()}
+            className="btn-primary px-5 py-2.5 rounded-full text-sm disabled:opacity-50"
+          >
+            {busy ? "Stopping…" : "Save & stop"}
+          </button>
+        </div>
+      </div>
+    </ModalOverlay>
   ) : null;
 
   if (isSidebar) {
@@ -116,10 +215,10 @@ export function TimerStartForm({
               })
             }
             onEnter={() => {
-              if (!isTracking && workDescription.trim()) void startTimer();
+              if (!isTracking) void startTimer();
             }}
-            placeholder="What are you working on?"
-            disabled={isTracking || busy}
+            placeholder="What are you working on? (optional)"
+            disabled={busy}
             className="text-sm"
           />
         </div>
@@ -144,7 +243,7 @@ export function TimerStartForm({
         <button
           type="button"
           onClick={() => void handleToggle()}
-          disabled={busy || (!isTracking && !workDescription.trim())}
+          disabled={busy}
           className={`w-full h-10 rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
             isTracking
               ? "bg-white text-gray-900 border border-gray-900 hover:bg-gray-50"
@@ -164,6 +263,7 @@ export function TimerStartForm({
             </>
           )}
         </button>
+        {stopPromptModal}
       </div>
     );
   }
@@ -182,10 +282,10 @@ export function TimerStartForm({
           })
         }
         onEnter={() => {
-          if (!isTracking && workDescription.trim()) void startTimer();
+          if (!isTracking) void startTimer();
         }}
-        placeholder="What are you working on?"
-        disabled={isTracking || busy}
+        placeholder="What are you working on? (optional)"
+        disabled={busy}
         className={className}
       />
     );
@@ -200,7 +300,7 @@ export function TimerStartForm({
       <button
         type="button"
         onClick={() => void handleToggle()}
-        disabled={busy || (!isTracking && !workDescription.trim())}
+        disabled={busy}
         className={`${
           opts?.fullWidth
             ? "w-full h-11 rounded-xl text-sm font-semibold gap-2"
@@ -356,43 +456,47 @@ export function TimerStartForm({
               document.body
             )
           : null}
+        {stopPromptModal}
       </>
     );
   }
 
   return (
-    <div className="flex items-center gap-2 pl-1 pr-1 w-full">
-      {showBackButton && (
-        <button
-          type="button"
-          onClick={onBackToAi}
-          className="size-8 rounded-full bg-gray-100 text-gray-700 border border-line flex items-center justify-center shrink-0 hover:bg-gray-200 transition-colors"
-          title="Back to AI"
-        >
-          <Timer className="w-4 h-4" />
-        </button>
-      )}
+    <>
+      <div className="flex items-center gap-2 pl-1 pr-1 w-full">
+        {showBackButton && (
+          <button
+            type="button"
+            onClick={onBackToAi}
+            className="size-8 rounded-full bg-gray-100 text-gray-700 border border-line flex items-center justify-center shrink-0 hover:bg-gray-200 transition-colors"
+            title="Back to AI"
+          >
+            <Timer className="w-4 h-4" />
+          </button>
+        )}
 
-      <TimerClientSelect
-        clients={clients}
-        selected={selectedClient}
-        onChange={setSelectedClient}
-        disabled={isTracking || busy}
-        variant={variant}
-      />
+        <TimerClientSelect
+          clients={clients}
+          selected={selectedClient}
+          onChange={setSelectedClient}
+          disabled={isTracking || busy}
+          variant={variant}
+        />
 
-      {renderTaskField("flex-1 min-w-0 text-sm py-2.5")}
+        {renderTaskField("flex-1 min-w-0 text-sm py-2.5")}
 
-      {isTracking && (
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="font-mono font-semibold text-gray-900 tabular-nums text-sm px-1">
-            {formatElapsed(elapsedSeconds)}
-          </span>
-        </div>
-      )}
+        {isTracking && (
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="font-mono font-semibold text-gray-900 tabular-nums text-sm px-1">
+              {formatElapsed(elapsedSeconds)}
+            </span>
+          </div>
+        )}
 
-      {renderToggleButton({ showLabel: false })}
-    </div>
+        {renderToggleButton({ showLabel: false })}
+      </div>
+      {stopPromptModal}
+    </>
   );
 }
 
@@ -416,7 +520,7 @@ function TimerClientSelect({
   const containerRef = useRef<HTMLDivElement>(null);
   const isPage = variant === "page";
   const isSidebar = variant === "sidebar";
-  const openUp = menuPlacement === "up";
+  const useSheet = menuPlacement === "up";
 
   const filtered = clients.filter(
     (c) =>
@@ -425,6 +529,7 @@ function TimerClientSelect({
   );
 
   useEffect(() => {
+    if (useSheet || !isOpen) return;
     function handleClickOutside(event: MouseEvent) {
       if (
         containerRef.current &&
@@ -435,7 +540,65 @@ function TimerClientSelect({
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  }, [isOpen, useSheet]);
+
+  function close() {
+    setIsOpen(false);
+    setSearch("");
+  }
+
+  function pick(client: TimerClient) {
+    onChange(client);
+    close();
+  }
+
+  const list = (
+    <div className={`space-y-1 ${useSheet ? "p-2" : "p-2"}`}>
+      {filtered.length > 0 ? (
+        filtered.map((client) => (
+          <button
+            key={client.id}
+            type="button"
+            onClick={() => pick(client)}
+            className={`w-full flex items-center justify-between rounded-xl transition-colors text-left hover:bg-gray-50 ${
+              useSheet ? "p-3.5 gap-3" : "p-2 gap-3"
+            }`}
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div
+                className={`rounded-full bg-gray-100 text-gray-700 flex items-center justify-center font-bold shrink-0 ${
+                  useSheet ? "w-10 h-10 text-sm" : "w-7 h-7 text-xs"
+                }`}
+              >
+                {client.name.charAt(0)}
+              </div>
+              <div className="min-w-0">
+                <div
+                  className={`font-medium text-gray-900 truncate ${
+                    useSheet ? "text-[15px]" : "text-sm"
+                  }`}
+                >
+                  {client.name}
+                </div>
+                {client.company && (
+                  <div className="text-xs text-gray-500 truncate">
+                    {client.company}
+                  </div>
+                )}
+              </div>
+            </div>
+            {selected?.id === client.id && (
+              <Check className="w-4 h-4 text-gray-900 shrink-0" />
+            )}
+          </button>
+        ))
+      ) : (
+        <div className="p-4 text-center text-sm text-gray-500">
+          {clients.length === 0 ? "No clients yet." : "No clients found."}
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className={`relative ${isSidebar ? "w-full" : "shrink-0"}`} ref={containerRef}>
@@ -462,15 +625,54 @@ function TimerClientSelect({
         {!disabled && <ChevronDown className="w-3 h-3 text-gray-400 shrink-0 ml-auto" />}
       </button>
 
-      {isOpen && (
+      {isOpen && useSheet ? (
+        <ModalOverlay onClose={close} zClass="z-[90]">
+          <div
+            className={modalPanelClass(
+              "max-w-[560px]",
+              "!max-h-[88dvh] h-[88dvh] rounded-t-[1.75rem]"
+            )}
+          >
+            <div className="px-5 pt-4 pb-3 border-b border-line flex items-center justify-between gap-3 shrink-0">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 tracking-tight">
+                  Select client
+                </h2>
+                <p className="text-[13px] text-gray-500 mt-0.5">
+                  Who are you tracking time for?
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={close}
+                className="p-2 rounded-full text-gray-500 hover:bg-gray-100"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-5 py-3 border-b border-line shrink-0">
+              <input
+                type="search"
+                autoFocus
+                placeholder="Search clients..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full rounded-xl border border-line bg-[#FAFBFC] px-3.5 py-3 text-[15px] outline-none placeholder-gray-400 font-medium focus:bg-white focus:border-gray-300"
+              />
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2 pb-[env(safe-area-inset-bottom)]">
+              {list}
+            </div>
+          </div>
+        </ModalOverlay>
+      ) : null}
+
+      {isOpen && !useSheet ? (
         <div
           className={`absolute left-0 bg-white rounded-2xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.15)] border border-line overflow-hidden z-50 ${
             isSidebar ? "w-full" : "w-[280px]"
-          } ${
-            openUp || !(isPage || isSidebar)
-              ? "bottom-full mb-2"
-              : "top-full mt-2"
-          }`}
+          } ${isPage || isSidebar ? "top-full mt-2" : "bottom-full mb-2"}`}
         >
           <div className="p-3 border-b border-gray-50 flex items-center gap-2">
             <input
@@ -482,48 +684,9 @@ function TimerClientSelect({
               className="w-full text-sm outline-none placeholder-gray-400 font-medium"
             />
           </div>
-
-          <div className="max-h-[200px] overflow-y-auto p-2 space-y-1">
-            {filtered.length > 0 ? (
-              filtered.map((client) => (
-                <button
-                  key={client.id}
-                  type="button"
-                  onClick={() => {
-                    onChange(client);
-                    setIsOpen(false);
-                    setSearch("");
-                  }}
-                  className="w-full flex items-center justify-between p-2 hover:bg-gray-50 rounded-xl transition-colors text-left"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-7 h-7 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center font-bold text-xs shrink-0">
-                      {client.name.charAt(0)}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-gray-900 truncate">
-                        {client.name}
-                      </div>
-                      {client.company && (
-                        <div className="text-xs text-gray-500 truncate">
-                          {client.company}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  {selected?.id === client.id && (
-                    <Check className="w-4 h-4 text-gray-900 shrink-0" />
-                  )}
-                </button>
-              ))
-            ) : (
-              <div className="p-4 text-center text-sm text-gray-500">
-                {clients.length === 0 ? "No clients yet." : "No clients found."}
-              </div>
-            )}
-          </div>
+          <div className="max-h-[200px] overflow-y-auto">{list}</div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -546,9 +709,10 @@ function TimerProjectSelect({
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const isSidebar = variant === "sidebar";
-  const openUp = menuPlacement === "up";
+  const useSheet = menuPlacement === "up";
 
   useEffect(() => {
+    if (useSheet || !isOpen) return;
     function handleClickOutside(event: MouseEvent) {
       if (
         containerRef.current &&
@@ -559,7 +723,53 @@ function TimerProjectSelect({
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  }, [isOpen, useSheet]);
+
+  function close() {
+    setIsOpen(false);
+  }
+
+  const list = (
+    <div className="p-2 space-y-1">
+      <button
+        type="button"
+        onClick={() => {
+          onChange(null);
+          close();
+        }}
+        className={`w-full flex items-center justify-between rounded-xl text-left text-gray-500 hover:bg-gray-50 ${
+          useSheet ? "p-3.5 text-[15px]" : "p-2 text-sm"
+        }`}
+      >
+        No project
+        {!selected && <Check className="w-4 h-4 text-gray-900" />}
+      </button>
+      {projects.map((project) => (
+        <button
+          key={project.id}
+          type="button"
+          onClick={() => {
+            onChange(project);
+            close();
+          }}
+          className={`w-full flex items-center justify-between rounded-xl text-left hover:bg-gray-50 ${
+            useSheet ? "p-3.5" : "p-2"
+          }`}
+        >
+          <span
+            className={`font-medium text-gray-900 truncate ${
+              useSheet ? "text-[15px]" : "text-sm"
+            }`}
+          >
+            {project.name}
+          </span>
+          {selected?.id === project.id && (
+            <Check className="w-4 h-4 text-gray-900 shrink-0" />
+          )}
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <div className={`relative ${isSidebar ? "w-full" : "shrink-0"}`} ref={containerRef}>
@@ -584,45 +794,48 @@ function TimerProjectSelect({
         {!disabled && <ChevronDown className="w-3 h-3 text-gray-400 shrink-0 ml-auto" />}
       </button>
 
-      {isOpen && (
-        <div
-          className={`absolute left-0 bg-white rounded-2xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.15)] border border-line overflow-hidden z-50 ${
-            isSidebar ? "w-full" : "w-[260px]"
-          } ${openUp ? "bottom-full mb-2" : "top-full mt-2"}`}
-        >
-          <div className="max-h-[200px] overflow-y-auto p-2 space-y-1">
-            <button
-              type="button"
-              onClick={() => {
-                onChange(null);
-                setIsOpen(false);
-              }}
-              className="w-full flex items-center justify-between p-2 hover:bg-gray-50 rounded-xl text-left text-sm text-gray-500"
-            >
-              No project
-              {!selected && <Check className="w-4 h-4 text-gray-900" />}
-            </button>
-            {projects.map((project) => (
+      {isOpen && useSheet ? (
+        <ModalOverlay onClose={close} zClass="z-[90]">
+          <div
+            className={modalPanelClass(
+              "max-w-[560px]",
+              "!max-h-[88dvh] h-[88dvh] rounded-t-[1.75rem]"
+            )}
+          >
+            <div className="px-5 pt-4 pb-3 border-b border-line flex items-center justify-between gap-3 shrink-0">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 tracking-tight">
+                  Select project
+                </h2>
+                <p className="text-[13px] text-gray-500 mt-0.5">
+                  Optional — leave blank if none.
+                </p>
+              </div>
               <button
-                key={project.id}
                 type="button"
-                onClick={() => {
-                  onChange(project);
-                  setIsOpen(false);
-                }}
-                className="w-full flex items-center justify-between p-2 hover:bg-gray-50 rounded-xl text-left"
+                onClick={close}
+                className="p-2 rounded-full text-gray-500 hover:bg-gray-100"
+                aria-label="Close"
               >
-                <span className="text-sm font-medium text-gray-900 truncate">
-                  {project.name}
-                </span>
-                {selected?.id === project.id && (
-                  <Check className="w-4 h-4 text-gray-900 shrink-0" />
-                )}
+                <X className="w-5 h-5" />
               </button>
-            ))}
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2 pb-[env(safe-area-inset-bottom)]">
+              {list}
+            </div>
           </div>
+        </ModalOverlay>
+      ) : null}
+
+      {isOpen && !useSheet ? (
+        <div
+          className={`absolute left-0 top-full mt-2 bg-white rounded-2xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.15)] border border-line overflow-hidden z-50 ${
+            isSidebar ? "w-full" : "w-[260px]"
+          }`}
+        >
+          <div className="max-h-[200px] overflow-y-auto">{list}</div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

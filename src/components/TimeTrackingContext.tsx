@@ -50,7 +50,7 @@ type TimeTrackingContextValue = {
   elapsedSeconds: number;
   activeEntryId: string | null;
   startTimer: () => Promise<void>;
-  stopTimer: () => Promise<void>;
+  stopTimer: (opts?: { description?: string }) => Promise<void>;
   canStart: boolean;
   busy: boolean;
   error: string | null;
@@ -326,10 +326,6 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
       setError("Workspace isn’t ready yet. Refresh and try again.");
       return;
     }
-    if (!workDescription.trim()) {
-      setError("Add a short description of what you’re working on.");
-      return;
-    }
 
     actionLock.current = true;
     setBusy(true);
@@ -378,7 +374,7 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
           client_id: selectedClient?.id ?? null,
           project_id: projectId,
           task_id: taskId,
-          description: workDescription.trim(),
+          description: workDescription.trim() || null,
           started_at: nowIso,
           ended_at: null,
           billable: true,
@@ -412,78 +408,85 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
     defaultHourlyRate,
   ]);
 
-  const stopTimer = useCallback(async () => {
-    if (actionLock.current) return;
-    if (!organizationId || !userId || !activeEntryId || startedAtMs == null) {
-      setError("No active timer to stop.");
-      return;
-    }
-
-    actionLock.current = true;
-    setBusy(true);
-    setError(null);
-
-    try {
-      const supabase = createClient();
-      const endedAt = new Date().toISOString();
-
-      const taskId =
-        selectedTask &&
-        selectedClient &&
-        selectedTask.clientId === selectedClient.id
-          ? selectedTask.id
-          : null;
-
-      const { error: updateError } = await supabase
-        .from("time_entries")
-        .update({
-          // duration_minutes is GENERATED ALWAYS from started_at/ended_at
-          ended_at: endedAt,
-          description: workDescription.trim() || null,
-          client_id: selectedClient?.id ?? null,
-          project_id:
-            selectedProject &&
-            selectedClient &&
-            selectedProject.clientId === selectedClient.id
-              ? selectedProject.id
-              : null,
-          task_id: taskId,
-        })
-        .eq("id", activeEntryId)
-        .eq("organization_id", organizationId)
-        .eq("user_id", userId);
-
-      if (updateError) {
-        setError(updateError.message);
+  const stopTimer = useCallback(
+    async (opts?: { description?: string }) => {
+      if (actionLock.current) return;
+      if (!organizationId || !userId || !activeEntryId || startedAtMs == null) {
+        setError("No active timer to stop.");
         return;
       }
 
-      setActiveEntryId(null);
-      setStartedAtMs(null);
-      setElapsedSeconds(0);
-      setWorkDescriptionState("");
-      setSelectedTaskState(null);
-      setEntriesVersion((v) => v + 1);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not stop timer.");
-    } finally {
-      actionLock.current = false;
-      setBusy(false);
-    }
-  }, [
-    organizationId,
-    userId,
-    activeEntryId,
-    startedAtMs,
-    workDescription,
-    selectedClient,
-    selectedProject,
-    selectedTask,
-  ]);
+      const description =
+        (opts?.description !== undefined
+          ? opts.description
+          : workDescription
+        ).trim() || null;
 
-  const canStart = Boolean(
-    hydrated && organizationId && userId && workDescription.trim() && !busy
+      actionLock.current = true;
+      setBusy(true);
+      setError(null);
+
+      try {
+        const supabase = createClient();
+        const endedAt = new Date().toISOString();
+
+        const taskId =
+          selectedTask &&
+          selectedClient &&
+          selectedTask.clientId === selectedClient.id
+            ? selectedTask.id
+            : null;
+
+        const { error: updateError } = await supabase
+          .from("time_entries")
+          .update({
+            // duration_minutes is GENERATED ALWAYS from started_at/ended_at
+            ended_at: endedAt,
+            description,
+            client_id: selectedClient?.id ?? null,
+            project_id:
+              selectedProject &&
+              selectedClient &&
+              selectedProject.clientId === selectedClient.id
+                ? selectedProject.id
+                : null,
+            task_id: taskId,
+          })
+          .eq("id", activeEntryId)
+          .eq("organization_id", organizationId)
+          .eq("user_id", userId);
+
+        if (updateError) {
+          setError(updateError.message);
+          return;
+        }
+
+        setActiveEntryId(null);
+        setStartedAtMs(null);
+        setElapsedSeconds(0);
+        setWorkDescriptionState("");
+        setSelectedTaskState(null);
+        setEntriesVersion((v) => v + 1);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not stop timer.");
+      } finally {
+        actionLock.current = false;
+        setBusy(false);
+      }
+    },
+    [
+      organizationId,
+      userId,
+      activeEntryId,
+      startedAtMs,
+      workDescription,
+      selectedClient,
+      selectedProject,
+      selectedTask,
+    ]
   );
+
+  const canStart = Boolean(hydrated && organizationId && userId && !busy);
 
   const value = useMemo(
     () => ({
