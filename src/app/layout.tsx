@@ -6,6 +6,8 @@ import { AppShell } from "@/components/AppShell";
 import { BillingProvider } from "@/components/BillingContext";
 import { CookieConsent } from "@/components/CookieConsent";
 import { ProfileProvider } from "@/components/ProfileContext";
+import { PwaInstallBanner } from "@/components/PwaInstallBanner";
+import { PwaRegister } from "@/components/PwaRegister";
 import { TimeTrackingProvider } from "@/components/TimeTrackingContext";
 
 const satoshi = localFont({
@@ -46,11 +48,27 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  applicationName: "Rebban",
   title: "Rebban — From proposal to paid",
   description:
     "Create professional proposals, track your time, invoice clients, and let automated reminders follow up until you get paid.",
+  appleWebApp: {
+    capable: true,
+    title: "Rebban",
+    statusBarStyle: "default",
+  },
+  formatDetection: {
+    telephone: false,
+  },
   icons: {
-    icon: [{ url: "/rebban-icon.svg", type: "image/svg+xml" }],
+    icon: [
+      { url: "/rebban-icon.svg", type: "image/svg+xml" },
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [
+      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    ],
   },
 };
 
@@ -58,6 +76,10 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#F0F1F3" },
+    { media: "(prefers-color-scheme: dark)", color: "#000000" },
+  ],
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -74,6 +96,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <TimeTrackingProvider>
               <AppShell>{children}</AppShell>
               <CookieConsent />
+              <PwaRegister />
+              <PwaInstallBanner />
             </TimeTrackingProvider>
           </BillingProvider>
         </ProfileProvider>
