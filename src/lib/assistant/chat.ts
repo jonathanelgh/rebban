@@ -58,7 +58,9 @@ export async function generateAssistantReply(options: {
 
   const pending = options.toolContext.pendingAction;
   const pendingHint = pending
-    ? `\nThere is a pending action: ${JSON.stringify(pending)}. If the user confirms (yes / send / go ahead), call send_invoice with confirmed=true. If they decline, call clear_pending_action.`
+    ? pending.type === "send_proposal"
+      ? `\nThere is a pending action: ${JSON.stringify(pending)}. If the user confirms (yes / send / go ahead), call send_proposal with confirmed=true. If they decline, call clear_pending_action.`
+      : `\nThere is a pending action: ${JSON.stringify(pending)}. If the user confirms (yes / send / go ahead), call send_invoice with confirmed=true. If they decline, call clear_pending_action.`
     : "";
 
   const system = `${ASSISTANT_SYSTEM_PROMPT}
