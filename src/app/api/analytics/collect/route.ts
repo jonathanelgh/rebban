@@ -131,7 +131,6 @@ export async function POST(request: Request) {
   }
 
   const response = NextResponse.json({ ok: true }, { headers });
-  const requestHost = (request.headers.get("host") || "").split(":")[0];
   const cookieDomain =
     requestHost === "rebban.com" || requestHost.endsWith(".rebban.com")
       ? ".rebban.com"

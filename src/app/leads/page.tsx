@@ -107,8 +107,8 @@ function formatRelativeActivity(iso: string | null) {
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-function leadDisplayName(lead: Pick<LeadRow, "company" | "name">) {
-  return lead.company || lead.name;
+function leadDisplayName(lead: Pick<LeadRow, "name">) {
+  return lead.name;
 }
 
 export default function LeadsPage() {
@@ -517,7 +517,7 @@ function LeadsPageInner() {
                                 {title}
                               </div>
                               <div className="text-xs text-gray-400 mt-0.5 truncate">
-                                {lead.company ? lead.name : lead.email || "—"}
+                                {lead.company || lead.email || "—"}
                               </div>
                             </div>
                           </div>

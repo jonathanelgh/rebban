@@ -97,7 +97,7 @@ export function isBillingExemptPath(pathname: string) {
   if (pathname.startsWith("/f/") || pathname.startsWith("/api/f/")) return true;
   if (pathname.startsWith("/b/") || pathname.startsWith("/api/b/")) return true;
   if (pathname === "/admin" || pathname.startsWith("/admin/")) return true;
-  // Home stays reachable so the upgrade prompt can show.
+  // Home + settings stay open after trial ends; other routes show the paywall.
   if (pathname === "/") return true;
   return false;
 }

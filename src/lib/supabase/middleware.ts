@@ -66,6 +66,9 @@ export async function updateSession(request: NextRequest) {
   const isStripeWebhook = path === "/api/stripe/webhook";
   const isCronRoute = path.startsWith("/api/cron/");
   const isAnalyticsCollect = path === "/api/analytics/collect";
+  const isExtensionAuth =
+    path === "/api/extension/auth" ||
+    path === "/api/extension/auth/refresh";
   // Gmail / Outlook OAuth also return ?code= — do not treat as Supabase login.
   const isMailOAuthRoute =
     path.startsWith("/api/gmail/") ||
@@ -107,7 +110,8 @@ export async function updateSession(request: NextRequest) {
     isPublicBookingRoute ||
     isStripeWebhook ||
     isCronRoute ||
-    isAnalyticsCollect
+    isAnalyticsCollect ||
+    isExtensionAuth
   ) {
     return supabaseResponse;
   }

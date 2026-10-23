@@ -651,6 +651,7 @@ export function AddManualTimeModal({
 
   useEffect(() => {
     if (!organizationId) return;
+    const orgId = organizationId;
     let cancelled = false;
     async function loadPickerOptions() {
       const supabase = createClient();
@@ -658,13 +659,13 @@ export function AddManualTimeModal({
         supabase
           .from("clients")
           .select("id, name, company")
-          .eq("organization_id", organizationId)
+          .eq("organization_id", orgId)
           .is("deleted_at", null)
           .order("name"),
         supabase
           .from("projects")
           .select("id, name, client_id")
-          .eq("organization_id", organizationId)
+          .eq("organization_id", orgId)
           .is("deleted_at", null)
           .order("name"),
       ]);

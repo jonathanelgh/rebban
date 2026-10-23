@@ -1,7 +1,7 @@
 "use client";
 
 import React, { Suspense, useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { Sidebar } from "@/components/Sidebar";
 import { CreateMenu, PageChromeCta } from "@/components/CreateMenu";
@@ -13,6 +13,7 @@ import { isBillingExemptPath } from "@/lib/billing/plan";
 
 function AppShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const {
     entitled,
@@ -71,10 +72,20 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (billingLoading || entitled) return;
+    // Trial ended / unpaid: stay on home + settings without a paywall.
+    // Any other app URL opens upgrade and returns them to the dashboard.
     if (!isBillingExemptPath(pathname)) {
       openUpgradeModal();
+      router.replace("/");
     }
-  }, [pathname, billingLoading, entitled, openUpgradeModal]);
+  }, [pathname, billingLoading, entitled, openUpgradeModal, router]);
+
+  function handleCloseUpgradeModal() {
+    closeUpgradeModal();
+    if (!entitled && !isBillingExemptPath(pathname)) {
+      router.replace("/");
+    }
+  }
 
   if (isFocusedLayout || isAuthLayout) {
     return (
@@ -173,7 +184,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </div>
-      <UpgradeModal open={upgradeModalOpen} onClose={closeUpgradeModal} />
+      <UpgradeModal open={upgradeModalOpen} onClose={handleCloseUpgradeModal} />
       <SupportChat />
     </div>
   );

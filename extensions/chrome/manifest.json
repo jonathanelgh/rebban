@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "Rebban Timer",
+  "version": "1.2.0",
+  "description": "Start and stop your Rebban timer, save leads, and see money alerts from Chrome.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Rebban Timer",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "commands": {
+    "toggle-timer": {
+      "suggested_key": {
+        "default": "Alt+Shift+R",
+        "mac": "Alt+Shift+R"
+      },
+      "description": "Start or stop the Rebban timer"
+    }
+  },
+  "permissions": [
+    "storage",
+    "alarms",
+    "cookies",
+    "tabs",
+    "activeTab",
+    "scripting",
+    "notifications"
+  ],
+  "host_permissions": [
+    "https://app.rebban.com/*",
+    "https://*.rebban.com/*",
+    "https://cvqcanrdvtzovbmfhiwz.supabase.co/*"
+  ],
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}
