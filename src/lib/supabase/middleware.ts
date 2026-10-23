@@ -26,9 +26,20 @@ export async function updateSession(request: NextRequest) {
   );
 
   // Refresh session; do not trust getSession() alone.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Mobile (Expo) may send Authorization: Bearer instead of cookies.
+  const bearer = request.headers.get("authorization");
+  const hasBearer = Boolean(bearer?.startsWith("Bearer "));
+  let user = (
+    await supabase.auth.getUser()
+  ).data.user;
+
+  if (!user && hasBearer && bearer) {
+    const token = bearer.slice(7).trim();
+    if (token) {
+      const { data } = await supabase.auth.getUser(token);
+      user = data.user;
+    }
+  }
 
   const path = request.nextUrl.pathname;
   const authCode = request.nextUrl.searchParams.get("code");
@@ -99,7 +110,9 @@ export async function updateSession(request: NextRequest) {
     return supabaseResponse;
   }
 
-  if (!user && !isAuthRoute) {
+  const isApiRouteEarly = path.startsWith("/api/");
+  // API routes with Bearer JWT are validated in the handler via createClient().
+  if (!user && !isAuthRoute && !(isApiRouteEarly && hasBearer)) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.search = "";

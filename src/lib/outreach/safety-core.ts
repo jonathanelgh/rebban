@@ -38,7 +38,11 @@ export function canSendInitialOutreach(lead: {
   }
 
   const email = lead.email?.trim() || "";
-  if (!email || !isValidEmail(email)) {
+  if (
+    !email ||
+    !isValidEmail(email) ||
+    email.toLowerCase().endsWith("@import.rebban.invalid")
+  ) {
     return {
       ok: false,
       reason: "invalid_email",

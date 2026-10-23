@@ -7,6 +7,7 @@ import {
   isGoogleCalendarOAuthConfigured,
   requestOrigin,
 } from "@/lib/booking/google-calendar";
+import { sanitizeReturnTo } from "@/lib/mobile-return-to";
 
 export async function GET(request: Request) {
   if (!isGoogleCalendarOAuthConfigured()) {
@@ -32,14 +33,10 @@ export async function GET(request: Request) {
   const redirectUri = getGoogleCalendarRedirectUri(origin);
   const state = nanoid(32);
   const requestUrl = new URL(request.url);
-  const returnToRaw = requestUrl.searchParams.get("returnTo");
-  const returnTo =
-    returnToRaw &&
-    returnToRaw.startsWith("/") &&
-    !returnToRaw.startsWith("//") &&
-    !returnToRaw.includes("://")
-      ? returnToRaw
-      : "/calendar?gcal=connected";
+  const returnTo = sanitizeReturnTo(
+    requestUrl.searchParams.get("returnTo"),
+    "/calendar?gcal=connected"
+  );
 
   const url = buildGoogleCalendarAuthUrl(state, redirectUri);
   const response = NextResponse.redirect(url);

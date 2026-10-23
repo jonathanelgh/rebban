@@ -6,6 +6,7 @@ import { AppShell } from "@/components/AppShell";
 import { BillingProvider } from "@/components/BillingContext";
 import { CookieConsent } from "@/components/CookieConsent";
 import { ProfileProvider } from "@/components/ProfileContext";
+import { MobileSessionBridge } from "@/components/MobileSessionBridge";
 import { PwaInstallBanner } from "@/components/PwaInstallBanner";
 import { PwaRegister } from "@/components/PwaRegister";
 import { TimeTrackingProvider } from "@/components/TimeTrackingContext";
@@ -96,6 +97,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <TimeTrackingProvider>
               <AppShell>{children}</AppShell>
               <CookieConsent />
+              <MobileSessionBridge />
               <PwaRegister />
               <PwaInstallBanner />
             </TimeTrackingProvider>

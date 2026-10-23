@@ -31,7 +31,7 @@ export function PwaInstallBanner() {
       return;
     }
     try {
-      if (sessionStorage.getItem(DISMISS_KEY) === "1") return;
+      if (localStorage.getItem(DISMISS_KEY) === "1") return;
     } catch {
       /* ignore */
     }
@@ -63,7 +63,7 @@ export function PwaInstallBanner() {
     setDeferred(null);
     setIosTip(false);
     try {
-      sessionStorage.setItem(DISMISS_KEY, "1");
+      localStorage.setItem(DISMISS_KEY, "1");
     } catch {
       /* ignore */
     }

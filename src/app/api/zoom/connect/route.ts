@@ -7,6 +7,7 @@ import {
   isZoomOAuthConfigured,
   requestOrigin,
 } from "@/lib/booking/zoom";
+import { sanitizeReturnTo } from "@/lib/mobile-return-to";
 
 export async function GET(request: Request) {
   if (!isZoomOAuthConfigured()) {
@@ -32,14 +33,10 @@ export async function GET(request: Request) {
   const redirectUri = getZoomRedirectUri(origin);
   const state = nanoid(32);
   const requestUrl = new URL(request.url);
-  const returnToRaw = requestUrl.searchParams.get("returnTo");
-  const returnTo =
-    returnToRaw &&
-    returnToRaw.startsWith("/") &&
-    !returnToRaw.startsWith("//") &&
-    !returnToRaw.includes("://")
-      ? returnToRaw
-      : "/calendar?zoom=connected";
+  const returnTo = sanitizeReturnTo(
+    requestUrl.searchParams.get("returnTo"),
+    "/calendar?zoom=connected"
+  );
 
   const url = buildZoomAuthUrl(state, redirectUri);
   const response = NextResponse.redirect(url);

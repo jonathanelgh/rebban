@@ -3,6 +3,10 @@ import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { getAppUrl } from "@/lib/email/resend";
 import { requestOrigin, saveGmailConnection } from "@/lib/email/gmail";
+import {
+  redirectToReturnTo,
+  sanitizeReturnTo,
+} from "@/lib/mobile-return-to";
 
 function callbackAppUrl(request: Request) {
   // Always return to the host that handled the callback (app.rebban.com or local).
@@ -21,21 +25,20 @@ export async function GET(request: Request) {
   const oauthError = url.searchParams.get("error");
 
   const cookieStore = await cookies();
-  const returnToCookie = cookieStore.get("gmail_oauth_return")?.value;
-  const returnTo =
-    returnToCookie &&
-    returnToCookie.startsWith("/") &&
-    !returnToCookie.startsWith("//") &&
-    !returnToCookie.includes("://")
-      ? returnToCookie
-      : "/settings?section=integrations&gmail=connected";
+  const returnTo = sanitizeReturnTo(
+    cookieStore.get("gmail_oauth_return")?.value ?? null,
+    "/settings?section=integrations&gmail=connected"
+  );
   const errorBase = returnTo.includes("/onboarding")
     ? "/onboarding?step=email&gmail=error"
     : "/settings?section=integrations&gmail=error";
 
   if (oauthError) {
     return NextResponse.redirect(
-      `${appUrl}${errorBase}&reason=${encodeURIComponent(oauthError)}`
+      redirectToReturnTo(
+        appUrl,
+        `${errorBase}&reason=${encodeURIComponent(oauthError)}`
+      )
     );
   }
 
@@ -49,7 +52,7 @@ export async function GET(request: Request) {
 
   if (!code || !state || !expectedState || state !== expectedState) {
     return NextResponse.redirect(
-      `${appUrl}${errorBase}&reason=invalid_state`
+      redirectToReturnTo(appUrl, `${errorBase}&reason=invalid_state`)
     );
   }
 
@@ -75,12 +78,15 @@ export async function GET(request: Request) {
       code,
       redirectUri,
     });
-    return NextResponse.redirect(`${appUrl}${returnTo}`);
+    return NextResponse.redirect(redirectToReturnTo(appUrl, returnTo));
   } catch (error) {
     const reason =
       error instanceof Error ? error.message : "connection_failed";
     return NextResponse.redirect(
-      `${appUrl}${errorBase}&reason=${encodeURIComponent(reason)}`
+      redirectToReturnTo(
+        appUrl,
+        `${errorBase}&reason=${encodeURIComponent(reason)}`
+      )
     );
   }
 }

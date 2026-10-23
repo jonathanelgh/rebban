@@ -38,14 +38,18 @@ export type CsvImportPreview = {
   headers: string[];
 };
 
-function splitCsvLine(line: string): string[] {
-  const cells: string[] = [];
+/** RFC4180-ish CSV parse — keeps newlines inside quoted fields. */
+function parseCsv(text: string): string[][] {
+  const normalized = text.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const rows: string[][] = [];
+  let cells: string[] = [];
   let current = "";
   let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
+
+  for (let i = 0; i < normalized.length; i++) {
+    const ch = normalized[i];
     if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') {
+      if (inQuotes && normalized[i + 1] === '"') {
         current += '"';
         i += 1;
       } else {
@@ -54,28 +58,38 @@ function splitCsvLine(line: string): string[] {
       continue;
     }
     if (ch === "," && !inQuotes) {
-      cells.push(current);
+      cells.push(current.trim());
+      current = "";
+      continue;
+    }
+    if (ch === "\n" && !inQuotes) {
+      cells.push(current.trim());
+      if (cells.some((c) => c.length > 0)) rows.push(cells);
+      cells = [];
       current = "";
       continue;
     }
     current += ch;
   }
-  cells.push(current);
-  return cells.map((c) => c.trim());
-}
-
-function parseCsv(text: string): string[][] {
-  const normalized = text.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  const lines = normalized.split("\n").filter((l) => l.trim().length > 0);
-  return lines.map(splitCsvLine);
+  cells.push(current.trim());
+  if (cells.some((c) => c.length > 0)) rows.push(cells);
+  return rows;
 }
 
 function headerKey(h: string) {
-  return h.trim().toLowerCase().replace(/\s+/g, " ");
+  return h
+    .trim()
+    .toLowerCase()
+    .replace(/^\uFEFF/, "")
+    .replace(/[?#()]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 const HEADER_MAP: Record<string, keyof CsvImportRow | "skip"> = {
+  "#": "skip",
   name: "displayName",
+  "name / studio": "displayName",
   "display name": "displayName",
   "first name": "firstName",
   "last name": "lastName",
@@ -86,17 +100,23 @@ const HEADER_MAP: Record<string, keyof CsvImportRow | "skip"> = {
   "source url": "sourceUrl",
   "lead tier": "leadTier",
   tier: "leadTier",
+  // Prefer the dedicated confidence column when both exist (later wins in row loop).
   "research status": "researchConfidence",
   "research confidence": "researchConfidence",
   "website summary": "websiteSummary",
+  "website / work summary": "websiteSummary",
   "personalized opener": "personalizedOpener",
   subject: "subjectLine",
+  "subject launch version": "subjectLine",
   "first outreach email": "initialEmailBody",
+  "first outreach email launch version": "initialEmailBody",
   "outreach email": "initialEmailBody",
   "ready to send": "readyToSend",
   caution: "cautionNote",
+  "caution / next check": "cautionNote",
   "outreach status": "outreachStatus",
   status: "outreachStatus",
+  "updated email review": "skip",
 };
 
 function mapTier(value: string): OutreachLeadTier {
@@ -244,8 +264,24 @@ export function previewOutreachCsv(text: string): CsvImportPreview {
     }
 
     const errors: string[] = [];
-    if (!email) errors.push("Missing email");
-    else if (!isValidEmail(email)) errors.push("Invalid email");
+    const contactRaw = email;
+    const hasRealEmail = Boolean(email) && isValidEmail(email);
+
+    // Contact-form / phone-only rows: keep the lead, mark not sendable.
+    if (!hasRealEmail) {
+      const slug = (displayName || sourceUrl || `row-${i + 1}`)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "")
+        .slice(0, 48);
+      email = `nopublic+${i + 1}-${slug || "lead"}@import.rebban.invalid`;
+      readyToSend = false;
+      if (outreachStatus === "ready") outreachStatus = "new";
+      const note = contactRaw
+        ? `No public email — contact listed as: ${contactRaw}`
+        : "No public email on research sheet";
+      cautionNote = cautionNote ? `${cautionNote} · ${note}` : note;
+    }
 
     if (readyToSend && outreachStatus === "new") outreachStatus = "ready";
 
@@ -278,8 +314,10 @@ export function previewOutreachCsv(text: string): CsvImportPreview {
 
 export function rowToLeadInsert(
   row: CsvImportRow,
-  userId: string
+  userId: string | null
 ): OutreachLeadInsert {
+  const websiteUrl =
+    row.sourceUrl && /^https?:\/\//i.test(row.sourceUrl) ? row.sourceUrl : null;
   return {
     email: normalizeEmail(row.email),
     display_name: row.displayName,
@@ -288,6 +326,8 @@ export function rowToLeadInsert(
     role: row.role,
     location: row.location,
     source_url: row.sourceUrl,
+    website_url: websiteUrl,
+    source_type: "csv_import",
     lead_tier: row.leadTier,
     research_confidence: row.researchConfidence,
     website_summary: row.websiteSummary,

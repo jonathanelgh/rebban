@@ -7,6 +7,7 @@ import {
   isOutlookOAuthConfigured,
   requestOrigin,
 } from "@/lib/email/outlook";
+import { sanitizeReturnTo } from "@/lib/mobile-return-to";
 
 export async function GET(request: Request) {
   if (!isOutlookOAuthConfigured()) {
@@ -32,14 +33,10 @@ export async function GET(request: Request) {
   const redirectUri = getOutlookRedirectUri(origin);
   const state = nanoid(32);
   const requestUrl = new URL(request.url);
-  const returnToRaw = requestUrl.searchParams.get("returnTo");
-  const returnTo =
-    returnToRaw &&
-    returnToRaw.startsWith("/") &&
-    !returnToRaw.startsWith("//") &&
-    !returnToRaw.includes("://")
-      ? returnToRaw
-      : "/settings?section=integrations&outlook=connected";
+  const returnTo = sanitizeReturnTo(
+    requestUrl.searchParams.get("returnTo"),
+    "/settings?section=integrations&outlook=connected"
+  );
 
   const url = buildOutlookAuthUrl(state, redirectUri);
   const response = NextResponse.redirect(url);
