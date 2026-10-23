@@ -62,6 +62,14 @@ export async function GET(_request: Request, context: RouteContext) {
       tasks,
       timeEntries,
       projects,
+      clientsRes,
+      projectsRes,
+      invoicesRes,
+      proposalsRes,
+      leadsRes,
+      formsRes,
+      tasksRes,
+      timeRes,
     ] = await Promise.all([
       countRows(gate.db, "clients", id),
       countRows(gate.db, "invoices", id),
@@ -71,7 +79,72 @@ export async function GET(_request: Request, context: RouteContext) {
       countRows(gate.db, "tasks", id),
       countRows(gate.db, "time_entries", id),
       countRows(gate.db, "projects", id),
+      gate.db
+        .from("clients")
+        .select("id, name, company, email, status, created_at")
+        .eq("organization_id", id)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false })
+        .limit(100),
+      gate.db
+        .from("projects")
+        .select("id, name, status, created_at, clients(name, company)")
+        .eq("organization_id", id)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false })
+        .limit(100),
+      gate.db
+        .from("invoices")
+        .select("id, number, status, total, currency, created_at, clients(name, company)")
+        .eq("organization_id", id)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false })
+        .limit(100),
+      gate.db
+        .from("proposals")
+        .select("id, title, status, amount, currency, created_at, clients(name, company)")
+        .eq("organization_id", id)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false })
+        .limit(100),
+      gate.db
+        .from("leads")
+        .select("id, name, email, company, status, created_at")
+        .eq("organization_id", id)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false })
+        .limit(100),
+      gate.db
+        .from("lead_forms")
+        .select("id, name, is_active, created_at")
+        .eq("organization_id", id)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false })
+        .limit(100),
+      gate.db
+        .from("tasks")
+        .select("id, title, column_id, priority, created_at, clients(name, company)")
+        .eq("organization_id", id)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false })
+        .limit(100),
+      gate.db
+        .from("time_entries")
+        .select(
+          "id, description, duration_minutes, started_at, billable, clients(name, company), projects(name)"
+        )
+        .eq("organization_id", id)
+        .is("deleted_at", null)
+        .order("started_at", { ascending: false })
+        .limit(100),
     ]);
+
+    type NamedClient = { name: string; company: string | null } | null;
+    function clientLabel(rel: unknown) {
+      const c = rel as NamedClient;
+      if (!c) return null;
+      return c.company?.trim() || c.name || null;
+    }
 
     const [{ data: gmailRows }, { data: outlookRows }] = await Promise.all([
       gate.db
@@ -214,6 +287,79 @@ export async function GET(_request: Request, context: RouteContext) {
       },
       subscription,
       payments,
+      workspace: {
+        clients: (clientsRes.data || []).map((row) => ({
+          id: row.id,
+          name: row.company?.trim() || row.name,
+          company: row.company,
+          email: row.email,
+          status: row.status,
+          createdAt: row.created_at,
+        })),
+        projects: (projectsRes.data || []).map((row) => ({
+          id: row.id,
+          name: row.name,
+          status: row.status,
+          clientName: clientLabel(row.clients),
+          createdAt: row.created_at,
+        })),
+        invoices: (invoicesRes.data || []).map((row) => ({
+          id: row.id,
+          number: row.number,
+          status: row.status,
+          amountLabel: formatInvoiceMoney(Number(row.total) || 0, row.currency),
+          clientName: clientLabel(row.clients),
+          createdAt: row.created_at,
+        })),
+        proposals: (proposalsRes.data || []).map((row) => ({
+          id: row.id,
+          title: row.title,
+          status: row.status,
+          amountLabel: formatInvoiceMoney(
+            Number(row.amount) || 0,
+            row.currency || "USD"
+          ),
+          clientName: clientLabel(row.clients),
+          createdAt: row.created_at,
+        })),
+        leads: (leadsRes.data || []).map((row) => ({
+          id: row.id,
+          name: row.name,
+          email: row.email,
+          company: row.company,
+          status: row.status,
+          createdAt: row.created_at,
+        })),
+        forms: (formsRes.data || []).map((row) => ({
+          id: row.id,
+          name: row.name,
+          status: row.is_active ? "active" : "inactive",
+          createdAt: row.created_at,
+        })),
+        tasks: (tasksRes.data || []).map((row) => ({
+          id: row.id,
+          title: row.title,
+          status: row.column_id,
+          priority: row.priority,
+          clientName: clientLabel(row.clients),
+          createdAt: row.created_at,
+        })),
+        timeEntries: (timeRes.data || []).map((row) => {
+          const minutes = Math.max(0, Math.round(row.duration_minutes || 0));
+          const hours = Math.floor(minutes / 60);
+          const mins = minutes % 60;
+          const projectRel = row.projects as { name: string } | null;
+          return {
+            id: row.id,
+            description: row.description || "Time entry",
+            durationLabel: `${hours}h ${mins}m`,
+            clientName: clientLabel(row.clients),
+            projectName: projectRel?.name || null,
+            billable: row.billable,
+            startedAt: row.started_at,
+          };
+        }),
+      },
     });
   } catch (error) {
     console.error("admin org detail failed", error);

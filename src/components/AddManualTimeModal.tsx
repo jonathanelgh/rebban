@@ -20,7 +20,7 @@ import {
   type TimerClient,
   type TimerProject,
 } from "@/components/TimeTrackingContext";
-import { toISODateLocal } from "@/lib/time-entries";
+import { clientDisplayName, toISODateLocal } from "@/lib/time-entries";
 import { ModalOverlay, modalPanelClass } from "@/components/ModalFrame";
 import { TaskSuggestInput } from "@/components/TaskSuggestInput";
 
@@ -113,6 +113,18 @@ function formatDateLabel(isoDate: string) {
   if (dayDiff === 0) return `Today · ${label}`;
   if (dayDiff === 1) return `Yesterday · ${label}`;
   return label;
+}
+
+function useIsMobile() {
+  const [mobile, setMobile] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 639px)");
+    const apply = () => setMobile(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+  return mobile;
 }
 
 function useClickOutside(
@@ -287,16 +299,65 @@ function ClientPicker({
   selectedId: string;
   onChange: (id: string) => void;
 }) {
+  const isMobile = useIsMobile();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
-  useClickOutside(containerRef, () => setOpen(false), open);
+  useClickOutside(containerRef, () => setOpen(false), open && !isMobile);
 
   const selected = clients.find((c) => c.id === selectedId) || null;
   const filtered = clients.filter(
     (c) =>
       c.name.toLowerCase().includes(search.toLowerCase()) ||
       (c.company?.toLowerCase().includes(search.toLowerCase()) ?? false)
+  );
+
+  function close() {
+    setOpen(false);
+    setSearch("");
+  }
+
+  function pick(id: string) {
+    onChange(id);
+    close();
+  }
+
+  const list = (
+    <>
+      {filtered.length === 0 ? (
+        <p className="px-3 py-6 text-center text-sm text-gray-400">
+          {clients.length === 0 ? "No clients yet." : "No matches."}
+        </p>
+      ) : (
+        filtered.map((client) => (
+          <button
+            key={client.id}
+            type="button"
+            onClick={() => pick(client.id)}
+            className="w-full flex items-center justify-between gap-2 p-2.5 rounded-xl hover:bg-[#FAFBFC] text-left"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-8 h-8 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center text-xs font-bold shrink-0">
+                {client.name.charAt(0).toUpperCase()}
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-gray-900 truncate">
+                  {client.name}
+                </div>
+                {client.company && (
+                  <div className="text-[12px] text-gray-400 truncate">
+                    {client.company}
+                  </div>
+                )}
+              </div>
+            </div>
+            {selectedId === client.id && (
+              <Check className="w-4 h-4 text-[#2563EB] shrink-0" />
+            )}
+          </button>
+        ))
+      )}
+    </>
   );
 
   return (
@@ -324,7 +385,51 @@ function ClientPicker({
         <ChevronDown className="w-3.5 h-3.5 text-gray-400 shrink-0" />
       </button>
 
-      {open && (
+      {open && isMobile ? (
+        <ModalOverlay onClose={close} zClass="z-[90]">
+          <div
+            className={modalPanelClass(
+              "max-w-[520px]",
+              "!max-h-[88dvh] h-[88dvh]"
+            )}
+          >
+            <div className="px-5 pt-4 pb-3 border-b border-line flex items-center justify-between gap-3 shrink-0">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 tracking-tight">
+                  Select client
+                </h2>
+                <p className="text-[13px] text-gray-500 mt-0.5">
+                  Who was this time for?
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={close}
+                className="p-2 rounded-full text-gray-500 hover:bg-gray-100"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-5 py-3 border-b border-line shrink-0 flex items-center gap-2">
+              <Search className="w-4 h-4 text-gray-400 shrink-0" />
+              <input
+                type="search"
+                autoFocus
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search clients…"
+                className="w-full text-[15px] outline-none placeholder:text-gray-400 font-medium bg-transparent"
+              />
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto p-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] space-y-1">
+              {list}
+            </div>
+          </div>
+        </ModalOverlay>
+      ) : null}
+
+      {open && !isMobile ? (
         <div className="absolute left-0 right-0 top-full mt-2 z-50 rounded-2xl border border-line bg-white shadow-[0_16px_40px_-12px_rgba(16,24,40,0.18)] overflow-hidden">
           <div className="p-3 border-b border-line flex items-center gap-2">
             <Search className="w-4 h-4 text-gray-400 shrink-0" />
@@ -337,47 +442,9 @@ function ClientPicker({
               className="w-full text-sm outline-none placeholder:text-gray-400 font-medium bg-transparent"
             />
           </div>
-          <div className="max-h-[220px] overflow-y-auto p-2 space-y-1">
-            {filtered.length === 0 ? (
-              <p className="px-3 py-6 text-center text-sm text-gray-400">
-                {clients.length === 0 ? "No clients yet." : "No matches."}
-              </p>
-            ) : (
-              filtered.map((client) => (
-                <button
-                  key={client.id}
-                  type="button"
-                  onClick={() => {
-                    onChange(client.id);
-                    setOpen(false);
-                    setSearch("");
-                  }}
-                  className="w-full flex items-center justify-between gap-2 p-2.5 rounded-xl hover:bg-[#FAFBFC] text-left"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-8 h-8 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center text-xs font-bold shrink-0">
-                      {client.name.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-gray-900 truncate">
-                        {client.name}
-                      </div>
-                      {client.company && (
-                        <div className="text-[12px] text-gray-400 truncate">
-                          {client.company}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  {selectedId === client.id && (
-                    <Check className="w-4 h-4 text-[#2563EB] shrink-0" />
-                  )}
-                </button>
-              ))
-            )}
-          </div>
+          <div className="max-h-[220px] overflow-y-auto p-2 space-y-1">{list}</div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -395,14 +462,61 @@ function ProjectPicker({
   disabled?: boolean;
   emptyLabel: string;
 }) {
+  const isMobile = useIsMobile();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
-  useClickOutside(containerRef, () => setOpen(false), open);
+  useClickOutside(containerRef, () => setOpen(false), open && !isMobile);
 
   const selected = projects.find((p) => p.id === selectedId) || null;
   const filtered = projects.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  function close() {
+    setOpen(false);
+    setSearch("");
+  }
+
+  function pick(id: string) {
+    onChange(id);
+    close();
+  }
+
+  const list = (
+    <>
+      <button
+        type="button"
+        onClick={() => pick("")}
+        className="w-full flex items-center justify-between gap-2 p-2.5 rounded-xl hover:bg-[#FAFBFC] text-left text-sm text-gray-500"
+      >
+        No project
+        {!selectedId && <Check className="w-4 h-4 text-[#2563EB]" />}
+      </button>
+      {filtered.length === 0 ? (
+        <p className="px-3 py-4 text-center text-sm text-gray-400">
+          {projects.length === 0
+            ? "No projects for this client."
+            : "No matches."}
+        </p>
+      ) : (
+        filtered.map((project) => (
+          <button
+            key={project.id}
+            type="button"
+            onClick={() => pick(project.id)}
+            className="w-full flex items-center justify-between gap-2 p-2.5 rounded-xl hover:bg-[#FAFBFC] text-left"
+          >
+            <span className="text-sm font-medium text-gray-900 truncate">
+              {project.name}
+            </span>
+            {selectedId === project.id && (
+              <Check className="w-4 h-4 text-[#2563EB] shrink-0" />
+            )}
+          </button>
+        ))
+      )}
+    </>
   );
 
   return (
@@ -426,7 +540,53 @@ function ProjectPicker({
         )}
       </button>
 
-      {open && !disabled && (
+      {open && !disabled && isMobile ? (
+        <ModalOverlay onClose={close} zClass="z-[90]">
+          <div
+            className={modalPanelClass(
+              "max-w-[520px]",
+              "!max-h-[88dvh] h-[88dvh]"
+            )}
+          >
+            <div className="px-5 pt-4 pb-3 border-b border-line flex items-center justify-between gap-3 shrink-0">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 tracking-tight">
+                  Select project
+                </h2>
+                <p className="text-[13px] text-gray-500 mt-0.5">
+                  Optional — leave blank if this was just for the client.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={close}
+                className="p-2 rounded-full text-gray-500 hover:bg-gray-100"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            {projects.length > 0 ? (
+              <div className="px-5 py-3 border-b border-line shrink-0 flex items-center gap-2">
+                <Search className="w-4 h-4 text-gray-400 shrink-0" />
+                <input
+                  type="search"
+                  autoFocus
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search projects…"
+                  className="w-full text-[15px] outline-none placeholder:text-gray-400 font-medium bg-transparent"
+                />
+              </div>
+            ) : null}
+            <div className="flex-1 min-h-0 overflow-y-auto p-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] space-y-1">
+              {list}
+            </div>
+          </div>
+        </ModalOverlay>
+      ) : null}
+
+      {open && !disabled && !isMobile ? (
         <div className="absolute left-0 right-0 top-full mt-2 z-50 rounded-2xl border border-line bg-white shadow-[0_16px_40px_-12px_rgba(16,24,40,0.18)] overflow-hidden">
           {projects.length > 0 && (
             <div className="p-3 border-b border-line flex items-center gap-2">
@@ -441,49 +601,9 @@ function ProjectPicker({
               />
             </div>
           )}
-          <div className="max-h-[220px] overflow-y-auto p-2 space-y-1">
-            <button
-              type="button"
-              onClick={() => {
-                onChange("");
-                setOpen(false);
-                setSearch("");
-              }}
-              className="w-full flex items-center justify-between gap-2 p-2.5 rounded-xl hover:bg-[#FAFBFC] text-left text-sm text-gray-500"
-            >
-              No project
-              {!selectedId && <Check className="w-4 h-4 text-[#2563EB]" />}
-            </button>
-            {filtered.length === 0 ? (
-              <p className="px-3 py-4 text-center text-sm text-gray-400">
-                {projects.length === 0
-                  ? "No projects for this client."
-                  : "No matches."}
-              </p>
-            ) : (
-              filtered.map((project) => (
-                <button
-                  key={project.id}
-                  type="button"
-                  onClick={() => {
-                    onChange(project.id);
-                    setOpen(false);
-                    setSearch("");
-                  }}
-                  className="w-full flex items-center justify-between gap-2 p-2.5 rounded-xl hover:bg-[#FAFBFC] text-left"
-                >
-                  <span className="text-sm font-medium text-gray-900 truncate">
-                    {project.name}
-                  </span>
-                  {selectedId === project.id && (
-                    <Check className="w-4 h-4 text-[#2563EB] shrink-0" />
-                  )}
-                </button>
-              ))
-            )}
-          </div>
+          <div className="max-h-[220px] overflow-y-auto p-2 space-y-1">{list}</div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -500,7 +620,7 @@ export function AddManualTimeModal({
   onSaved: (startedDate: string) => void;
 }) {
   const { organizationId, userId } = useProfile();
-  const { defaultHourlyRate } = useTimeTracking();
+  const { defaultHourlyRate, refreshClients } = useTimeTracking();
   const now = new Date();
   const [description, setDescription] = useState("");
   const [taskId, setTaskId] = useState<string | null>(null);
@@ -515,10 +635,69 @@ export function AddManualTimeModal({
   const [billable, setBillable] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pickerClients, setPickerClients] = useState(clients);
+  const [pickerProjects, setPickerProjects] = useState(projects);
+
+  useEffect(() => {
+    setPickerClients(clients);
+  }, [clients]);
+  useEffect(() => {
+    setPickerProjects(projects);
+  }, [projects]);
+
+  useEffect(() => {
+    void refreshClients();
+  }, [refreshClients]);
+
+  useEffect(() => {
+    if (!organizationId) return;
+    let cancelled = false;
+    async function loadPickerOptions() {
+      const supabase = createClient();
+      const [clientsRes, projectsRes] = await Promise.all([
+        supabase
+          .from("clients")
+          .select("id, name, company")
+          .eq("organization_id", organizationId)
+          .is("deleted_at", null)
+          .order("name"),
+        supabase
+          .from("projects")
+          .select("id, name, client_id")
+          .eq("organization_id", organizationId)
+          .is("deleted_at", null)
+          .order("name"),
+      ]);
+      if (cancelled) return;
+      if (!clientsRes.error) {
+        setPickerClients(
+          (clientsRes.data ?? []).map((c) => ({
+            id: c.id,
+            name: clientDisplayName(c),
+            company: c.company,
+          }))
+        );
+      }
+      if (!projectsRes.error) {
+        setPickerProjects(
+          (projectsRes.data ?? []).map((p) => ({
+            id: p.id,
+            name: p.name,
+            clientId: p.client_id,
+          }))
+        );
+      }
+    }
+    void loadPickerOptions();
+    return () => {
+      cancelled = true;
+    };
+  }, [organizationId]);
 
   const clientProjects = useMemo(
-    () => (clientId ? projects.filter((p) => p.clientId === clientId) : []),
-    [projects, clientId]
+    () =>
+      clientId ? pickerProjects.filter((p) => p.clientId === clientId) : [],
+    [pickerProjects, clientId]
   );
 
   useEffect(() => {
@@ -641,7 +820,7 @@ export function AddManualTimeModal({
         <div className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden px-5 sm:px-6 py-5 space-y-4">
           <Field label="Client">
             <ClientPicker
-              clients={clients}
+              clients={pickerClients}
               selectedId={clientId}
               onChange={(id) => {
                 setClientId(id);

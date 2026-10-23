@@ -33,7 +33,7 @@ Rules:
 - Topics must help freelancers with real struggles: admin overload, unpaid hours, scope creep, chasing payment, tool sprawl, proposal anxiety, pricing confidence, client communication.
 - Strong SEO intent: search-friendly titles, clear primary keyword.
 - Avoid near-duplicates of titles already listed.
-- Avoid hard sales pitches; educational and empathetic first.
+- Avoid hard sales pitches; educational and empathetic first. Topics should still be problems Rebban can help with (proposals, time, invoices, clients, getting paid, admin), so the article can naturally show how Rebban fits.
 - No em dashes or en dashes in titles.
 - Diversify categories across the batch.
 - category MUST be one of: ${list}.`;

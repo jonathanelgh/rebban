@@ -45,7 +45,7 @@ SEO + structure rules:
 - 4-6 h2 sections, open with a strong hook paragraph, end with a practical close.
 - Include at least 2 internal links using paths from the provided internal link list (markdown [label](/path)).
 - Include 1-2 reputable external links (gov, established publications, freelancing associations). Never invent fake URLs.
-- Soft product relevance is OK when natural; do not hard-sell every section.
+- Every article must explain how Rebban can help with THIS topic's problem. Put that in a dedicated h2 near the end (not the opening section), then a short close. Be specific: name the relevant Rebban features (proposals, clients, time tracking, invoices, payment reminders, getting paid) and how they reduce the pain the article covers. Include at least 2 product links from the provided product paths. Keep it useful, not a hard sell - no "sign up now" spam, and do not mention Rebban in every section.
 - Prefer concrete freelancer scenarios over generic advice.`;
 
 export async function writeArticleForTopic(options: {
@@ -74,11 +74,13 @@ export async function writeArticleForTopic(options: {
   });
 
   const productLinks = [
+    "- Rebban home → https://rebban.com",
+    "- App → https://app.rebban.com",
     "- Proposals → /proposals",
-    "- Projects → /projects",
+    "- Clients → /clients",
     "- Time tracking → /time-tracking",
     "- Invoices → /invoices",
-    "- Homepage → /",
+    "- Getting paid / invoices → /invoices",
   ];
 
   const raw = await openAiChatJson({
@@ -96,8 +98,10 @@ export async function writeArticleForTopic(options: {
       "Internal article links to use when relevant:",
       internalLinks.length ? internalLinks.join("\n") : "- (none yet)",
       "",
-      "Product paths you may use sparingly:",
+      "Product paths to use in the Rebban-help section (pick the ones that match this topic):",
       productLinks.join("\n"),
+      "",
+      "Required: one late h2 that tells the reader how Rebban helps with this exact problem, with concrete feature examples and product links.",
     ].join("\n"),
   });
 

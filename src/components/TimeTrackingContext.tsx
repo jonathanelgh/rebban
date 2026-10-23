@@ -120,7 +120,9 @@ export function TimeTrackingProvider({ children }: { children: React.ReactNode }
         .maybeSingle(),
     ]);
 
-    if (!clientsRes.error) {
+    if (clientsRes.error) {
+      setError(clientsRes.error.message);
+    } else {
       setClients(
         (clientsRes.data ?? []).map((c) => ({
           id: c.id,

@@ -67,6 +67,97 @@ type SubscriptionInfo = {
   priceId: string | null;
 } | null;
 
+type ListRow = { id: string; title: string; subtitle: string };
+
+type WorkspaceKind =
+  | "clients"
+  | "invoices"
+  | "proposals"
+  | "leads"
+  | "forms"
+  | "projects"
+  | "tasks"
+  | "timeEntries";
+
+type WorkspaceLists = {
+  clients: Array<{
+    id: string;
+    name: string;
+    company: string | null;
+    email: string | null;
+    status: string;
+    createdAt: string;
+  }>;
+  projects: Array<{
+    id: string;
+    name: string;
+    status: string;
+    clientName: string | null;
+    createdAt: string;
+  }>;
+  invoices: Array<{
+    id: string;
+    number: string | null;
+    status: string;
+    amountLabel: string;
+    clientName: string | null;
+    createdAt: string;
+  }>;
+  proposals: Array<{
+    id: string;
+    title: string;
+    status: string;
+    amountLabel: string;
+    clientName: string | null;
+    createdAt: string;
+  }>;
+  leads: Array<{
+    id: string;
+    name: string;
+    email: string | null;
+    company: string | null;
+    status: string;
+    createdAt: string;
+  }>;
+  forms: Array<{
+    id: string;
+    name: string;
+    status: string;
+    createdAt: string;
+  }>;
+  tasks: Array<{
+    id: string;
+    title: string;
+    status: string;
+    priority: string;
+    clientName: string | null;
+    createdAt: string;
+  }>;
+  timeEntries: Array<{
+    id: string;
+    description: string;
+    durationLabel: string;
+    clientName: string | null;
+    projectName: string | null;
+    billable: boolean;
+    startedAt: string;
+  }>;
+};
+
+const WORKSPACE_PANELS: Record<
+  WorkspaceKind,
+  { label: string; empty: string }
+> = {
+  clients: { label: "Clients", empty: "No clients yet." },
+  invoices: { label: "Invoices", empty: "No invoices yet." },
+  proposals: { label: "Proposals", empty: "No proposals yet." },
+  leads: { label: "Leads", empty: "No leads yet." },
+  forms: { label: "Forms", empty: "No forms yet." },
+  projects: { label: "Projects", empty: "No projects yet." },
+  tasks: { label: "Tasks", empty: "No tasks yet." },
+  timeEntries: { label: "Time entries", empty: "No time entries yet." },
+};
+
 type OrgDetail = AdminOrgRow & {
   stripeAccountId: string | null;
   stripeChargesEnabled: boolean;
@@ -129,18 +220,25 @@ export function AdminUserDrawer({
     outlook: EmailProviderInfo;
   } | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionInfo>(null);
+  const [workspace, setWorkspace] = useState<WorkspaceLists | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [detail, setDetail] = useState<WorkspaceKind | null>(null);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape" && !busy) onClose();
+      if (e.key !== "Escape" || busy) return;
+      if (detail) {
+        setDetail(null);
+        return;
+      }
+      onClose();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [busy, onClose]);
+  }, [busy, detail, onClose]);
 
   async function load() {
     setLoading(true);
@@ -163,6 +261,7 @@ export function AdminUserDrawer({
       } | null
     );
     setSubscription((json.subscription || null) as SubscriptionInfo);
+    setWorkspace((json.workspace || null) as WorkspaceLists | null);
     setLoading(false);
   }
 
@@ -229,13 +328,92 @@ export function AdminUserDrawer({
     email?.gmail.connected || email?.outlook.connected
   );
 
+  function workspaceRows(kind: WorkspaceKind): ListRow[] {
+    if (!workspace) return [];
+    switch (kind) {
+      case "clients":
+        return workspace.clients.map((row) => ({
+          id: row.id,
+          title: row.name,
+          subtitle: [row.email, row.status, formatDate(row.createdAt)]
+            .filter(Boolean)
+            .join(" · "),
+        }));
+      case "projects":
+        return workspace.projects.map((row) => ({
+          id: row.id,
+          title: row.name,
+          subtitle: [row.clientName, row.status, formatDate(row.createdAt)]
+            .filter(Boolean)
+            .join(" · "),
+        }));
+      case "invoices":
+        return workspace.invoices.map((row) => ({
+          id: row.id,
+          title: row.number || "Draft invoice",
+          subtitle: [row.clientName, row.status, row.amountLabel]
+            .filter(Boolean)
+            .join(" · "),
+        }));
+      case "proposals":
+        return workspace.proposals.map((row) => ({
+          id: row.id,
+          title: row.title,
+          subtitle: [row.clientName, row.status, row.amountLabel]
+            .filter(Boolean)
+            .join(" · "),
+        }));
+      case "leads":
+        return workspace.leads.map((row) => ({
+          id: row.id,
+          title: row.name,
+          subtitle: [row.email || row.company, row.status]
+            .filter(Boolean)
+            .join(" · "),
+        }));
+      case "forms":
+        return (workspace.forms || []).map((row) => ({
+          id: row.id,
+          title: row.name,
+          subtitle: [row.status, formatDate(row.createdAt)]
+            .filter(Boolean)
+            .join(" · "),
+        }));
+      case "tasks":
+        return (workspace.tasks || []).map((row) => ({
+          id: row.id,
+          title: row.title,
+          subtitle: [row.clientName, row.status, row.priority]
+            .filter(Boolean)
+            .join(" · "),
+        }));
+      case "timeEntries":
+        return (workspace.timeEntries || []).map((row) => ({
+          id: row.id,
+          title: row.description,
+          subtitle: [
+            row.clientName,
+            row.projectName,
+            row.durationLabel,
+            row.billable ? "Billable" : "Non-billable",
+            formatDateTime(row.startedAt),
+          ]
+            .filter(Boolean)
+            .join(" · "),
+        }));
+    }
+  }
+
+  const panel = detail ? WORKSPACE_PANELS[detail] : null;
+
   return (
+    <>
     <ModalOverlay onClose={busy ? undefined : onClose} zClass="z-[70]">
       <div
         role="dialog"
         aria-modal="true"
         aria-label="User details"
-        className={modalPanelClass("max-w-3xl", "z-10")}
+        className={modalPanelClass("max-w-3xl", "z-10 h-[min(92dvh,92vh)]")}
       >
         <div className={modalHeaderClass}>
           <div className="min-w-0">
@@ -345,16 +523,45 @@ export function AdminUserDrawer({
                       Activity
                     </h3>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                      <Stat label="Clients" value={usage?.clients ?? 0} />
-                      <Stat label="Invoices" value={usage?.invoices ?? 0} />
-                      <Stat label="Proposals" value={usage?.proposals ?? 0} />
-                      <Stat label="Leads" value={usage?.leads ?? 0} />
-                      <Stat label="Forms" value={usage?.leadForms ?? 0} />
-                      <Stat label="Projects" value={usage?.projects ?? 0} />
-                      <Stat label="Tasks" value={usage?.tasks ?? 0} />
+                      <Stat
+                        label="Clients"
+                        value={usage?.clients ?? 0}
+                        onClick={() => setDetail("clients")}
+                      />
+                      <Stat
+                        label="Invoices"
+                        value={usage?.invoices ?? 0}
+                        onClick={() => setDetail("invoices")}
+                      />
+                      <Stat
+                        label="Proposals"
+                        value={usage?.proposals ?? 0}
+                        onClick={() => setDetail("proposals")}
+                      />
+                      <Stat
+                        label="Leads"
+                        value={usage?.leads ?? 0}
+                        onClick={() => setDetail("leads")}
+                      />
+                      <Stat
+                        label="Forms"
+                        value={usage?.leadForms ?? 0}
+                        onClick={() => setDetail("forms")}
+                      />
+                      <Stat
+                        label="Projects"
+                        value={usage?.projects ?? 0}
+                        onClick={() => setDetail("projects")}
+                      />
+                      <Stat
+                        label="Tasks"
+                        value={usage?.tasks ?? 0}
+                        onClick={() => setDetail("tasks")}
+                      />
                       <Stat
                         label="Time entries"
                         value={usage?.timeEntries ?? 0}
+                        onClick={() => setDetail("timeEntries")}
                       />
                     </div>
                   </section>
@@ -623,17 +830,114 @@ export function AdminUserDrawer({
         </div>
       </div>
     </ModalOverlay>
+    {detail && panel ? (
+      <ModalOverlay onClose={() => setDetail(null)} zClass="z-[90]">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={panel.label}
+          className={modalPanelClass("max-w-lg", "z-10")}
+        >
+          <div className={modalHeaderClass}>
+            <div className="min-w-0">
+              <h2 className="text-lg font-semibold text-gray-900 tracking-tight">
+                {panel.label}
+              </h2>
+              <p className="text-[13px] text-gray-500 mt-0.5 truncate">
+                {org?.name || "Workspace"} · {workspaceRows(detail).length} shown
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDetail(null)}
+              className="p-2 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-50"
+              aria-label="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <div className={`${modalBodyClass} pt-0 pb-5`}>
+            <RecordList
+              title={panel.label}
+              empty={panel.empty}
+              rows={workspaceRows(detail)}
+              tall
+            />
+          </div>
+        </div>
+      </ModalOverlay>
+    ) : null}
+    </>
   );
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
+function RecordList({
+  title,
+  empty,
+  rows,
+  tall = false,
+}: {
+  title: string;
+  empty: string;
+  rows: ListRow[];
+  tall?: boolean;
+}) {
   return (
-    <div className="rounded-xl border border-line bg-[#FAFBFC] px-3 py-2.5">
+    <div className="rounded-2xl border border-line overflow-hidden">
+      {tall ? null : (
+        <div className="px-3.5 py-2.5 border-b border-line bg-[#FAFBFC] flex items-center justify-between gap-2">
+          <div className="text-[13px] font-semibold text-gray-900">{title}</div>
+          <div className="text-[11px] text-gray-400 tabular-nums">
+            {rows.length}
+          </div>
+        </div>
+      )}
+      {rows.length === 0 ? (
+        <p className="px-3.5 py-8 text-center text-[13px] text-gray-400">{empty}</p>
+      ) : (
+        <ul
+          className={`divide-y divide-line overflow-y-auto ${
+            tall ? "max-h-[min(60vh,28rem)]" : "max-h-56"
+          }`}
+        >
+          {rows.map((row) => (
+            <li key={row.id} className="px-3.5 py-2.5">
+              <div className="text-[13px] font-medium text-gray-900 truncate">
+                {row.title}
+              </div>
+              {row.subtitle ? (
+                <div className="text-[12px] text-gray-400 truncate mt-0.5">
+                  {row.subtitle}
+                </div>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  onClick,
+}: {
+  label: string;
+  value: number;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded-xl border border-line bg-[#FAFBFC] px-3 py-2.5 text-left hover:bg-white hover:border-gray-300 transition-colors"
+    >
       <div className="text-[11px] text-gray-400 font-medium">{label}</div>
       <div className="text-[18px] font-semibold text-gray-900 tabular-nums mt-0.5">
         {value}
       </div>
-    </div>
+    </button>
   );
 }
 

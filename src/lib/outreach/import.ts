@@ -276,7 +276,7 @@ export function previewOutreachCsv(text: string): CsvImportPreview {
         .slice(0, 48);
       email = `nopublic+${i + 1}-${slug || "lead"}@import.rebban.invalid`;
       readyToSend = false;
-      if (outreachStatus === "ready") outreachStatus = "new";
+      outreachStatus = "new";
       const note = contactRaw
         ? `No public email — contact listed as: ${contactRaw}`
         : "No public email on research sheet";
