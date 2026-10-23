@@ -64,6 +64,120 @@ export type Database = {
           },
         ]
       }
+      assistant_conversations: {
+        Row: {
+          created_at: string
+          id: string
+          link_id: string
+          pending_action: Json | null
+          updated_at: string
+          wa_chat_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          link_id: string
+          pending_action?: Json | null
+          updated_at?: string
+          wa_chat_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          link_id?: string
+          pending_action?: Json | null
+          updated_at?: string
+          wa_chat_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assistant_conversations_link_id_fkey"
+            columns: ["link_id"]
+            isOneToOne: false
+            referencedRelation: "assistant_whatsapp_links"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      assistant_messages: {
+        Row: {
+          content: string
+          conversation_id: string
+          created_at: string
+          id: string
+          role: string
+          wa_message_id: string | null
+        }
+        Insert: {
+          content: string
+          conversation_id: string
+          created_at?: string
+          id?: string
+          role: string
+          wa_message_id?: string | null
+        }
+        Update: {
+          content?: string
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          role?: string
+          wa_message_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assistant_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "assistant_conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      assistant_whatsapp_links: {
+        Row: {
+          created_at: string
+          id: string
+          organization_id: string
+          phone_e164: string
+          updated_at: string
+          user_id: string
+          verification_code: string | null
+          verification_expires_at: string | null
+          verified_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          organization_id: string
+          phone_e164: string
+          updated_at?: string
+          user_id: string
+          verification_code?: string | null
+          verification_expires_at?: string | null
+          verified_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          organization_id?: string
+          phone_e164?: string
+          updated_at?: string
+          user_id?: string
+          verification_code?: string | null
+          verification_expires_at?: string | null
+          verified_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assistant_whatsapp_links_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_events: {
         Row: {
           action: string

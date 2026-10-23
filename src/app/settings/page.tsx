@@ -21,6 +21,7 @@ import {
   Cookie,
   FileText,
   CircleDollarSign,
+  MessageCircle,
 } from "lucide-react";
 import { openCookiePreferences } from "@/lib/cookies/consent";
 import { trackSubscribed } from "@/lib/analytics/track";
@@ -55,6 +56,7 @@ import {
   normalizeWebsite,
 } from "@/lib/onboarding";
 import { FancySelect } from "@/components/onboarding/FancySelect";
+import { LeadSourceIcon } from "@/components/leads/LeadSourceIcons";
 type SectionId =
   | "profile"
   | "business"
@@ -63,6 +65,7 @@ type SectionId =
   | "billing"
   | "invoicing"
   | "preferences"
+  | "assistant"
   | "integrations"
   | "legal";
 
@@ -74,6 +77,7 @@ const SETTINGS_SECTIONS: SectionId[] = [
   "billing",
   "invoicing",
   "preferences",
+  "assistant",
   "integrations",
   "legal",
 ];
@@ -179,6 +183,12 @@ function SettingsPageInner() {
       icon: Zap,
     },
     {
+      id: "assistant",
+      label: "Assistant",
+      description: "Manage your business in WhatsApp",
+      icon: MessageCircle,
+    },
+    {
       id: "integrations",
       label: "Integrations",
       description: "Stripe, calendar, and more",
@@ -226,6 +236,17 @@ function SettingsPageInner() {
   const [zoomEmail, setZoomEmail] = useState<string | null>(null);
   const [zoomBusy, setZoomBusy] = useState(false);
   const [zoomNotice, setZoomNotice] = useState<string | null>(null);
+  const [waConfigured, setWaConfigured] = useState(false);
+  const [waBotReady, setWaBotReady] = useState(false);
+  const [waBotPhone, setWaBotPhone] = useState<string | null>(null);
+  const [waOpenUrl, setWaOpenUrl] = useState<string | null>(null);
+  const [waVerified, setWaVerified] = useState(false);
+  const [waPhone, setWaPhone] = useState<string | null>(null);
+  const [waPhoneInput, setWaPhoneInput] = useState("");
+  const [waCodeInput, setWaCodeInput] = useState("");
+  const [waPending, setWaPending] = useState(false);
+  const [waBusy, setWaBusy] = useState(false);
+  const [waNotice, setWaNotice] = useState<string | null>(null);
   const [billingConfigured, setBillingConfigured] = useState(false);
   const [billingActive, setBillingActive] = useState(false);
   const [billingPlanLabel, setBillingPlanLabel] = useState("Trial");
@@ -524,6 +545,38 @@ function SettingsPageInner() {
   }, [searchParams, router, refreshBilling]);
 
   useEffect(() => {
+    if (section !== "assistant") return;
+    let cancelled = false;
+    async function loadAssistant() {
+      const waRes = await fetch("/api/assistant/whatsapp/status");
+      if (cancelled || !waRes.ok) return;
+      const json = (await waRes.json()) as {
+        configured?: boolean;
+        verified?: boolean;
+        phone?: string | null;
+        verificationPending?: boolean;
+        botReady?: boolean;
+        botPhone?: string | null;
+        openUrl?: string | null;
+      };
+      setWaConfigured(Boolean(json.configured));
+      setWaVerified(Boolean(json.verified));
+      setWaPhone(json.phone || null);
+      setWaPending(Boolean(json.verificationPending));
+      setWaBotReady(Boolean(json.botReady));
+      setWaBotPhone(json.botPhone || null);
+      setWaOpenUrl(json.openUrl || null);
+      if (json.phone && !json.verified) {
+        setWaPhoneInput(json.phone.replace(/^\+/, ""));
+      }
+    }
+    void loadAssistant();
+    return () => {
+      cancelled = true;
+    };
+  }, [section]);
+
+  useEffect(() => {
     if (section !== "integrations") return;
     let cancelled = false;
     async function loadIntegrations() {
@@ -675,6 +728,110 @@ function SettingsPageInner() {
     setGmailCanSend(false);
     setGmailEmail(null);
     setGmailNotice("Gmail disconnected. Emails will use Rebban’s sender again.");
+  }
+
+  async function handleWhatsAppLink() {
+    setWaBusy(true);
+    setWaNotice(null);
+    try {
+      const res = await fetch("/api/assistant/whatsapp/link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: waPhoneInput }),
+      });
+      const json = (await res.json()) as {
+        error?: string;
+        phone?: string;
+      };
+      if (!res.ok) {
+        setWaNotice(json.error || "Could not send verification code.");
+        return;
+      }
+      setWaPending(true);
+      setWaVerified(false);
+      setWaPhone(json.phone || null);
+      setWaNotice(
+        `We sent a 6-digit code to ${json.phone || "your WhatsApp"}. Enter it below, or reply with the code in WhatsApp.`
+      );
+    } catch (err) {
+      setWaNotice(
+        err instanceof Error ? err.message : "Could not send verification code."
+      );
+    } finally {
+      setWaBusy(false);
+    }
+  }
+
+  async function handleWhatsAppVerify() {
+    setWaBusy(true);
+    setWaNotice(null);
+    try {
+      const res = await fetch("/api/assistant/whatsapp/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: waCodeInput }),
+      });
+      const json = (await res.json()) as {
+        error?: string;
+        phone?: string;
+      };
+      if (!res.ok) {
+        setWaNotice(json.error || "Verification failed.");
+        return;
+      }
+      setWaVerified(true);
+      setWaPending(false);
+      setWaCodeInput("");
+      setWaPhone(json.phone || null);
+      // Refresh bot open URL after verify
+      const statusRes = await fetch("/api/assistant/whatsapp/status");
+      if (statusRes.ok) {
+        const status = (await statusRes.json()) as {
+          openUrl?: string | null;
+          botPhone?: string | null;
+          botReady?: boolean;
+        };
+        setWaOpenUrl(status.openUrl || null);
+        setWaBotPhone(status.botPhone || null);
+        setWaBotReady(Boolean(status.botReady));
+      }
+      setWaNotice(
+        `Connected ${json.phone || ""}. Open WhatsApp to start chatting with Rebban.`
+      );
+    } catch (err) {
+      setWaNotice(
+        err instanceof Error ? err.message : "Verification failed."
+      );
+    } finally {
+      setWaBusy(false);
+    }
+  }
+
+  async function handleWhatsAppDisconnect() {
+    setWaBusy(true);
+    setWaNotice(null);
+    try {
+      const res = await fetch("/api/assistant/whatsapp/disconnect", {
+        method: "POST",
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setWaNotice(json.error || "Failed to disconnect.");
+        return;
+      }
+      setWaVerified(false);
+      setWaPending(false);
+      setWaPhone(null);
+      setWaPhoneInput("");
+      setWaCodeInput("");
+      setWaNotice("WhatsApp disconnected from Rebban Assistant.");
+    } catch (err) {
+      setWaNotice(
+        err instanceof Error ? err.message : "Failed to disconnect."
+      );
+    } finally {
+      setWaBusy(false);
+    }
   }
 
   async function handleOutlookDisconnect() {
@@ -2065,6 +2222,172 @@ function SettingsPageInner() {
               </Section>
             )}
 
+            {section === "assistant" && (
+              <Section
+                title="Rebban Assistant"
+                subtitle="Manage leads, invoices, and payments from WhatsApp — without opening another app."
+              >
+                {waNotice && (
+                  <p className="mb-4 text-[13px] text-gray-600 bg-[#FAFBFC] border border-line rounded-xl px-3.5 py-2.5">
+                    {waNotice}
+                  </p>
+                )}
+
+                <div className="rounded-2xl border border-line overflow-hidden">
+                  <div className="px-5 py-5 sm:px-6 flex items-start gap-4 bg-gradient-to-br from-[#F0FDF4] to-white">
+                    <div className="w-12 h-12 rounded-2xl bg-white border border-line flex items-center justify-center shrink-0 shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
+                      <LeadSourceIcon source="whatsapp" className="w-7 h-7" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-[15px] font-semibold text-gray-900">
+                          WhatsApp
+                        </h3>
+                        {waVerified ? (
+                          <span className="inline-flex items-center gap-1 text-[12px] font-medium text-emerald-700 bg-[#F3FAF6] px-2.5 py-0.5 rounded-full">
+                            <Check className="w-3 h-3" />
+                            Connected
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center text-[12px] font-medium text-gray-500 bg-gray-100 px-2.5 py-0.5 rounded-full">
+                            Not connected
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[13px] text-gray-600 mt-1 leading-relaxed">
+                        {waVerified && waPhone
+                          ? `Linked to ${waPhone}. Message the Rebban bot to add leads, draft invoices, and check who owes you.`
+                          : "Connect your WhatsApp number, then chat with Rebban to run your freelance admin on the go."}
+                      </p>
+                      {waBotPhone && (
+                        <p className="text-[12px] text-gray-500 mt-2">
+                          Bot number: {waBotPhone}
+                          {waBotReady ? "" : " (starting up…)"}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="px-5 py-5 sm:px-6 space-y-4 border-t border-line">
+                    {!waConfigured ? (
+                      <p className="text-[13px] text-gray-500">
+                        WhatsApp Assistant isn’t configured on this server yet.
+                      </p>
+                    ) : waVerified ? (
+                      <div className="flex flex-wrap gap-2">
+                        {waOpenUrl ? (
+                          <a
+                            href={waOpenUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 text-sm font-medium text-white bg-[#25D366] hover:bg-[#1ebe57] px-4 py-2.5 rounded-full transition-colors"
+                          >
+                            <LeadSourceIcon source="whatsapp" className="w-4 h-4" />
+                            Open in WhatsApp
+                            <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+                          </a>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => void handleWhatsAppDisconnect()}
+                          disabled={waBusy}
+                          className="text-sm font-medium text-gray-500 hover:text-gray-800 px-4 py-2.5 rounded-full hover:bg-gray-50 transition-colors disabled:opacity-50"
+                        >
+                          Disconnect
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <div>
+                          <p className="text-[13px] font-medium text-gray-800 mb-1">
+                            1. Verify your WhatsApp number
+                          </p>
+                          <p className="text-[13px] text-gray-500 mb-3">
+                            We’ll text a 6-digit code to this number from the
+                            Rebban Assistant bot.
+                          </p>
+                          <label className="block">
+                            <span className="text-[13px] font-medium text-gray-700 mb-1.5 block">
+                              Your WhatsApp number
+                            </span>
+                            <input
+                              value={waPhoneInput}
+                              onChange={(e) => setWaPhoneInput(e.target.value)}
+                              placeholder="46701234567"
+                              className={inputClass}
+                              inputMode="tel"
+                              autoComplete="tel"
+                            />
+                            <span className="mt-1.5 block text-[12px] text-gray-500">
+                              Country code + number, digits only (no + or
+                              spaces).
+                            </span>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => void handleWhatsAppLink()}
+                            disabled={waBusy || !waPhoneInput.trim()}
+                            className="mt-3 text-sm font-medium text-white bg-[#2563EB] hover:bg-[#1d4ed8] px-4 py-2.5 rounded-full transition-colors disabled:opacity-50"
+                          >
+                            {waBusy ? "Sending…" : "Send verification code"}
+                          </button>
+                        </div>
+
+                        {(waPending || waCodeInput) && (
+                          <div className="pt-2 border-t border-line">
+                            <p className="text-[13px] font-medium text-gray-800 mb-1">
+                              2. Enter the code
+                            </p>
+                            <p className="text-[13px] text-gray-500 mb-3">
+                              Check WhatsApp for the message from Rebban, or
+                              reply to the bot with the code.
+                            </p>
+                            <div className="flex flex-wrap gap-2 items-center">
+                              <input
+                                value={waCodeInput}
+                                onChange={(e) => setWaCodeInput(e.target.value)}
+                                placeholder="123456"
+                                className={`${inputClass} max-w-[160px]`}
+                                inputMode="numeric"
+                                autoComplete="one-time-code"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => void handleWhatsAppVerify()}
+                                disabled={
+                                  waBusy || waCodeInput.trim().length < 6
+                                }
+                                className="text-sm font-medium text-white bg-[#2563EB] hover:bg-[#1d4ed8] px-4 py-2.5 rounded-full transition-colors disabled:opacity-50"
+                              >
+                                Verify & activate
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-5 rounded-xl bg-[#FAFBFC] border border-line px-3.5 py-3">
+                  <p className="text-[13px] font-medium text-gray-800 mb-1">
+                    Try saying
+                  </p>
+                  <ul className="text-[13px] text-gray-500 space-y-1 list-disc pl-4">
+                    <li>
+                      Add Sarah from Studio North as a lead — website redesign,
+                      budget around €3,000
+                    </li>
+                    <li>
+                      Create an invoice for Northwind Labs for €1,200, due in 14
+                      days
+                    </li>
+                    <li>Who owes me money?</li>
+                  </ul>
+                </div>
+              </Section>
+            )}
+
             {section === "integrations" && (
               <Section
                 title="Integrations"
@@ -2084,6 +2407,19 @@ function SettingsPageInner() {
                   </p>
                 )}
                 <div className="space-y-3">
+                  <IntegrationRow
+                    name="Rebban Assistant"
+                    icon={<LeadSourceIcon source="whatsapp" className="w-6 h-6" />}
+                    description="Manage leads and invoices from WhatsApp"
+                    connected={false}
+                    actionLabel="Open"
+                    onConnect={() => {
+                      setSection("assistant");
+                      router.replace("/settings?section=assistant", {
+                        scroll: false,
+                      });
+                    }}
+                  />
                   <IntegrationRow
                     name="Gmail"
                     icon={
@@ -2268,8 +2604,10 @@ function SettingsPageInner() {
                   <p className="text-[13px] text-gray-500 leading-relaxed">
                     Gmail and Outlook use OAuth with send-only access. Google
                     Calendar and Zoom use OAuth for scheduling only. Rebban
-                    never stores your password. If neither mailbox is connected,
-                    emails still send via Rebban.
+                    Assistant links your WhatsApp number after a one-time code —
+                    actions stay scoped to your workspace. Rebban never stores
+                    your password. If neither mailbox is connected, emails still
+                    send via Rebban.
                   </p>
                 </div>
               </Section>

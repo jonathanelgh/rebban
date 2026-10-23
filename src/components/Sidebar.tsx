@@ -124,8 +124,8 @@ function SidebarInner({
   }
 
   return (
-    <aside className="relative z-10 w-[72px] shrink-0 flex flex-col justify-between overflow-visible py-3 bg-transparent">
-      <div className="flex flex-col items-center gap-4">
+    <aside className="relative z-10 w-[72px] shrink-0 h-full min-h-0 flex flex-col overflow-hidden py-3 bg-transparent">
+      <div className="flex flex-col items-center gap-4 shrink-0">
         <Link
           href={isAdminPanel ? "/admin" : "/"}
           onClick={handleNavigate}
@@ -148,111 +148,111 @@ function SidebarInner({
           onNavigate={handleNavigate}
           adminMode={isAdminPanel}
         />
-
-        {isAdminPanel ? (
-          <nav className="w-full space-y-0.5">
-            <NavItem
-              href="/admin/users"
-              icon={Users}
-              label="Users"
-              active={
-                pathname.startsWith("/admin/users") ||
-                pathname.startsWith("/admin/organizations")
-              }
-              onNavigate={handleNavigate}
-            />
-            <NavItem
-              href="/admin/leads"
-              icon={Mail}
-              label="Leads"
-              active={
-                pathname.startsWith("/admin/leads") &&
-                !pathname.startsWith("/admin/leads/insights")
-              }
-              onNavigate={handleNavigate}
-            />
-            <NavItem
-              href="/admin/leads/insights"
-              icon={ChartColumn}
-              label="Insights"
-              active={pathname.startsWith("/admin/leads/insights")}
-              onNavigate={handleNavigate}
-            />
-            <NavItem
-              href="/admin/support"
-              icon={Headphones}
-              label="Support"
-              active={pathname.startsWith("/admin/support")}
-              onNavigate={handleNavigate}
-            />
-            <NavItem
-              href="/admin/blog"
-              icon={Newspaper}
-              label="Articles"
-              active={pathname.startsWith("/admin/blog")}
-              onNavigate={handleNavigate}
-            />
-            <NavItem
-              href="/admin/analytics"
-              icon={Activity}
-              label="Analytics"
-              active={pathname.startsWith("/admin/analytics")}
-              onNavigate={handleNavigate}
-            />
-          </nav>
-        ) : (
-          <nav className="w-full space-y-0.5">
-            <NavItem href="/" icon={Home} label="Home" active={pathname === "/"} onNavigate={handleNavigate} />
-            <NavItem href="/clients" icon={Users} label="Clients" active={pathname === "/clients"} onNavigate={handleNavigate} />
-            <NavItem
-              href="/leads"
-              icon={Contact}
-              label="Leads"
-              active={pathname.startsWith("/leads")}
-              onNavigate={handleNavigate}
-            />
-            <NavItem
-              href="/tasks"
-              icon={Kanban}
-              label="Tasks"
-              active={pathname.startsWith("/tasks")}
-              onNavigate={handleNavigate}
-            />
-            <NavItem
-              href="/proposals"
-              icon={FileText}
-              label="Proposals"
-              active={pathname.startsWith("/proposals")}
-              onNavigate={handleNavigate}
-            />
-            <NavItem
-              href="/invoices"
-              icon={FileSpreadsheet}
-              label="Invoices"
-              active={pathname.startsWith("/invoices")}
-              onNavigate={handleNavigate}
-            />
-            <NavItem
-              href="/time-tracking"
-              icon={Timer}
-              label="Time"
-              active={pathname === "/time-tracking"}
-              badge={isTracking ? formatElapsed(elapsedSeconds) : undefined}
-              badgeLive={isTracking}
-              onNavigate={handleNavigate}
-            />
-            <NavItem
-              href="/calendar"
-              icon={CalendarDays}
-              label="Calendar"
-              active={pathname.startsWith("/calendar")}
-              onNavigate={handleNavigate}
-            />
-          </nav>
-        )}
       </div>
 
-      <div className="w-full space-y-0.5">
+      {isAdminPanel ? (
+        <nav className="w-full space-y-0.5 flex-1 min-h-0 overflow-y-auto overscroll-contain no-scrollbar py-3">
+          <NavItem
+            href="/admin/users"
+            icon={Users}
+            label="Users"
+            active={
+              pathname.startsWith("/admin/users") ||
+              pathname.startsWith("/admin/organizations")
+            }
+            onNavigate={handleNavigate}
+          />
+          <NavItem
+            href="/admin/leads"
+            icon={Mail}
+            label="Leads"
+            active={
+              pathname.startsWith("/admin/leads") &&
+              !pathname.startsWith("/admin/leads/insights")
+            }
+            onNavigate={handleNavigate}
+          />
+          <NavItem
+            href="/admin/leads/insights"
+            icon={ChartColumn}
+            label="Insights"
+            active={pathname.startsWith("/admin/leads/insights")}
+            onNavigate={handleNavigate}
+          />
+          <NavItem
+            href="/admin/support"
+            icon={Headphones}
+            label="Support"
+            active={pathname.startsWith("/admin/support")}
+            onNavigate={handleNavigate}
+          />
+          <NavItem
+            href="/admin/blog"
+            icon={Newspaper}
+            label="Articles"
+            active={pathname.startsWith("/admin/blog")}
+            onNavigate={handleNavigate}
+          />
+          <NavItem
+            href="/admin/analytics"
+            icon={Activity}
+            label="Analytics"
+            active={pathname.startsWith("/admin/analytics")}
+            onNavigate={handleNavigate}
+          />
+        </nav>
+      ) : (
+        <nav className="w-full space-y-0.5 flex-1 min-h-0 overflow-y-auto overscroll-contain no-scrollbar py-3">
+          <NavItem href="/" icon={Home} label="Home" active={pathname === "/"} onNavigate={handleNavigate} />
+          <NavItem href="/clients" icon={Users} label="Clients" active={pathname === "/clients"} onNavigate={handleNavigate} />
+          <NavItem
+            href="/leads"
+            icon={Contact}
+            label="Leads"
+            active={pathname.startsWith("/leads")}
+            onNavigate={handleNavigate}
+          />
+          <NavItem
+            href="/tasks"
+            icon={Kanban}
+            label="Tasks"
+            active={pathname.startsWith("/tasks")}
+            onNavigate={handleNavigate}
+          />
+          <NavItem
+            href="/proposals"
+            icon={FileText}
+            label="Proposals"
+            active={pathname.startsWith("/proposals")}
+            onNavigate={handleNavigate}
+          />
+          <NavItem
+            href="/invoices"
+            icon={FileSpreadsheet}
+            label="Invoices"
+            active={pathname.startsWith("/invoices")}
+            onNavigate={handleNavigate}
+          />
+          <NavItem
+            href="/time-tracking"
+            icon={Timer}
+            label="Time"
+            active={pathname === "/time-tracking"}
+            badge={isTracking ? formatElapsed(elapsedSeconds) : undefined}
+            badgeLive={isTracking}
+            onNavigate={handleNavigate}
+          />
+          <NavItem
+            href="/calendar"
+            icon={CalendarDays}
+            label="Calendar"
+            active={pathname.startsWith("/calendar")}
+            onNavigate={handleNavigate}
+          />
+        </nav>
+      )}
+
+      <div className="w-full space-y-0.5 shrink-0">
         {!isAdminPanel && (
           <AlertsMenu
             open={openMenu === "alerts"}

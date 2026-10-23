@@ -64,6 +64,7 @@ export async function updateSession(request: NextRequest) {
   const isPublicBookingRoute =
     path.startsWith("/b/") || path.startsWith("/api/b/");
   const isStripeWebhook = path === "/api/stripe/webhook";
+  const isWhatsAppInbound = path === "/api/assistant/whatsapp/inbound";
   const isCronRoute = path.startsWith("/api/cron/");
   const isAnalyticsCollect = path === "/api/analytics/collect";
   const isExtensionAuth =
@@ -109,6 +110,7 @@ export async function updateSession(request: NextRequest) {
     isPublicLeadFormRoute ||
     isPublicBookingRoute ||
     isStripeWebhook ||
+    isWhatsAppInbound ||
     isCronRoute ||
     isAnalyticsCollect ||
     isExtensionAuth
