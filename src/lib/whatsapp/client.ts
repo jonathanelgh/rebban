@@ -46,7 +46,8 @@ export function whatsAppOpenUrl(botPhoneDigits: string, prefill?: string) {
 }
 
 export async function sendWhatsAppMessage(options: {
-  to: string;
+  to?: string;
+  chatId?: string | null;
   message: string;
   mediaUrl?: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -60,9 +61,10 @@ export async function sendWhatsAppMessage(options: {
     };
   }
 
-  const to = String(options.to || "").replace(/[^0-9]/g, "");
-  if (!to) {
-    return { ok: false, error: "Missing recipient phone number." };
+  const chatId = options.chatId?.trim() || "";
+  const toDigits = String(options.to || "").replace(/[^0-9]/g, "");
+  if (!chatId && !toDigits) {
+    return { ok: false, error: "Missing recipient phone number or chat id." };
   }
 
   const message = options.message?.trim();
@@ -78,7 +80,8 @@ export async function sendWhatsAppMessage(options: {
         "x-api-key": apiKey,
       },
       body: JSON.stringify({
-        to,
+        to: toDigits || undefined,
+        chatId: chatId || undefined,
         message: message || undefined,
         mediaUrl: options.mediaUrl || undefined,
       }),

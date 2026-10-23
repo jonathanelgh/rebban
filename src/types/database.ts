@@ -145,6 +145,7 @@ export type Database = {
           verification_code: string | null
           verification_expires_at: string | null
           verified_at: string | null
+          wa_chat_id: string | null
         }
         Insert: {
           created_at?: string
@@ -156,6 +157,7 @@ export type Database = {
           verification_code?: string | null
           verification_expires_at?: string | null
           verified_at?: string | null
+          wa_chat_id?: string | null
         }
         Update: {
           created_at?: string
@@ -167,6 +169,7 @@ export type Database = {
           verification_code?: string | null
           verification_expires_at?: string | null
           verified_at?: string | null
+          wa_chat_id?: string | null
         }
         Relationships: [
           {

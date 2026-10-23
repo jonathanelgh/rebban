@@ -62,15 +62,17 @@ client.on("disconnected", (reason) => {
   console.log("\nWhatsApp Client was disconnected:", reason, "\n");
 });
 
-function formatChatId(to) {
-  return String(to).replace(/[^0-9]/g, "") + "@c.us";
+/** Prefer full chat ids (@c.us / @lid); otherwise treat as phone digits. */
+function resolveChatId(to) {
+  const raw = String(to || "").trim();
+  if (!raw) return null;
+  if (raw.includes("@")) return raw;
+  const digits = raw.replace(/[^0-9]/g, "");
+  return digits ? `${digits}@c.us` : null;
 }
 
-function phoneFromChatId(chatId) {
-  return String(chatId || "")
-    .replace(/@c\.us$/i, "")
-    .replace(/@lid$/i, "")
-    .replace(/[^0-9]/g, "");
+function digitsOnly(value) {
+  return String(value || "").replace(/[^0-9]/g, "");
 }
 
 function signPayload(body) {
@@ -112,6 +114,22 @@ async function forwardInbound(payload) {
   }
 }
 
+async function resolveSenderPhone(message, chatId) {
+  try {
+    const contact = await message.getContact();
+    const number = digitsOnly(contact?.number || "");
+    if (number) return number;
+  } catch (error) {
+    console.warn("getContact failed:", error?.message || error);
+  }
+
+  // Only fall back to chat id digits for classic @c.us chats (not @lid).
+  if (String(chatId).endsWith("@c.us")) {
+    return digitsOnly(chatId);
+  }
+  return null;
+}
+
 client.on("message", async (message) => {
   try {
     if (!message || message.fromMe) return;
@@ -122,20 +140,20 @@ client.on("message", async (message) => {
 
     const body = typeof message.body === "string" ? message.body.trim() : "";
     if (!body) {
-      // Voice / media without caption — MVP ignores; reply briefly.
       await message.reply(
         "I can read text messages for now. Voice notes are coming soon — try typing your request."
       );
       return;
     }
 
-    const fromPhone = phoneFromChatId(chatId);
-    if (!fromPhone) return;
-
-    console.log(`Inbound from ${fromPhone}: ${body.slice(0, 120)}`);
+    const fromPhone = await resolveSenderPhone(message, chatId);
+    console.log(
+      `Inbound chatId=${chatId} phone=${fromPhone || "unknown"}: ${body.slice(0, 120)}`
+    );
 
     await forwardInbound({
-      from: fromPhone,
+      from: fromPhone || digitsOnly(chatId) || "unknown",
+      phone: fromPhone,
       chatId,
       body,
       messageId: message.id?._serialized || message.id?.id || null,
@@ -153,7 +171,7 @@ app.get("/health", (_req, res) => {
   let botPhone = null;
   try {
     const wid = client?.info?.wid?.user;
-    if (wid) botPhone = String(wid).replace(/[^0-9]/g, "");
+    if (wid) botPhone = digitsOnly(wid);
   } catch {
     /* ignore */
   }
@@ -174,26 +192,25 @@ app.post("/send", authenticate, async (req, res) => {
       });
     }
 
-    const { to, message, mediaUrl } = req.body;
+    const { to, message, mediaUrl, chatId } = req.body;
+    const target = resolveChatId(chatId || to);
 
-    if (!to || (!message && !mediaUrl)) {
+    if (!target || (!message && !mediaUrl)) {
       return res.status(400).json({
         success: false,
-        error: 'Missing "to", and need "message" and/or "mediaUrl"',
+        error: 'Missing "to"/"chatId", and need "message" and/or "mediaUrl"',
       });
     }
 
-    const formattedNumber = formatChatId(to);
-
     if (message) {
-      await client.sendMessage(formattedNumber, message);
-      console.log(`Message sent to ${to}`);
+      await client.sendMessage(target, message);
+      console.log(`Message sent to ${target}`);
     }
 
     if (mediaUrl) {
       const media = await MessageMedia.fromUrl(mediaUrl, { unsafeMime: true });
-      await client.sendMessage(formattedNumber, media);
-      console.log(`Media sent to ${to}: ${mediaUrl}`);
+      await client.sendMessage(target, media);
+      console.log(`Media sent to ${target}: ${mediaUrl}`);
     }
 
     res.json({ success: true });

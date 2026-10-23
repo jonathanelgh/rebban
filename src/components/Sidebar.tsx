@@ -1,6 +1,15 @@
 "use client";
 
-import React, { Suspense, useEffect, useRef, useState } from "react";
+import React, {
+  Suspense,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type RefObject,
+} from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -44,6 +53,46 @@ function canHover() {
     typeof window !== "undefined" &&
     window.matchMedia("(hover: hover) and (pointer: fine)").matches
   );
+}
+
+/** Fixed panel beside a sidebar trigger so overflow scroll never clips menus. */
+function useFlyoutStyle(
+  open: boolean,
+  anchorRef: RefObject<HTMLElement | null>,
+  align: "top" | "bottom"
+): CSSProperties {
+  const [style, setStyle] = useState<CSSProperties>({});
+
+  useLayoutEffect(() => {
+    if (!open) return;
+
+    function update() {
+      const el = anchorRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const next: CSSProperties = {
+        position: "fixed",
+        left: Math.min(r.right + 12, window.innerWidth - 12),
+        zIndex: 200,
+      };
+      if (align === "top") {
+        next.top = Math.max(8, Math.min(r.top, window.innerHeight - 8));
+      } else {
+        next.bottom = Math.max(8, window.innerHeight - r.bottom);
+      }
+      setStyle(next);
+    }
+
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [open, anchorRef, align]);
+
+  return style;
 }
 
 type NotificationRow = {
@@ -124,8 +173,8 @@ function SidebarInner({
   }
 
   return (
-    <aside className="relative z-10 w-[72px] shrink-0 h-full min-h-0 flex flex-col overflow-hidden py-3 bg-transparent">
-      <div className="flex flex-col items-center gap-4 shrink-0">
+    <aside className="relative z-30 w-[72px] shrink-0 h-full min-h-0 flex flex-col bg-transparent">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain no-scrollbar flex flex-col items-center gap-4 py-3">
         <Link
           href={isAdminPanel ? "/admin" : "/"}
           onClick={handleNavigate}
@@ -148,139 +197,151 @@ function SidebarInner({
           onNavigate={handleNavigate}
           adminMode={isAdminPanel}
         />
-      </div>
 
-      {isAdminPanel ? (
-        <nav className="w-full space-y-0.5 flex-1 min-h-0 overflow-y-auto overscroll-contain no-scrollbar py-3">
-          <NavItem
-            href="/admin/users"
-            icon={Users}
-            label="Users"
-            active={
-              pathname.startsWith("/admin/users") ||
-              pathname.startsWith("/admin/organizations")
-            }
-            onNavigate={handleNavigate}
-          />
-          <NavItem
-            href="/admin/leads"
-            icon={Mail}
-            label="Leads"
-            active={
-              pathname.startsWith("/admin/leads") &&
-              !pathname.startsWith("/admin/leads/insights")
-            }
-            onNavigate={handleNavigate}
-          />
-          <NavItem
-            href="/admin/leads/insights"
-            icon={ChartColumn}
-            label="Insights"
-            active={pathname.startsWith("/admin/leads/insights")}
-            onNavigate={handleNavigate}
-          />
-          <NavItem
-            href="/admin/support"
-            icon={Headphones}
-            label="Support"
-            active={pathname.startsWith("/admin/support")}
-            onNavigate={handleNavigate}
-          />
-          <NavItem
-            href="/admin/blog"
-            icon={Newspaper}
-            label="Articles"
-            active={pathname.startsWith("/admin/blog")}
-            onNavigate={handleNavigate}
-          />
-          <NavItem
-            href="/admin/analytics"
-            icon={Activity}
-            label="Analytics"
-            active={pathname.startsWith("/admin/analytics")}
-            onNavigate={handleNavigate}
-          />
-        </nav>
-      ) : (
-        <nav className="w-full space-y-0.5 flex-1 min-h-0 overflow-y-auto overscroll-contain no-scrollbar py-3">
-          <NavItem href="/" icon={Home} label="Home" active={pathname === "/"} onNavigate={handleNavigate} />
-          <NavItem href="/clients" icon={Users} label="Clients" active={pathname === "/clients"} onNavigate={handleNavigate} />
-          <NavItem
-            href="/leads"
-            icon={Contact}
-            label="Leads"
-            active={pathname.startsWith("/leads")}
-            onNavigate={handleNavigate}
-          />
-          <NavItem
-            href="/tasks"
-            icon={Kanban}
-            label="Tasks"
-            active={pathname.startsWith("/tasks")}
-            onNavigate={handleNavigate}
-          />
-          <NavItem
-            href="/proposals"
-            icon={FileText}
-            label="Proposals"
-            active={pathname.startsWith("/proposals")}
-            onNavigate={handleNavigate}
-          />
-          <NavItem
-            href="/invoices"
-            icon={FileSpreadsheet}
-            label="Invoices"
-            active={pathname.startsWith("/invoices")}
-            onNavigate={handleNavigate}
-          />
-          <NavItem
-            href="/time-tracking"
-            icon={Timer}
-            label="Time"
-            active={pathname === "/time-tracking"}
-            badge={isTracking ? formatElapsed(elapsedSeconds) : undefined}
-            badgeLive={isTracking}
-            onNavigate={handleNavigate}
-          />
-          <NavItem
-            href="/calendar"
-            icon={CalendarDays}
-            label="Calendar"
-            active={pathname.startsWith("/calendar")}
-            onNavigate={handleNavigate}
-          />
-        </nav>
-      )}
-
-      <div className="w-full space-y-0.5 shrink-0">
-        {!isAdminPanel && (
-          <AlertsMenu
-            open={openMenu === "alerts"}
-            onOpenChange={(next) => setOpenMenu(next ? "alerts" : null)}
-            active={pathname === "/notifications"}
-            onNavigate={handleNavigate}
-          />
+        {isAdminPanel ? (
+          <nav className="w-full space-y-0.5 shrink-0">
+            <NavItem
+              href="/admin/users"
+              icon={Users}
+              label="Users"
+              active={
+                pathname.startsWith("/admin/users") ||
+                pathname.startsWith("/admin/organizations")
+              }
+              onNavigate={handleNavigate}
+            />
+            <NavItem
+              href="/admin/leads"
+              icon={Mail}
+              label="Leads"
+              active={
+                pathname.startsWith("/admin/leads") &&
+                !pathname.startsWith("/admin/leads/insights")
+              }
+              onNavigate={handleNavigate}
+            />
+            <NavItem
+              href="/admin/leads/insights"
+              icon={ChartColumn}
+              label="Insights"
+              active={pathname.startsWith("/admin/leads/insights")}
+              onNavigate={handleNavigate}
+            />
+            <NavItem
+              href="/admin/support"
+              icon={Headphones}
+              label="Support"
+              active={pathname.startsWith("/admin/support")}
+              onNavigate={handleNavigate}
+            />
+            <NavItem
+              href="/admin/blog"
+              icon={Newspaper}
+              label="Articles"
+              active={pathname.startsWith("/admin/blog")}
+              onNavigate={handleNavigate}
+            />
+            <NavItem
+              href="/admin/analytics"
+              icon={Activity}
+              label="Analytics"
+              active={pathname.startsWith("/admin/analytics")}
+              onNavigate={handleNavigate}
+            />
+          </nav>
+        ) : (
+          <nav className="w-full space-y-0.5 shrink-0">
+            <NavItem
+              href="/"
+              icon={Home}
+              label="Home"
+              active={pathname === "/"}
+              onNavigate={handleNavigate}
+            />
+            <NavItem
+              href="/clients"
+              icon={Users}
+              label="Clients"
+              active={pathname === "/clients"}
+              onNavigate={handleNavigate}
+            />
+            <NavItem
+              href="/leads"
+              icon={Contact}
+              label="Leads"
+              active={pathname.startsWith("/leads")}
+              onNavigate={handleNavigate}
+            />
+            <NavItem
+              href="/tasks"
+              icon={Kanban}
+              label="Tasks"
+              active={pathname.startsWith("/tasks")}
+              onNavigate={handleNavigate}
+            />
+            <NavItem
+              href="/proposals"
+              icon={FileText}
+              label="Proposals"
+              active={pathname.startsWith("/proposals")}
+              onNavigate={handleNavigate}
+            />
+            <NavItem
+              href="/invoices"
+              icon={FileSpreadsheet}
+              label="Invoices"
+              active={pathname.startsWith("/invoices")}
+              onNavigate={handleNavigate}
+            />
+            <NavItem
+              href="/time-tracking"
+              icon={Timer}
+              label="Time"
+              active={pathname === "/time-tracking"}
+              badge={isTracking ? formatElapsed(elapsedSeconds) : undefined}
+              badgeLive={isTracking}
+              onNavigate={handleNavigate}
+            />
+            <NavItem
+              href="/calendar"
+              icon={CalendarDays}
+              label="Calendar"
+              active={pathname.startsWith("/calendar")}
+              onNavigate={handleNavigate}
+            />
+          </nav>
         )}
-        {!isAdminPanel && isPlatformAdmin ? (
+
+        <div className="w-full space-y-0.5 shrink-0 pb-[max(0.25rem,env(safe-area-inset-bottom))]">
+          {!isAdminPanel && (
+            <AlertsMenu
+              open={openMenu === "alerts"}
+              onOpenChange={(next) => setOpenMenu(next ? "alerts" : null)}
+              active={pathname === "/notifications"}
+              onNavigate={handleNavigate}
+            />
+          )}
+          {!isAdminPanel && isPlatformAdmin ? (
+            <NavItem
+              href="/admin"
+              icon={Shield}
+              label="Admin"
+              active={false}
+              onNavigate={handleNavigate}
+            />
+          ) : null}
           <NavItem
-            href="/admin"
-            icon={Shield}
-            label="Admin"
-            active={false}
+            href={isAdminPanel ? "/admin/settings" : "/settings"}
+            icon={Settings}
+            label="Settings"
+            active={
+              isAdminPanel
+                ? pathname.startsWith("/admin/settings")
+                : pathname === "/settings"
+            }
             onNavigate={handleNavigate}
           />
-        ) : null}
-        <NavItem
-          href={isAdminPanel ? "/admin/settings" : "/settings"}
-          icon={Settings}
-          label="Settings"
-          active={
-            isAdminPanel
-              ? pathname.startsWith("/admin/settings")
-              : pathname === "/settings"
-          }
-          onNavigate={handleNavigate}
-        />
+        </div>
       </div>
     </aside>
   );
@@ -377,13 +438,25 @@ function ProfileMenu({
   const { planLabel, openUpgradeModal, paid, trialActive, trialDaysLeft } =
     useBilling();
   const rootRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const flyoutStyle = useFlyoutStyle(open, rootRef, "top");
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
     function onPointerDown(e: PointerEvent) {
-      if (!rootRef.current?.contains(e.target as Node)) {
-        onOpenChange(false);
+      const target = e.target as Node;
+      if (
+        rootRef.current?.contains(target) ||
+        panelRef.current?.contains(target)
+      ) {
+        return;
       }
+      onOpenChange(false);
     }
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
@@ -395,10 +468,99 @@ function ProfileMenu({
     window.location.assign("/login");
   }
 
+  const panel = open ? (
+    <div
+      ref={panelRef}
+      style={flyoutStyle}
+      className="w-[min(320px,calc(100vw-84px))] max-h-[min(480px,calc(100vh-16px))] overflow-y-auto bg-white rounded-2xl shadow-[0_4px_24px_rgba(0,0,0,0.12)] border border-gray-200 py-3 flex flex-col cursor-default"
+      onMouseEnter={() => {
+        if (canHover()) onOpenChange(true);
+      }}
+      onMouseLeave={() => {
+        if (canHover()) onOpenChange(false);
+      }}
+    >
+      <div className="px-4 pb-3 flex items-center gap-3">
+        <div className="w-10 h-10 rounded-full bg-[#f0f3f5] flex items-center justify-center shrink-0">
+          <Building2 className="w-5 h-5 text-gray-500" strokeWidth={1.5} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[15px] font-semibold text-gray-900 truncate">
+            {fullName || "Your workspace"}
+          </div>
+          <div className="text-[13px] text-gray-500">{planLabel}</div>
+        </div>
+      </div>
+
+      <div className="h-px bg-gray-200 my-2 mx-4" />
+
+      <MenuLink
+        icon={User}
+        label="My profile"
+        href="/settings"
+        onNavigate={onNavigate}
+      />
+      <MenuLink
+        icon={Settings}
+        label={adminMode ? "Admin settings" : "Settings"}
+        href={adminMode ? "/admin/settings" : "/settings"}
+        onNavigate={onNavigate}
+      />
+      {isPlatformAdmin && !adminMode ? (
+        <MenuLink
+          icon={Shield}
+          label="Platform admin"
+          href="/admin"
+          onNavigate={onNavigate}
+        />
+      ) : null}
+      {adminMode ? (
+        <MenuLink
+          icon={Home}
+          label="Back to app"
+          href="/"
+          onNavigate={onNavigate}
+        />
+      ) : null}
+
+      {!paid && !adminMode && (
+        <button
+          type="button"
+          onClick={() => {
+            onOpenChange(false);
+            openUpgradeModal();
+          }}
+          className="mx-4 my-2 p-3 border border-[#BFDBFE] bg-[#EFF6FF] rounded-xl text-left hover:bg-[#DBEAFE] transition-colors"
+        >
+          <div className="flex items-center gap-1 font-semibold text-[14px] text-gray-900 mb-0.5">
+            {trialActive
+              ? `Upgrade · ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`
+              : "Upgrade to Pro"}{" "}
+            <ArrowRight className="w-4 h-4 ml-0.5" />
+          </div>
+          <p className="text-[13px] text-gray-600 leading-snug">
+            Unlock unlimited proposals, invoices, and automated reminders.
+          </p>
+        </button>
+      )}
+
+      <div className="h-px bg-gray-200 my-2 mx-4" />
+
+      <button
+        type="button"
+        onClick={() => void handleSignOut()}
+        className="w-full flex items-center gap-3 px-4 py-2 hover:bg-gray-50 cursor-pointer text-gray-700 hover:text-gray-900 transition-colors text-left"
+      >
+        <LogOut className="w-5 h-5 text-gray-600" strokeWidth={1.5} />
+        <span className="text-[15px]">Log out</span>
+      </button>
+    </div>
+  ) : null;
+
   return (
     <div
       ref={rootRef}
-      className="relative flex items-center"
+      className="relative flex items-center shrink-0"
       onMouseEnter={() => {
         if (canHover()) onOpenChange(true);
       }}
@@ -420,81 +582,7 @@ function ProfileMenu({
         <UserAvatar src={avatarUrl} alt={fullName ?? "Profile"} size="sm" />
       </button>
 
-      <div className={`absolute left-full top-0 w-4 h-full ${open ? "block" : "hidden"}`} />
-
-      <div className={`absolute left-full top-0 ml-3 z-[80] ${open ? "block" : "hidden"}`}>
-        <div className="w-[320px] bg-white rounded-2xl shadow-[0_4px_24px_rgba(0,0,0,0.12)] border border-gray-200 py-3 flex flex-col cursor-default">
-          <div className="px-4 pb-3 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-[#f0f3f5] flex items-center justify-center shrink-0">
-              <Building2 className="w-5 h-5 text-gray-500" strokeWidth={1.5} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-[15px] font-semibold text-gray-900 truncate">
-                {fullName || "Your workspace"}
-              </div>
-              <div className="text-[13px] text-gray-500">{planLabel}</div>
-            </div>
-          </div>
-
-          <div className="h-px bg-gray-200 my-2 mx-4" />
-
-          <MenuLink icon={User} label="My profile" href="/settings" onNavigate={onNavigate} />
-          <MenuLink
-            icon={Settings}
-            label={adminMode ? "Admin settings" : "Settings"}
-            href={adminMode ? "/admin/settings" : "/settings"}
-            onNavigate={onNavigate}
-          />
-          {isPlatformAdmin && !adminMode ? (
-            <MenuLink
-              icon={Shield}
-              label="Platform admin"
-              href="/admin"
-              onNavigate={onNavigate}
-            />
-          ) : null}
-          {adminMode ? (
-            <MenuLink
-              icon={Home}
-              label="Back to app"
-              href="/"
-              onNavigate={onNavigate}
-            />
-          ) : null}
-
-          {!paid && !adminMode && (
-            <button
-              type="button"
-              onClick={() => {
-                onOpenChange(false);
-                openUpgradeModal();
-              }}
-              className="mx-4 my-2 p-3 border border-[#BFDBFE] bg-[#EFF6FF] rounded-xl text-left hover:bg-[#DBEAFE] transition-colors"
-            >
-              <div className="flex items-center gap-1 font-semibold text-[14px] text-gray-900 mb-0.5">
-                {trialActive
-                  ? `Upgrade · ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`
-                  : "Upgrade to Pro"}{" "}
-                <ArrowRight className="w-4 h-4 ml-0.5" />
-              </div>
-              <p className="text-[13px] text-gray-600 leading-snug">
-                Unlock unlimited proposals, invoices, and automated reminders.
-              </p>
-            </button>
-          )}
-
-          <div className="h-px bg-gray-200 my-2 mx-4" />
-
-          <button
-            type="button"
-            onClick={() => void handleSignOut()}
-            className="w-full flex items-center gap-3 px-4 py-2 hover:bg-gray-50 cursor-pointer text-gray-700 hover:text-gray-900 transition-colors text-left"
-          >
-            <LogOut className="w-5 h-5 text-gray-600" strokeWidth={1.5} />
-            <span className="text-[15px]">Log out</span>
-          </button>
-        </div>
-      </div>
+      {mounted && panel ? createPortal(panel, document.body) : null}
     </div>
   );
 }
@@ -513,8 +601,15 @@ function AlertsMenu({
   const router = useRouter();
   const { entitled, loading: billingLoading, openUpgradeModal } = useBilling();
   const rootRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const flyoutStyle = useFlyoutStyle(open, rootRef, "bottom");
+  const [mounted, setMounted] = useState(false);
   const [alerts, setAlerts] = useState<NotificationRow[]>([]);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   function tryOpenAlerts(next: boolean) {
     if (next && !billingLoading && !entitled) {
@@ -559,9 +654,14 @@ function AlertsMenu({
     if (!open) return;
     void loadAlerts();
     function onPointerDown(e: PointerEvent) {
-      if (!rootRef.current?.contains(e.target as Node)) {
-        onOpenChange(false);
+      const target = e.target as Node;
+      if (
+        rootRef.current?.contains(target) ||
+        panelRef.current?.contains(target)
+      ) {
+        return;
       }
+      onOpenChange(false);
     }
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
@@ -604,6 +704,113 @@ function AlertsMenu({
     }
   }
 
+  const panel = open ? (
+    <div
+      ref={panelRef}
+      style={flyoutStyle}
+      className="w-[min(340px,calc(100vw-84px))] bg-white rounded-2xl shadow-[0_4px_24px_rgba(0,0,0,0.12)] border border-gray-200 py-3 flex flex-col cursor-default"
+      onMouseEnter={() => {
+        if (canHover()) {
+          tryOpenAlerts(true);
+          void loadAlerts();
+        }
+      }}
+      onMouseLeave={() => {
+        if (canHover()) onOpenChange(false);
+      }}
+    >
+      <div className="px-4 pb-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-[15px] font-semibold text-gray-900">Alerts</div>
+          <div className="text-[13px] text-gray-500">
+            {loading
+              ? "Loading…"
+              : unreadCount === 0
+                ? "All caught up"
+                : `${unreadCount} unread`}
+          </div>
+        </div>
+        {unreadCount > 0 && (
+          <button
+            type="button"
+            onClick={() => {
+              void markAllRead();
+            }}
+            className="text-[13px] font-medium text-[#2563EB] hover:text-[#1d4ed8] transition-colors"
+          >
+            Mark all read
+          </button>
+        )}
+      </div>
+
+      <div className="h-px bg-gray-200 mx-4 mb-1" />
+
+      <div className="max-h-[min(360px,calc(100vh-160px))] overflow-y-auto no-scrollbar">
+        {!loading && alerts.length === 0 && (
+          <div className="px-4 py-8 text-center text-[13px] text-gray-500">
+            No alerts yet. You’ll see proposal activity here.
+          </div>
+        )}
+        {alerts.map((alert) => {
+          const Icon = alertIconForType(alert.type);
+          const unread = !alert.read_at;
+          return (
+            <button
+              key={alert.id}
+              type="button"
+              onClick={() => {
+                void openAlert(alert);
+              }}
+              className="flex w-full items-start gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer transition-colors text-left"
+            >
+              <div
+                className={`mt-0.5 w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                  unread
+                    ? "bg-[#EFF6FF] text-[#2563EB]"
+                    : "bg-gray-100 text-gray-600"
+                }`}
+              >
+                <Icon className="w-4 h-4" strokeWidth={1.75} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span
+                    className={`text-[14px] truncate ${
+                      unread
+                        ? "font-semibold text-gray-900"
+                        : "font-medium text-gray-800"
+                    }`}
+                  >
+                    {alert.title}
+                  </span>
+                  <span className="text-[11px] text-gray-400 shrink-0">
+                    {formatAlertTime(alert.created_at)}
+                  </span>
+                </div>
+                <p className="text-[13px] text-gray-500 leading-snug mt-0.5 truncate">
+                  {alert.body}
+                </p>
+              </div>
+              {unread && (
+                <span className="mt-2 w-2 h-2 rounded-full bg-[#2563EB] shrink-0" />
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="h-px bg-gray-200 mx-4 mt-1 mb-2" />
+
+      <Link
+        href="/notifications"
+        onClick={() => onNavigate?.()}
+        className="mx-4 py-2 text-center text-[14px] font-medium text-[#2563EB] hover:text-[#1d4ed8] hover:bg-[#EFF6FF] rounded-xl transition-colors"
+      >
+        View all alerts
+      </Link>
+    </div>
+  ) : null;
+
   return (
     <div
       ref={rootRef}
@@ -642,104 +849,16 @@ function AlertsMenu({
             </span>
           )}
         </div>
-        <span className={`text-[11px] leading-tight text-center tracking-tight ${active || open ? "font-medium" : ""}`}>
+        <span
+          className={`text-[11px] leading-tight text-center tracking-tight ${
+            active || open ? "font-medium" : ""
+          }`}
+        >
           Alerts
         </span>
       </button>
 
-      <div className={`absolute left-full bottom-0 w-4 h-full ${open ? "block" : "hidden"}`} />
-
-      <div className={`absolute left-full bottom-0 ml-3 z-[80] ${open ? "block" : "hidden"}`}>
-        <div className="w-[340px] bg-white rounded-2xl shadow-[0_4px_24px_rgba(0,0,0,0.12)] border border-gray-200 py-3 flex flex-col cursor-default">
-          <div className="px-4 pb-3 flex items-center justify-between gap-3">
-            <div>
-              <div className="text-[15px] font-semibold text-gray-900">Alerts</div>
-              <div className="text-[13px] text-gray-500">
-                {loading
-                  ? "Loading…"
-                  : unreadCount === 0
-                    ? "All caught up"
-                    : `${unreadCount} unread`}
-              </div>
-            </div>
-            {unreadCount > 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  void markAllRead();
-                }}
-                className="text-[13px] font-medium text-[#2563EB] hover:text-[#1d4ed8] transition-colors"
-              >
-                Mark all read
-              </button>
-            )}
-          </div>
-
-          <div className="h-px bg-gray-200 mx-4 mb-1" />
-
-          <div className="max-h-[360px] overflow-y-auto no-scrollbar">
-            {!loading && alerts.length === 0 && (
-              <div className="px-4 py-8 text-center text-[13px] text-gray-500">
-                No alerts yet. You’ll see proposal activity here.
-              </div>
-            )}
-            {alerts.map((alert) => {
-              const Icon = alertIconForType(alert.type);
-              const unread = !alert.read_at;
-              return (
-                <button
-                  key={alert.id}
-                  type="button"
-                  onClick={() => {
-                    void openAlert(alert);
-                  }}
-                  className="flex w-full items-start gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer transition-colors text-left"
-                >
-                  <div
-                    className={`mt-0.5 w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                      unread
-                        ? "bg-[#EFF6FF] text-[#2563EB]"
-                        : "bg-gray-100 text-gray-600"
-                    }`}
-                  >
-                    <Icon className="w-4 h-4" strokeWidth={1.75} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <span
-                        className={`text-[14px] truncate ${
-                          unread ? "font-semibold text-gray-900" : "font-medium text-gray-800"
-                        }`}
-                      >
-                        {alert.title}
-                      </span>
-                      <span className="text-[11px] text-gray-400 shrink-0">
-                        {formatAlertTime(alert.created_at)}
-                      </span>
-                    </div>
-                    <p className="text-[13px] text-gray-500 leading-snug mt-0.5 truncate">
-                      {alert.body}
-                    </p>
-                  </div>
-                  {unread && (
-                    <span className="mt-2 w-2 h-2 rounded-full bg-[#2563EB] shrink-0" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="h-px bg-gray-200 mx-4 mt-1 mb-2" />
-
-          <Link
-            href="/notifications"
-            onClick={() => onNavigate?.()}
-            className="mx-4 py-2 text-center text-[14px] font-medium text-[#2563EB] hover:text-[#1d4ed8] hover:bg-[#EFF6FF] rounded-xl transition-colors"
-          >
-            View all alerts
-          </Link>
-        </div>
-      </div>
+      {mounted && panel ? createPortal(panel, document.body) : null}
     </div>
   );
 }

@@ -15,6 +15,7 @@ import { normalizeWhatsAppPhone } from "@/lib/whatsapp/phone";
 
 export type InboundWhatsAppPayload = {
   from: string;
+  phone?: string | null;
   chatId?: string;
   body: string;
   messageId?: string | null;
@@ -53,21 +54,47 @@ export function assertWhatsAppWebhook(
   return verifyWebhookAuth(request, rawBody);
 }
 
-async function tryVerifyCode(
-  phone: string,
-  body: string
-): Promise<string | null> {
-  const code = body.replace(/\s+/g, "").match(/\b(\d{6})\b/)?.[1];
+async function replyToSender(options: {
+  chatId?: string | null;
+  phone?: string | null;
+  message: string;
+}) {
+  const result = await sendWhatsAppMessage({
+    chatId: options.chatId,
+    to: options.phone || undefined,
+    message: options.message,
+  });
+  if (!result.ok) {
+    console.error("[assistant] WhatsApp reply failed:", result.error);
+  }
+  return result;
+}
+
+async function tryVerifyCode(options: {
+  phone: string | null;
+  chatId: string;
+  body: string;
+}): Promise<string | null> {
+  const code = options.body.replace(/\s+/g, "").match(/\b(\d{6})\b/)?.[1];
   if (!code) return null;
 
   const db = createAdminClient();
-  const { data: link } = await db
+
+  let linkQuery = db
     .from("assistant_whatsapp_links")
     .select(
-      "id, verification_code, verification_expires_at, verified_at, phone_e164"
-    )
-    .eq("phone_e164", phone)
-    .maybeSingle();
+      "id, verification_code, verification_expires_at, verified_at, phone_e164, wa_chat_id"
+    );
+
+  if (options.phone) {
+    linkQuery = linkQuery.eq("phone_e164", options.phone);
+  } else if (options.chatId) {
+    linkQuery = linkQuery.eq("wa_chat_id", options.chatId);
+  } else {
+    return null;
+  }
+
+  const { data: link } = await linkQuery.maybeSingle();
 
   if (!link || link.verified_at) return null;
   if (!link.verification_code || link.verification_code !== code) return null;
@@ -75,7 +102,7 @@ async function tryVerifyCode(
     link.verification_expires_at &&
     new Date(link.verification_expires_at).getTime() < Date.now()
   ) {
-    return "That verification code expired. Request a new one in Rebban Settings → Integrations.";
+    return "That verification code expired. Request a new one in Rebban Settings → Assistant.";
   }
 
   await db
@@ -84,55 +111,104 @@ async function tryVerifyCode(
       verified_at: new Date().toISOString(),
       verification_code: null,
       verification_expires_at: null,
+      wa_chat_id: options.chatId || link.wa_chat_id,
     })
     .eq("id", link.id);
 
   return "You're connected to Rebban Assistant. Try: Add Sarah from Studio North as a lead.";
 }
 
+async function resolveLink(options: {
+  phone: string | null;
+  chatId: string;
+}) {
+  const db = createAdminClient();
+
+  if (options.phone) {
+    const { data: byPhone } = await db
+      .from("assistant_whatsapp_links")
+      .select("id, user_id, organization_id, verified_at, phone_e164, wa_chat_id")
+      .eq("phone_e164", options.phone)
+      .maybeSingle();
+    if (byPhone) {
+      if (
+        options.chatId &&
+        byPhone.wa_chat_id !== options.chatId &&
+        byPhone.verified_at
+      ) {
+        await db
+          .from("assistant_whatsapp_links")
+          .update({ wa_chat_id: options.chatId })
+          .eq("id", byPhone.id);
+        byPhone.wa_chat_id = options.chatId;
+      }
+      return byPhone;
+    }
+  }
+
+  if (options.chatId) {
+    const { data: byChat } = await db
+      .from("assistant_whatsapp_links")
+      .select("id, user_id, organization_id, verified_at, phone_e164, wa_chat_id")
+      .eq("wa_chat_id", options.chatId)
+      .maybeSingle();
+    if (byChat) return byChat;
+  }
+
+  return null;
+}
+
 export async function processWhatsAppInbound(
   payload: InboundWhatsAppPayload
 ): Promise<{ reply: string | null; skipped?: boolean }> {
-  const phone = normalizeWhatsAppPhone(payload.from);
+  const chatId = (payload.chatId || "").trim();
+  const phone = normalizeWhatsAppPhone(
+    payload.phone || payload.from || ""
+  );
   const body = (payload.body || "").trim();
-  if (!phone || !body) {
+  if (!body || (!phone && !chatId)) {
     return { reply: null, skipped: true };
   }
 
-  const chatId = payload.chatId || `${phone}@c.us`;
-  const db = createAdminClient();
+  const replyTarget = {
+    chatId: chatId || null,
+    phone: phone || null,
+  };
 
-  const verifyReply = await tryVerifyCode(phone, body);
+  const verifyReply = await tryVerifyCode({
+    phone: phone || null,
+    chatId,
+    body,
+  });
   if (verifyReply) {
-    await sendWhatsAppMessage({ to: phone, message: verifyReply });
+    await replyToSender({ ...replyTarget, message: verifyReply });
     return { reply: verifyReply };
   }
 
-  const { data: link } = await db
-    .from("assistant_whatsapp_links")
-    .select("id, user_id, organization_id, verified_at")
-    .eq("phone_e164", phone)
-    .maybeSingle();
+  const link = await resolveLink({ phone: phone || null, chatId });
 
   if (!link || !link.verified_at) {
     const appUrl = getAppUrl();
     const reply = `Hi! To use Rebban Assistant, connect this WhatsApp number in Rebban:\n${appUrl}/settings?section=assistant\n\nSettings → Assistant.`;
-    await sendWhatsAppMessage({ to: phone, message: reply });
+    await replyToSender({ ...replyTarget, message: reply });
     return { reply };
   }
 
   if (!isAssistantAiConfigured()) {
     const reply =
       "Rebban Assistant is temporarily unavailable. Please try again later or use the dashboard.";
-    await sendWhatsAppMessage({ to: phone, message: reply });
+    await replyToSender({ ...replyTarget, message: reply });
     return { reply };
   }
+
+  const db = createAdminClient();
+  const conversationChatId = chatId || `${link.phone_e164}@c.us`;
 
   let { data: conversation } = await db
     .from("assistant_conversations")
     .select("id, pending_action")
     .eq("link_id", link.id)
-    .eq("wa_chat_id", chatId)
+    .eq("wa_chat_id", conversationChatId)
     .maybeSingle();
 
   if (!conversation) {
@@ -140,7 +216,7 @@ export async function processWhatsAppInbound(
       .from("assistant_conversations")
       .insert({
         link_id: link.id,
-        wa_chat_id: chatId,
+        wa_chat_id: conversationChatId,
         pending_action: null,
       })
       .select("id, pending_action")
@@ -210,7 +286,6 @@ export async function processWhatsAppInbound(
     content: safeReply,
   });
 
-  // Keep history lean
   const { data: oldIds } = await db
     .from("assistant_messages")
     .select("id")
@@ -228,6 +303,6 @@ export async function processWhatsAppInbound(
       );
   }
 
-  await sendWhatsAppMessage({ to: phone, message: safeReply });
+  await replyToSender({ ...replyTarget, message: safeReply });
   return { reply: safeReply };
 }
