@@ -5,6 +5,7 @@ import "./globals.css";
 import { AppShell } from "@/components/AppShell";
 import { BillingProvider } from "@/components/BillingContext";
 import { CookieConsent } from "@/components/CookieConsent";
+import { InternalAnalytics } from "@/components/InternalAnalytics";
 import { ProfileProvider } from "@/components/ProfileContext";
 import { MobileSessionBridge } from "@/components/MobileSessionBridge";
 import { PwaInstallBanner } from "@/components/PwaInstallBanner";
@@ -96,6 +97,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <BillingProvider>
             <TimeTrackingProvider>
               <AppShell>{children}</AppShell>
+              <InternalAnalytics />
               <CookieConsent />
               <MobileSessionBridge />
               <PwaRegister />

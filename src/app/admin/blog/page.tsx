@@ -15,6 +15,7 @@ type BlogListPost = {
   featured: boolean;
   publishedAt: string;
   modifiedAt: string;
+  reads?: number;
 };
 
 function formatDate(iso: string) {
@@ -157,6 +158,7 @@ export default function AdminBlogPage() {
                   <th className="px-4 py-3 font-medium">Category</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Published</th>
+                  <th className="px-4 py-3 font-medium">Reads</th>
                   <th className="px-4 py-3 font-medium">Updated</th>
                   <th className="px-4 py-3 font-medium w-12" />
                 </tr>
@@ -187,6 +189,9 @@ export default function AdminBlogPage() {
                     </td>
                     <td className="px-4 py-3 text-gray-500">
                       {formatDate(post.publishedAt)}
+                    </td>
+                    <td className="px-4 py-3 text-gray-500 tabular-nums">
+                      {(post.reads ?? 0).toLocaleString()}
                     </td>
                     <td className="px-4 py-3 text-gray-500">
                       {formatDate(post.modifiedAt)}

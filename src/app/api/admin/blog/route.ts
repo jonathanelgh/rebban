@@ -51,8 +51,24 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  const posts = (data || []).map(mapBlogPostRow);
+  const readsById: Record<string, number> = {};
+  await Promise.all(
+    posts.map(async (post) => {
+      const { count } = await auth.db
+        .from("analytics_events")
+        .select("id", { count: "exact", head: true })
+        .eq("article_id", post.id)
+        .eq("event_name", "article_view");
+      readsById[post.id] = count || 0;
+    })
+  );
+
   return NextResponse.json({
-    posts: (data || []).map(mapBlogPostRow),
+    posts: posts.map((post) => ({
+      ...post,
+      reads: readsById[post.id] || 0,
+    })),
   });
 }
 

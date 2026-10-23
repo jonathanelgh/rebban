@@ -14,6 +14,56 @@ export type Database = {
   }
   public: {
     Tables: {
+      analytics_events: {
+        Row: {
+          article_id: string | null
+          article_slug: string | null
+          event_name: string
+          host: string | null
+          id: string
+          occurred_at: string
+          path: string
+          referrer: string | null
+          title: string | null
+          user_id: string | null
+          visitor_id: string | null
+        }
+        Insert: {
+          article_id?: string | null
+          article_slug?: string | null
+          event_name: string
+          host?: string | null
+          id?: string
+          occurred_at?: string
+          path: string
+          referrer?: string | null
+          title?: string | null
+          user_id?: string | null
+          visitor_id?: string | null
+        }
+        Update: {
+          article_id?: string | null
+          article_slug?: string | null
+          event_name?: string
+          host?: string | null
+          id?: string
+          occurred_at?: string
+          path?: string
+          referrer?: string | null
+          title?: string | null
+          user_id?: string | null
+          visitor_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analytics_events_article_id_fkey"
+            columns: ["article_id"]
+            isOneToOne: false
+            referencedRelation: "blog_posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_events: {
         Row: {
           action: string

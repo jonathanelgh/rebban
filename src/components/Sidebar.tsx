@@ -26,6 +26,7 @@ import {
   Headphones,
   Contact,
   Newspaper,
+  Activity,
   CalendarDays,
   type LucideIcon,
 } from "lucide-react";
@@ -189,6 +190,13 @@ function SidebarInner({
               icon={Newspaper}
               label="Articles"
               active={pathname.startsWith("/admin/blog")}
+              onNavigate={handleNavigate}
+            />
+            <NavItem
+              href="/admin/analytics"
+              icon={Activity}
+              label="Analytics"
+              active={pathname.startsWith("/admin/analytics")}
               onNavigate={handleNavigate}
             />
           </nav>
