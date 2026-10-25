@@ -215,8 +215,11 @@ export async function processWhatsAppInbound(
     const { data: created, error } = await db
       .from("assistant_conversations")
       .insert({
+        channel: "whatsapp",
         link_id: link.id,
         wa_chat_id: conversationChatId,
+        user_id: link.user_id,
+        organization_id: link.organization_id,
         pending_action: null,
       })
       .select("id, pending_action")
@@ -275,6 +278,7 @@ export async function processWhatsAppInbound(
       conversationId: conversation.id,
       pendingAction,
       setPendingAction,
+      channel: "whatsapp",
     },
   });
 

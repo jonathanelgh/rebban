@@ -66,28 +66,43 @@ export type Database = {
       }
       assistant_conversations: {
         Row: {
+          channel: string
           created_at: string
           id: string
-          link_id: string
+          link_id: string | null
+          organization_id: string | null
           pending_action: Json | null
+          support_ticket_id: string | null
+          title: string | null
           updated_at: string
-          wa_chat_id: string
+          user_id: string | null
+          wa_chat_id: string | null
         }
         Insert: {
+          channel?: string
           created_at?: string
           id?: string
-          link_id: string
+          link_id?: string | null
+          organization_id?: string | null
           pending_action?: Json | null
+          support_ticket_id?: string | null
+          title?: string | null
           updated_at?: string
-          wa_chat_id: string
+          user_id?: string | null
+          wa_chat_id?: string | null
         }
         Update: {
+          channel?: string
           created_at?: string
           id?: string
-          link_id?: string
+          link_id?: string | null
+          organization_id?: string | null
           pending_action?: Json | null
+          support_ticket_id?: string | null
+          title?: string | null
           updated_at?: string
-          wa_chat_id?: string
+          user_id?: string | null
+          wa_chat_id?: string | null
         }
         Relationships: [
           {
@@ -95,6 +110,20 @@ export type Database = {
             columns: ["link_id"]
             isOneToOne: false
             referencedRelation: "assistant_whatsapp_links"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assistant_conversations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assistant_conversations_support_ticket_id_fkey"
+            columns: ["support_ticket_id"]
+            isOneToOne: false
+            referencedRelation: "support_tickets"
             referencedColumns: ["id"]
           },
         ]

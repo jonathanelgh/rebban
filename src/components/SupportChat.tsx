@@ -33,14 +33,16 @@ type TicketMeta = {
   subject?: string;
 };
 
-type TicketListItem = {
+type ConversationListItem = {
   id: string;
-  ticketRef: string;
-  subject: string;
-  status: string;
-  assignedAgent: string;
-  lastMessagePreview: string | null;
+  title: string;
   updatedAt: string;
+  ticket: {
+    id: string;
+    ticketRef: string;
+    status: string;
+    assignedAgent: string;
+  } | null;
 };
 
 const markdownComponents = {
@@ -90,7 +92,7 @@ const WELCOME: ChatMessage = {
   role: "assistant",
   agent: "ai",
   content:
-    "Hey 👋 I’m here if you get stuck.\n\nAsk me anything: sending a proposal, tracking time, invoicing a client, connecting Gmail or Stripe… whatever’s on your mind 😊",
+    "Hey 👋 I’m Rebban Assistant.\n\nI can help you run your workspace (add a client, draft an invoice or proposal, create a task) or walk you through how to use Rebban — same capabilities as WhatsApp. What do you need?",
 };
 
 function uid() {
@@ -109,11 +111,15 @@ export function SupportChat() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME]);
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const [ticket, setTicket] = useState<TicketMeta | null>(null);
-  const [tickets, setTickets] = useState<TicketListItem[]>([]);
+  const [conversations, setConversations] = useState<ConversationListItem[]>(
+    []
+  );
   const [loadingHistory, setLoadingHistory] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const sendingRef = useRef(false);
 
   const hide =
     pathname.startsWith("/admin") ||
@@ -148,11 +154,12 @@ export function SupportChat() {
     };
   }, [open]);
 
-  const loadTicketMessages = useCallback(async (ticketId: string) => {
-    const res = await fetch(`/api/support/tickets/${ticketId}`);
+  const loadConversation = useCallback(async (id: string) => {
+    const res = await fetch(`/api/assistant/conversations/${id}`);
     const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(json.error || "Could not load ticket.");
-    setTicket(json.ticket);
+    if (!res.ok) throw new Error(json.error || "Could not load chat.");
+    setConversationId(json.conversation?.id || id);
+    setTicket(json.ticket || null);
     const mapped: ChatMessage[] = (json.messages || []).map(
       (m: { id: string; agent: Agent; body: string }) => ({
         id: m.id,
@@ -172,10 +179,10 @@ export function SupportChat() {
   const loadHistory = useCallback(async () => {
     setLoadingHistory(true);
     try {
-      const res = await fetch("/api/support/tickets");
+      const res = await fetch("/api/assistant/conversations");
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || "Could not load tickets.");
-      setTickets(json.tickets || []);
+      if (!res.ok) throw new Error(json.error || "Could not load chats.");
+      setConversations(json.conversations || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load history.");
     } finally {
@@ -187,14 +194,15 @@ export function SupportChat() {
     setError(null);
     setSending(true);
     try {
-      const res = await fetch("/api/support/tickets", {
+      const res = await fetch("/api/assistant/conversations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ forceNew: true }),
+        body: JSON.stringify({}),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || "Could not start chat.");
-      setTicket(json.ticket);
+      setConversationId(json.conversation?.id || null);
+      setTicket(null);
       setMessages([WELCOME]);
       setView("chat");
     } catch (err) {
@@ -208,7 +216,8 @@ export function SupportChat() {
 
   async function send() {
     const text = input.trim();
-    if (!text || sending) return;
+    if (!text || sending || sendingRef.current) return;
+    sendingRef.current = true;
 
     const userMsg: ChatMessage = {
       id: uid(),
@@ -217,7 +226,6 @@ export function SupportChat() {
       content: text,
     };
     const next = [...messages.filter((m) => m.id !== "welcome"), userMsg];
-    // Keep welcome visually only if it was the only message
     setMessages((prev) =>
       prev.length === 1 && prev[0].id === "welcome"
         ? [userMsg]
@@ -235,12 +243,12 @@ export function SupportChat() {
           content: m.content,
         }));
 
-      const res = await fetch("/api/support/chat", {
+      const res = await fetch("/api/assistant/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: historyForApi,
-          ticketId: ticket?.id || null,
+          conversationId: conversationId || null,
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -249,15 +257,16 @@ export function SupportChat() {
         return;
       }
 
+      if (json.conversationId) setConversationId(json.conversationId);
       if (json.ticket) setTicket(json.ticket);
+      else if (!json.escalated) setTicket(null);
 
-      // Reload from server so system/escalation messages appear with agent labels
-      if (json.ticketId) {
+      if (json.conversationId) {
         try {
-          await loadTicketMessages(json.ticketId);
+          await loadConversation(json.conversationId);
           return;
         } catch {
-          // fall through to local append
+          // fall through
         }
       }
 
@@ -273,6 +282,7 @@ export function SupportChat() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Network error.");
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   }
@@ -290,12 +300,12 @@ export function SupportChat() {
                   className="inline-flex items-center gap-1 text-[14px] font-semibold text-gray-900"
                 >
                   <ChevronLeft className="h-4 w-4" />
-                  Tickets
+                  Chats
                 </button>
               ) : (
                 <>
                   <div className="text-[14px] font-semibold text-gray-900">
-                    Support
+                    Assistant
                     {ticket?.ticketRef ? (
                       <span className="ml-2 text-[12px] font-medium text-gray-400">
                         {ticket.ticketRef}
@@ -326,7 +336,7 @@ export function SupportChat() {
                 <>
                   <button
                     type="button"
-                    aria-label="Ticket history"
+                    aria-label="Chat history"
                     onClick={() => {
                       setView("history");
                       void loadHistory();
@@ -347,7 +357,7 @@ export function SupportChat() {
               )}
               <button
                 type="button"
-                aria-label="Close support chat"
+                aria-label="Close assistant chat"
                 onClick={() => setOpen(false)}
                 className="inline-flex h-9 w-9 items-center justify-center rounded-full text-gray-500 hover:bg-gray-50 hover:text-gray-800 md:h-8 md:w-8"
               >
@@ -363,27 +373,27 @@ export function SupportChat() {
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Loading…
                 </div>
-              ) : !tickets.length ? (
+              ) : !conversations.length ? (
                 <p className="px-2 py-8 text-center text-[13px] text-gray-500">
-                  No tickets yet. Start a chat and it will be saved here.
+                  No chats yet. Start a conversation and it will show up here.
                 </p>
               ) : (
                 <div className="space-y-1.5">
-                  {tickets.map((t) => (
+                  {conversations.map((c) => (
                     <button
-                      key={t.id}
+                      key={c.id}
                       type="button"
                       onClick={() => {
                         void (async () => {
                           setError(null);
                           setView("chat");
                           try {
-                            await loadTicketMessages(t.id);
+                            await loadConversation(c.id);
                           } catch (err) {
                             setError(
                               err instanceof Error
                                 ? err.message
-                                : "Could not open ticket."
+                                : "Could not open chat."
                             );
                           }
                         })();
@@ -391,23 +401,25 @@ export function SupportChat() {
                       className="w-full rounded-xl border border-transparent px-3 py-2.5 text-left hover:border-line hover:bg-[#FAFBFC]"
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-[13px] font-semibold text-gray-900">
-                          {t.ticketRef}
+                        <span className="truncate text-[13px] font-semibold text-gray-900">
+                          {c.title}
                         </span>
-                        <span className="text-[11px] capitalize text-gray-400">
-                          {statusLabel(t.status)}
-                        </span>
-                      </div>
-                      <div className="mt-0.5 truncate text-[12px] text-gray-500">
-                        {t.lastMessagePreview || t.subject}
+                        {c.ticket ? (
+                          <span className="shrink-0 text-[11px] text-gray-400">
+                            {c.ticket.ticketRef}
+                          </span>
+                        ) : null}
                       </div>
                       <div className="mt-1 flex items-center gap-1 text-[11px] text-gray-400">
-                        {t.assignedAgent === "human" ? (
-                          <UserRound className="h-3 w-3" />
+                        {c.ticket?.assignedAgent === "human" ? (
+                          <>
+                            <UserRound className="h-3 w-3" /> Support
+                          </>
                         ) : (
-                          <Bot className="h-3 w-3" />
+                          <>
+                            <Bot className="h-3 w-3" /> Assistant
+                          </>
                         )}
-                        {t.assignedAgent === "human" ? "Human" : "AI"}
                       </div>
                     </button>
                   ))}
@@ -506,7 +518,7 @@ export function SupportChat() {
                       }
                     }}
                     rows={2}
-                    placeholder="How do I send an invoice?"
+                    placeholder="Draft an invoice for Acme, or ask how to…"
                     className="min-h-[44px] flex-1 resize-none rounded-xl border border-line bg-white px-3 py-2.5 text-sm text-gray-800 outline-none focus:border-gray-300"
                   />
                   <button
@@ -531,7 +543,7 @@ export function SupportChat() {
 
       <button
         type="button"
-        aria-label={open ? "Close support chat" : "Open support chat"}
+        aria-label={open ? "Close assistant chat" : "Open assistant chat"}
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         className={`pointer-events-auto inline-flex h-14 w-14 items-center justify-center rounded-full bg-gray-900 text-white shadow-[0_8px_24px_rgba(16,24,40,0.22)] transition-transform hover:scale-[1.03] hover:bg-gray-800 active:scale-[0.98] ${

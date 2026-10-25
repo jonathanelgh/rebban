@@ -18,7 +18,15 @@ export type SupportToolContext = {
   db: Db;
   userId: string;
   organizationId: string;
-  ticketId: string;
+  /** Set once a support ticket exists (only created on escalate / explicit support). */
+  ticketId: string | null;
+  /**
+   * Lazily open a support ticket when escalate_to_human runs.
+   * Normal assistant chats must not create tickets up front.
+   */
+  ensureTicket: (options: {
+    reason: string;
+  }) => Promise<{ id: string; ticket_number: number }>;
   requesterEmail?: string | null;
   requesterName?: string | null;
   organizationName?: string | null;
@@ -203,7 +211,7 @@ export const SUPPORT_TOOL_DEFINITIONS = [
     function: {
       name: "escalate_to_human",
       description:
-        "Escalate this support conversation to a human agent when you cannot fully resolve the issue (bugs needing investigation, billing disputes, account access problems, feature requests that need a decision, or the user explicitly asks for a human). A human will email the user within 24 hours. Call this instead of inventing fixes.",
+        "Create a support ticket and escalate to a human agent. Only use when the user asks for a human/support, or for bugs, billing disputes, account lockouts, legal/security issues you cannot resolve. Do not use for normal how-tos or workspace actions. A human will email within 24 hours.",
       parameters: {
         type: "object",
         properties: {
@@ -646,7 +654,8 @@ export async function resolveSupportToolContext(
   db: Db,
   userId: string,
   extras?: {
-    ticketId: string;
+    ticketId?: string | null;
+    ensureTicket?: SupportToolContext["ensureTicket"];
     requesterEmail?: string | null;
     requesterName?: string | null;
     organizationName?: string | null;
@@ -656,17 +665,22 @@ export async function resolveSupportToolContext(
   if (!organizationId) {
     return { error: "No active workspace found for this user." };
   }
-  if (!extras?.ticketId) {
-    return { error: "Support ticket is required." };
-  }
+  const ensureTicket =
+    extras?.ensureTicket ||
+    (async () => {
+      throw new Error(
+        "Support tickets are only created when escalating to a human."
+      );
+    });
   return {
     db,
     userId,
     organizationId,
-    ticketId: extras.ticketId,
-    requesterEmail: extras.requesterEmail,
-    requesterName: extras.requesterName,
-    organizationName: extras.organizationName,
+    ticketId: extras?.ticketId || null,
+    ensureTicket,
+    requesterEmail: extras?.requesterEmail,
+    requesterName: extras?.requesterName,
+    organizationName: extras?.organizationName,
   };
 }
 
@@ -685,6 +699,20 @@ async function escalateToHuman(
       ? priorityRaw
       : "high"
   ) as SupportTicketPriority;
+
+  if (!ctx.ticketId) {
+    try {
+      const created = await ctx.ensureTicket({ reason });
+      ctx.ticketId = created.id;
+    } catch (err) {
+      return {
+        error:
+          err instanceof Error
+            ? err.message
+            : "Could not open a support ticket.",
+      };
+    }
+  }
 
   const { ticket, newlyEscalated } = await escalateTicket({
     db: ctx.db,

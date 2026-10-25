@@ -55,6 +55,46 @@ export async function listUserTickets(db: Db, userId: string, limit = 20) {
   return data || [];
 }
 
+/** Always create a new ticket (used when escalating from Assistant). */
+export async function createFreshSupportTicket(options: {
+  db: Db;
+  userId: string;
+  organizationId: string;
+  requesterEmail?: string | null;
+  requesterName?: string | null;
+  firstMessage?: string | null;
+}) {
+  const subject = subjectFromMessage(options.firstMessage || "Support request");
+  const { data: created, error } = await options.db
+    .from("support_tickets")
+    .insert({
+      organization_id: options.organizationId,
+      user_id: options.userId,
+      subject,
+      status: "open",
+      assigned_agent: "ai",
+      requester_email: options.requesterEmail || null,
+      requester_name: options.requesterName || null,
+      channel: "in_app_chat",
+    })
+    .select("*")
+    .single();
+
+  if (error || !created) {
+    throw new Error(error?.message || "Could not create support ticket.");
+  }
+
+  await options.db.from("support_ticket_events").insert({
+    ticket_id: created.id,
+    event_type: "created",
+    agent: "system",
+    actor_user_id: options.userId,
+    payload: { channel: "in_app_chat", source: "assistant_escalate" },
+  });
+
+  return created;
+}
+
 export async function getOrCreateOpenTicket(options: {
   db: Db;
   userId: string;

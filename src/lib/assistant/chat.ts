@@ -63,11 +63,17 @@ export async function generateAssistantReply(options: {
       : `\nThere is a pending action: ${JSON.stringify(pending)}. If the user confirms (yes / send / go ahead), call send_invoice with confirmed=true. If they decline, call clear_pending_action.`
     : "";
 
+  const channel = options.toolContext.channel || "whatsapp";
+  const lengthHint =
+    channel === "whatsapp"
+      ? "Keep replies short enough for WhatsApp (usually under 500 characters unless listing several invoices)."
+      : "Keep replies concise for the in-app chat panel. Light Markdown is fine.";
+
   const system = `${ASSISTANT_SYSTEM_PROMPT}
 
 The user's name is ${options.userName || "there"}.${pendingHint}
 
-Keep replies short enough for WhatsApp (usually under 500 characters unless listing several invoices).`;
+${lengthHint}`;
 
   const messages: OpenAiMessage[] = [
     { role: "system", content: system },

@@ -34,6 +34,8 @@ export type AssistantToolContext = {
   conversationId: string;
   pendingAction: AssistantPendingAction | null;
   setPendingAction: (action: AssistantPendingAction | null) => Promise<void>;
+  /** Where the assistant is running; affects lead/proposal source tags. */
+  channel?: "whatsapp" | "in_app";
 };
 
 export const ASSISTANT_TOOL_DEFINITIONS = [
@@ -64,7 +66,8 @@ export const ASSISTANT_TOOL_DEFINITIONS = [
     type: "function" as const,
     function: {
       name: "add_client",
-      description: "Add a new active client to the workspace.",
+      description:
+        "Add a new active client to the workspace. If a client with the same email already exists, returns that client instead of creating a duplicate. Put website URLs in website, not company.",
       parameters: {
         type: "object",
         properties: {
@@ -72,6 +75,10 @@ export const ASSISTANT_TOOL_DEFINITIONS = [
           company: { type: "string" },
           email: { type: "string" },
           phone: { type: "string" },
+          website: {
+            type: "string",
+            description: "Client website URL or domain (e.g. nordicelk.com)",
+          },
           notes: { type: "string" },
         },
         required: ["name"],
@@ -548,17 +555,58 @@ function ilikeOrFilter(q: string) {
   return `name.ilike.${pattern},company.ilike.${pattern},email.ilike.${pattern}`;
 }
 
+function looksLikeWebsite(value: string) {
+  const v = value.trim();
+  if (!v) return false;
+  if (/^https?:\/\//i.test(v)) return true;
+  return /^(www\.)?([a-z0-9-]+\.)+[a-z]{2,}(\/.*)?$/i.test(v);
+}
+
+function normalizeWebsite(value: string) {
+  const v = value.trim();
+  if (!v) return null;
+  if (/^https?:\/\//i.test(v)) return v;
+  return `https://${v.replace(/^\/+/, "")}`;
+}
+
 async function searchClients(db: Db, organizationId: string, query: string) {
   const q = sanitizeIlike(query);
   if (!q) return [];
   const { data } = await db
     .from("clients")
-    .select("id, name, company, email, phone, status")
+    .select("id, name, company, email, phone, status, created_at")
     .eq("organization_id", organizationId)
     .is("deleted_at", null)
     .or(ilikeOrFilter(q))
+    .order("created_at", { ascending: true })
     .limit(8);
   return data || [];
+}
+
+/** Prefer a single client when matches are email-duplicates of each other. */
+function collapseClientMatches<
+  T extends { id: string; email: string | null; created_at?: string },
+>(matches: T[]): T[] {
+  if (matches.length <= 1) return matches;
+  const withEmail = matches.filter((m) => m.email?.trim());
+  if (withEmail.length === matches.length) {
+    const emails = new Set(
+      withEmail.map((m) => m.email!.trim().toLowerCase())
+    );
+    if (emails.size === 1) {
+      return [matches[0]];
+    }
+  }
+  // Dedupe by email while keeping unique emails as separate choices
+  const seen = new Set<string>();
+  const unique: T[] = [];
+  for (const m of matches) {
+    const key = m.email?.trim().toLowerCase() || `id:${m.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(m);
+  }
+  return unique;
 }
 
 async function searchLeads(db: Db, organizationId: string, query: string) {
@@ -603,7 +651,9 @@ async function resolveClient(
   if (!query) {
     return { ok: false, error: "Provide client_query or client_id." };
   }
-  const matches = await searchClients(db, organizationId, query);
+  const matches = collapseClientMatches(
+    await searchClients(db, organizationId, query)
+  );
   if (!matches.length) {
     return {
       ok: false,
@@ -613,7 +663,8 @@ async function resolveClient(
   if (matches.length > 1) {
     return {
       ok: false,
-      error: "Multiple clients matched. Ask the user which one.",
+      error:
+        "Multiple different clients matched. Ask the user which one, then call again with client_id.",
       matches: matches.map((c) => ({
         id: c.id,
         name: c.name,
@@ -805,7 +856,7 @@ export async function executeAssistantTool(
             email: args.email ? String(args.email).trim().toLowerCase() : null,
             phone: args.phone ? String(args.phone).trim() : null,
             notes: notesParts.join("\n") || null,
-            source: "whatsapp",
+            source: ctx.channel === "in_app" ? "assistant" : "whatsapp",
             status: "new",
             created_by: userId,
           })
@@ -818,22 +869,57 @@ export async function executeAssistantTool(
       case "add_client": {
         const clientName = String(args.name || "").trim();
         if (!clientName) return { error: "Name is required." };
+
+        const email = args.email
+          ? String(args.email).trim().toLowerCase()
+          : null;
+        let company = args.company ? String(args.company).trim() : null;
+        let website = args.website
+          ? normalizeWebsite(String(args.website))
+          : null;
+        if (!website && company && looksLikeWebsite(company)) {
+          website = normalizeWebsite(company);
+          company = null;
+        }
+
+        if (email) {
+          const { data: existing } = await db
+            .from("clients")
+            .select("id, name, company, email, website, status")
+            .eq("organization_id", organizationId)
+            .eq("email", email)
+            .is("deleted_at", null)
+            .order("created_at", { ascending: true })
+            .limit(1)
+            .maybeSingle();
+          if (existing) {
+            return {
+              ok: true,
+              already_existed: true,
+              client: existing,
+              message:
+                "Client with this email already exists. Use this client_id — do not create another.",
+            };
+          }
+        }
+
         const { data, error } = await db
           .from("clients")
           .insert({
             organization_id: organizationId,
             name: clientName,
-            company: args.company ? String(args.company).trim() : null,
-            email: args.email ? String(args.email).trim().toLowerCase() : null,
+            company,
+            email,
             phone: args.phone ? String(args.phone).trim() : null,
+            website,
             notes: args.notes ? String(args.notes).trim() : null,
             status: "active",
             created_by: userId,
           })
-          .select("id, name, company, email, status")
+          .select("id, name, company, email, website, status")
           .single();
         if (error) return { error: error.message };
-        return { ok: true, client: data };
+        return { ok: true, already_existed: false, client: data };
       }
 
       case "find_client": {
@@ -1916,7 +2002,10 @@ export async function executeAssistantTool(
               category: category || "other",
               creationMode: "ai",
               aiBrief: notes.slice(0, 8000),
-              source: "whatsapp_assistant",
+              source:
+                ctx.channel === "in_app"
+                  ? "in_app_assistant"
+                  : "whatsapp_assistant",
             },
           });
 
