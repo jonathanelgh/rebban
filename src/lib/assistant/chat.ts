@@ -32,10 +32,35 @@ export function isAssistantAiConfigured() {
   return Boolean(process.env.OPENAI_API_KEY?.trim());
 }
 
+/** Short yes/send replies while a send_* pending action is waiting. */
+export function isPendingSendAffirmation(text: string): boolean {
+  const normalized = text
+    .trim()
+    .toLowerCase()
+    .replace(/[!?.]+$/g, "")
+    .replace(/\s+/g, " ");
+  if (!normalized || normalized.length > 48) return false;
+  return /^(yes|yep|yeah|yup|ok|okay|sure|send|send it|send now|go ahead|do it|please send|yes send( it)?( now)?|ja|japp|absolut|skicka|skicka den)$/i.test(
+    normalized
+  );
+}
+
+export function isPendingSendDecline(text: string): boolean {
+  const normalized = text
+    .trim()
+    .toLowerCase()
+    .replace(/[!?.]+$/g, "")
+    .replace(/\s+/g, " ");
+  if (!normalized || normalized.length > 48) return false;
+  return /^(no|nope|nah|cancel|don't|dont|do not|not now|stop|nej|avbryt)$/i.test(
+    normalized
+  );
+}
+
 const MAX_TOOL_ROUNDS = 5;
 
 const IN_APP_UI_HINT = `
-For in-app / native chat, the product renders interactive cards from your tools automatically (invoice cards, payment summaries). Keep the text reply short — do not paste long invoice tables. Prefer tools (create_invoice_draft, get_invoice, update_invoice_draft, list_unpaid_invoices, send_invoice) so cards stay in sync with the database.`;
+For in-app / native chat, the product renders interactive cards from your tools automatically (invoices, proposals, clients, leads, projects, tasks, payment summaries, unbilled hours). Keep the text reply short — do not paste long tables. Prefer tools so cards stay in sync with the database.`;
 
 export async function generateAssistantReply(options: {
   messages: AssistantChatMessage[];
@@ -71,8 +96,8 @@ export async function generateAssistantReply(options: {
   const pending = options.toolContext.pendingAction;
   const pendingHint = pending
     ? pending.type === "send_proposal"
-      ? `\nThere is a pending action: ${JSON.stringify(pending)}. If the user confirms (yes / send / go ahead), call send_proposal with confirmed=true. If they decline, call clear_pending_action.`
-      : `\nThere is a pending action: ${JSON.stringify(pending)}. If the user confirms (yes / send / go ahead), call send_invoice with confirmed=true. If they decline, call clear_pending_action.`
+      ? `\nThere is a pending action: ${JSON.stringify(pending)}. If the user confirms (yes / send / go ahead), call send_proposal with confirmed=true IMMEDIATELY — do not call get_proposal or ask again. If they decline, call clear_pending_action.`
+      : `\nThere is a pending action: ${JSON.stringify(pending)}. If the user confirms (yes / send / go ahead), call send_invoice with confirmed=true IMMEDIATELY — do not call get_invoice or ask again. If they decline, call clear_pending_action.`
     : "";
 
   const channel = options.toolContext.channel || "whatsapp";
@@ -94,6 +119,80 @@ ${lengthHint}`;
 
   const toolsUsed: string[] = [];
   const toolResults: ToolResultRecord[] = [];
+
+  // Deterministic confirm/decline for pending sends — models often re-ask instead.
+  const lastUser = [...history].reverse().find((m) => m.role === "user");
+  if (
+    pending &&
+    (pending.type === "send_invoice" || pending.type === "send_proposal") &&
+    lastUser
+  ) {
+    if (isPendingSendAffirmation(lastUser.content)) {
+      const toolName =
+        pending.type === "send_proposal" ? "send_proposal" : "send_invoice";
+      const args =
+        pending.type === "send_proposal"
+          ? { confirmed: true, proposal_id: pending.proposal_id }
+          : { confirmed: true, invoice_id: pending.invoice_id };
+      const callId = "pending_send_confirm";
+      console.info("[assistant] auto-confirm pending send", {
+        toolName,
+        userId: options.toolContext.userId,
+      });
+      const result = await executeAssistantTool(
+        options.toolContext,
+        toolName,
+        JSON.stringify(args)
+      );
+      toolsUsed.push(toolName);
+      toolResults.push({ name: toolName, result });
+      messages.push(
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            {
+              id: callId,
+              type: "function",
+              function: { name: toolName, arguments: JSON.stringify(args) },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          tool_call_id: callId,
+          content: JSON.stringify(result).slice(0, 12000),
+        }
+      );
+    } else if (isPendingSendDecline(lastUser.content)) {
+      const callId = "pending_send_decline";
+      const result = await executeAssistantTool(
+        options.toolContext,
+        "clear_pending_action",
+        "{}"
+      );
+      toolsUsed.push("clear_pending_action");
+      toolResults.push({ name: "clear_pending_action", result });
+      messages.push(
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            {
+              id: callId,
+              type: "function",
+              function: { name: "clear_pending_action", arguments: "{}" },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          tool_call_id: callId,
+          content: JSON.stringify(result).slice(0, 12000),
+        }
+      );
+    }
+  }
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
