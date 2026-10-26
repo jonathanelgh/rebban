@@ -13,12 +13,14 @@ import {
   trimInAppMessages,
   writePendingAction,
 } from "@/lib/assistant/in-app";
+import { messageMetadataToJson } from "@/lib/assistant/components";
 import type { AssistantPendingAction } from "@/lib/assistant/tools";
 import {
   appendTicketMessage,
   formatTicketRef,
   getTicketForUser,
 } from "@/lib/support/tickets";
+import type { Json } from "@/types/database";
 
 export const runtime = "nodejs";
 
@@ -194,11 +196,13 @@ export async function POST(request: Request) {
       },
     });
 
+    const components = result.components || [];
     const aiMessage = await appendInAppMessage({
       db: supabase,
       conversationId: conversation.id,
       role: "assistant",
       content: result.reply,
+      metadata: messageMetadataToJson(components) as unknown as Json,
     });
 
     await trimInAppMessages(supabase, conversation.id);
@@ -206,6 +210,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       reply: result.reply,
       toolsUsed: result.toolsUsed,
+      components,
       conversationId: conversation.id,
       messageId: aiMessage.id,
       escalated: false,

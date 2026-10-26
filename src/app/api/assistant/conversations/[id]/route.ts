@@ -4,6 +4,7 @@ import {
   getInAppConversationForUser,
   listInAppMessages,
 } from "@/lib/assistant/in-app";
+import { parseMessageComponents } from "@/lib/assistant/components";
 import { formatTicketRef, getTicketForUser } from "@/lib/support/tickets";
 
 export const runtime = "nodejs";
@@ -66,6 +67,7 @@ export async function GET(
         role: m.role,
         agent: m.role === "user" ? "user" : "ai",
         body: m.content,
+        components: parseMessageComponents(m.metadata),
         createdAt: m.created_at,
       })),
     });

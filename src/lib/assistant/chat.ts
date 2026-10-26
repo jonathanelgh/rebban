@@ -1,5 +1,10 @@
 import { ASSISTANT_SYSTEM_PROMPT } from "@/lib/assistant/prompts";
 import {
+  deriveComponentsFromToolResults,
+  type AssistantChatComponent,
+  type ToolResultRecord,
+} from "@/lib/assistant/components";
+import {
   ASSISTANT_TOOL_DEFINITIONS,
   executeAssistantTool,
   type AssistantToolContext,
@@ -29,11 +34,18 @@ export function isAssistantAiConfigured() {
 
 const MAX_TOOL_ROUNDS = 5;
 
+const IN_APP_UI_HINT = `
+For in-app / native chat, the product renders interactive cards from your tools automatically (invoice cards, payment summaries). Keep the text reply short — do not paste long invoice tables. Prefer tools (create_invoice_draft, get_invoice, update_invoice_draft, list_unpaid_invoices, send_invoice) so cards stay in sync with the database.`;
+
 export async function generateAssistantReply(options: {
   messages: AssistantChatMessage[];
   userName?: string | null;
   toolContext: AssistantToolContext;
-}): Promise<{ reply: string; toolsUsed: string[] }> {
+}): Promise<{
+  reply: string;
+  toolsUsed: string[];
+  components: AssistantChatComponent[];
+}> {
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY is not configured.");
@@ -67,7 +79,7 @@ export async function generateAssistantReply(options: {
   const lengthHint =
     channel === "whatsapp"
       ? "Keep replies short enough for WhatsApp (usually under 500 characters unless listing several invoices)."
-      : "Keep replies concise for the in-app chat panel. Light Markdown is fine.";
+      : `Keep replies concise for the in-app chat panel. Light Markdown is fine.${IN_APP_UI_HINT}`;
 
   const system = `${ASSISTANT_SYSTEM_PROMPT}
 
@@ -81,6 +93,7 @@ ${lengthHint}`;
   ];
 
   const toolsUsed: string[] = [];
+  const toolResults: ToolResultRecord[] = [];
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -132,7 +145,11 @@ ${lengthHint}`;
     if (!toolCalls.length) {
       const content = message.content?.trim();
       if (!content) throw new Error("Empty assistant reply.");
-      return { reply: content, toolsUsed };
+      const components =
+        channel === "in_app"
+          ? deriveComponentsFromToolResults(toolResults)
+          : [];
+      return { reply: content, toolsUsed, components };
     }
 
     messages.push({
@@ -153,6 +170,7 @@ ${lengthHint}`;
         name,
         call.function?.arguments || "{}"
       );
+      toolResults.push({ name, result });
       messages.push({
         role: "tool",
         tool_call_id: call.id,

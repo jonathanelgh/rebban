@@ -55,6 +55,44 @@ function canHover() {
   );
 }
 
+/**
+ * Hover open/close for portaled flyouts. Closing is delayed so the pointer can
+ * cross the gap between the trigger and the panel without the menu vanishing.
+ */
+function useHoverMenuBridge(onOpenChange: (open: boolean) => void) {
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (closeTimer.current) clearTimeout(closeTimer.current);
+    };
+  }, []);
+
+  function cancelClose() {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  }
+
+  function openFromHover() {
+    if (!canHover()) return;
+    cancelClose();
+    onOpenChange(true);
+  }
+
+  function closeFromHover() {
+    if (!canHover()) return;
+    cancelClose();
+    closeTimer.current = setTimeout(() => {
+      closeTimer.current = null;
+      onOpenChange(false);
+    }, 180);
+  }
+
+  return { openFromHover, closeFromHover };
+}
+
 /** Fixed panel beside a sidebar trigger so overflow scroll never clips menus. */
 function useFlyoutStyle(
   open: boolean,
@@ -72,7 +110,9 @@ function useFlyoutStyle(
       const r = el.getBoundingClientRect();
       const next: CSSProperties = {
         position: "fixed",
-        left: Math.min(r.right + 12, window.innerWidth - 12),
+        // Keep a small visual gap, but short enough that the delayed close
+        // covers moving from the trigger into the portaled panel.
+        left: Math.min(r.right + 8, window.innerWidth - 12),
         zIndex: 200,
       };
       if (align === "top") {
@@ -440,6 +480,7 @@ function ProfileMenu({
   const rootRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const flyoutStyle = useFlyoutStyle(open, rootRef, "top");
+  const { openFromHover, closeFromHover } = useHoverMenuBridge(onOpenChange);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -473,12 +514,8 @@ function ProfileMenu({
       ref={panelRef}
       style={flyoutStyle}
       className="w-[min(320px,calc(100vw-84px))] max-h-[min(480px,calc(100vh-16px))] overflow-y-auto bg-white rounded-2xl shadow-[0_4px_24px_rgba(0,0,0,0.12)] border border-gray-200 py-3 flex flex-col cursor-default"
-      onMouseEnter={() => {
-        if (canHover()) onOpenChange(true);
-      }}
-      onMouseLeave={() => {
-        if (canHover()) onOpenChange(false);
-      }}
+      onMouseEnter={openFromHover}
+      onMouseLeave={closeFromHover}
     >
       <div className="px-4 pb-3 flex items-center gap-3">
         <div className="w-10 h-10 rounded-full bg-[#f0f3f5] flex items-center justify-center shrink-0">
@@ -561,12 +598,8 @@ function ProfileMenu({
     <div
       ref={rootRef}
       className="relative flex items-center shrink-0"
-      onMouseEnter={() => {
-        if (canHover()) onOpenChange(true);
-      }}
-      onMouseLeave={() => {
-        if (canHover()) onOpenChange(false);
-      }}
+      onMouseEnter={openFromHover}
+      onMouseLeave={closeFromHover}
     >
       <button
         type="button"
@@ -603,6 +636,7 @@ function AlertsMenu({
   const rootRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const flyoutStyle = useFlyoutStyle(open, rootRef, "bottom");
+  const { openFromHover, closeFromHover } = useHoverMenuBridge(onOpenChange);
   const [mounted, setMounted] = useState(false);
   const [alerts, setAlerts] = useState<NotificationRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -710,14 +744,10 @@ function AlertsMenu({
       style={flyoutStyle}
       className="w-[min(340px,calc(100vw-84px))] bg-white rounded-2xl shadow-[0_4px_24px_rgba(0,0,0,0.12)] border border-gray-200 py-3 flex flex-col cursor-default"
       onMouseEnter={() => {
-        if (canHover()) {
-          tryOpenAlerts(true);
-          void loadAlerts();
-        }
+        openFromHover();
+        if (canHover()) void loadAlerts();
       }}
-      onMouseLeave={() => {
-        if (canHover()) onOpenChange(false);
-      }}
+      onMouseLeave={closeFromHover}
     >
       <div className="px-4 pb-3 flex items-center justify-between gap-3">
         <div>
@@ -816,14 +846,16 @@ function AlertsMenu({
       ref={rootRef}
       className="relative flex flex-col items-center"
       onMouseEnter={() => {
-        if (canHover()) {
-          tryOpenAlerts(true);
-          void loadAlerts();
+        if (!canHover()) return;
+        if (!billingLoading && !entitled) {
+          openUpgradeModal();
+          onNavigate?.();
+          return;
         }
+        openFromHover();
+        void loadAlerts();
       }}
-      onMouseLeave={() => {
-        if (canHover()) onOpenChange(false);
-      }}
+      onMouseLeave={closeFromHover}
     >
       <button
         type="button"

@@ -116,7 +116,7 @@ export async function getOrCreateInAppConversation(options: {
 export async function listInAppMessages(db: Db, conversationId: string) {
   const { data, error } = await db
     .from("assistant_messages")
-    .select("id, role, content, created_at")
+    .select("id, role, content, metadata, created_at")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: true });
   if (error) throw new Error(error.message);
@@ -128,6 +128,7 @@ export async function appendInAppMessage(options: {
   conversationId: string;
   role: "user" | "assistant";
   content: string;
+  metadata?: Json | null;
 }) {
   const content = options.content.trim().slice(0, 8000);
   if (!content) throw new Error("Message is required.");
@@ -138,8 +139,9 @@ export async function appendInAppMessage(options: {
       conversation_id: options.conversationId,
       role: options.role,
       content,
+      metadata: (options.metadata || {}) as Json,
     })
-    .select("id, role, content, created_at")
+    .select("id, role, content, metadata, created_at")
     .single();
   if (error || !data) {
     throw new Error(error?.message || "Could not save message.");

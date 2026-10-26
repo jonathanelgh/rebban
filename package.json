@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:outreach": "node --experimental-strip-types --test --test-reporter=spec src/lib/outreach/*.node-test.ts"
+    "test:outreach": "node --experimental-strip-types --test --test-reporter=spec src/lib/outreach/*.node-test.ts",
+    "test:assistant": "node --experimental-strip-types --test --test-reporter=spec src/lib/assistant/*.node-test.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

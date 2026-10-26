@@ -14,6 +14,8 @@ import {
   UserRound,
   X,
 } from "lucide-react";
+import type { AssistantChatComponent } from "@/lib/assistant/components";
+import { ChatComponentRenderer } from "@/components/assistant/ChatComponentRenderer";
 
 type Agent = "ai" | "human" | "user" | "system";
 
@@ -22,6 +24,7 @@ type ChatMessage = {
   role: "user" | "assistant" | "system";
   agent: Agent;
   content: string;
+  components?: AssistantChatComponent[];
 };
 
 type TicketMeta = {
@@ -161,7 +164,12 @@ export function SupportChat() {
     setConversationId(json.conversation?.id || id);
     setTicket(json.ticket || null);
     const mapped: ChatMessage[] = (json.messages || []).map(
-      (m: { id: string; agent: Agent; body: string }) => ({
+      (m: {
+        id: string;
+        agent: Agent;
+        body: string;
+        components?: AssistantChatComponent[];
+      }) => ({
         id: m.id,
         agent: m.agent,
         role:
@@ -171,6 +179,7 @@ export function SupportChat() {
               ? "system"
               : "assistant",
         content: m.body,
+        components: m.components || [],
       })
     );
     setMessages(mapped.length ? mapped : [WELCOME]);
@@ -277,6 +286,7 @@ export function SupportChat() {
           role: "assistant",
           agent: "ai",
           content: String(json.reply || "").trim() || "Sorry, empty reply.",
+          components: Array.isArray(json.components) ? json.components : [],
         },
       ]);
     } catch (err) {
@@ -451,41 +461,50 @@ export function SupportChat() {
                       m.role === "user" ? "justify-end" : "justify-start"
                     }`}
                   >
-                    <div
-                      className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-[13px] leading-relaxed ${
-                        m.role === "user"
-                          ? "bg-gray-900 text-white whitespace-pre-wrap"
-                          : m.agent === "system"
-                            ? "border border-dashed border-line bg-white text-gray-500"
-                            : "bg-[#F3F4F6] text-gray-800"
-                      }`}
-                    >
-                      {m.role !== "user" && (
-                        <div className="mb-1 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-                          {m.agent === "human" ? (
-                            <>
-                              <UserRound className="h-3 w-3" /> Human
-                            </>
-                          ) : m.agent === "system" ? (
-                            "System"
+                    <div className="max-w-[85%]">
+                      <div
+                        className={`rounded-2xl px-3.5 py-2.5 text-[13px] leading-relaxed ${
+                          m.role === "user"
+                            ? "bg-gray-900 text-white whitespace-pre-wrap"
+                            : m.agent === "system"
+                              ? "border border-dashed border-line bg-white text-gray-500"
+                              : "bg-[#F3F4F6] text-gray-800"
+                        }`}
+                      >
+                        {m.role !== "user" && (
+                          <div className="mb-1 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                            {m.agent === "human" ? (
+                              <>
+                                <UserRound className="h-3 w-3" /> Human
+                              </>
+                            ) : m.agent === "system" ? (
+                              "System"
+                            ) : (
+                              <>
+                                <Bot className="h-3 w-3" /> AI
+                              </>
+                            )}
+                          </div>
+                        )}
+                        {m.role === "assistant" || m.agent === "system" ? (
+                          m.agent === "system" ? (
+                            m.content
                           ) : (
-                            <>
-                              <Bot className="h-3 w-3" /> AI
-                            </>
-                          )}
-                        </div>
-                      )}
-                      {m.role === "assistant" || m.agent === "system" ? (
-                        m.agent === "system" ? (
-                          m.content
+                            <ReactMarkdown components={markdownComponents}>
+                              {m.content}
+                            </ReactMarkdown>
+                          )
                         ) : (
-                          <ReactMarkdown components={markdownComponents}>
-                            {m.content}
-                          </ReactMarkdown>
-                        )
-                      ) : (
-                        m.content
-                      )}
+                          m.content
+                        )}
+                      </div>
+                      {m.role === "assistant" && m.components?.length ? (
+                        <ChatComponentRenderer
+                          components={m.components}
+                          conversationId={conversationId}
+                          onError={setError}
+                        />
+                      ) : null}
                     </div>
                   </div>
                 ))}

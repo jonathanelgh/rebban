@@ -474,6 +474,58 @@ export const ASSISTANT_TOOL_DEFINITIONS = [
   {
     type: "function" as const,
     function: {
+      name: "get_invoice",
+      description:
+        "Fetch one invoice by id (preferred) or the pending draft from this conversation. Use before editing amounts/dates or when the user refers to 'the invoice we just created'.",
+      parameters: {
+        type: "object",
+        properties: {
+          invoice_id: {
+            type: "string",
+            description: "Invoice id; omit to use pending send_invoice draft",
+          },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "update_invoice_draft",
+      description:
+        "Update a draft invoice amount, description, due date, or due_in_days. Only works on draft invoices. Prefer the pending invoice id when the user says 'make it €1800' / 'due in 7 days' after creating a draft.",
+      parameters: {
+        type: "object",
+        properties: {
+          invoice_id: {
+            type: "string",
+            description: "Invoice id; omit to use pending draft",
+          },
+          amount: {
+            type: "number",
+            description: "New total / line amount",
+          },
+          description: {
+            type: "string",
+            description: "New primary line item description",
+          },
+          due_date: {
+            type: "string",
+            description: "Absolute due date YYYY-MM-DD",
+          },
+          due_in_days: {
+            type: "number",
+            description: "Set due date to N days from today",
+          },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
       name: "send_invoice",
       description:
         "Send a draft invoice by email. ONLY call after the user explicitly confirmed sending (yes / send it). Prefer the pending invoice from create_invoice_draft / create_invoice_from_unbilled, or a draft id from list_draft_invoices.",
@@ -696,6 +748,196 @@ async function loadClientMap(
     map.set(c.id, { name: c.name, company: c.company });
   }
   return map;
+}
+
+async function loadInvoiceSummary(
+  db: Db,
+  organizationId: string,
+  invoiceId: string
+) {
+  const { data: invoice, error } = await db
+    .from("invoices")
+    .select(
+      "id, number, status, currency, total, due_date, issue_date, client_id"
+    )
+    .eq("id", invoiceId)
+    .eq("organization_id", organizationId)
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (error || !invoice) {
+    return { error: error?.message || "Invoice not found." };
+  }
+
+  let clientLabel = "Unknown";
+  if (invoice.client_id) {
+    const { data: client } = await db
+      .from("clients")
+      .select("name, company")
+      .eq("id", invoice.client_id)
+      .eq("organization_id", organizationId)
+      .maybeSingle();
+    clientLabel = client?.company || client?.name || clientLabel;
+  }
+
+  const { data: lines } = await db
+    .from("invoice_line_items")
+    .select("description, amount, position")
+    .eq("invoice_id", invoice.id)
+    .eq("organization_id", organizationId)
+    .order("position", { ascending: true })
+    .limit(5);
+
+  const description =
+    lines?.[0]?.description ||
+    (lines?.length ? `${lines.length} line items` : null);
+
+  const currency = invoice.currency || "EUR";
+  return {
+    ok: true,
+    invoice: {
+      id: invoice.id,
+      number: invoice.number,
+      status: invoice.status,
+      client: clientLabel,
+      amount: formatInvoiceMoney(Number(invoice.total) || 0, currency),
+      amount_raw: Number(invoice.total) || 0,
+      currency,
+      due_date: invoice.due_date,
+      issue_date: invoice.issue_date,
+      description,
+    },
+  };
+}
+
+async function updateDraftInvoice(
+  db: Db,
+  organizationId: string,
+  invoiceId: string,
+  patch: {
+    amount?: number;
+    description?: string;
+    dueDate?: string;
+    dueInDays?: number;
+  }
+) {
+  const { data: invoice, error } = await db
+    .from("invoices")
+    .select(
+      "id, status, currency, client_id, tax_enabled, tax_rate, prices_include_tax, issue_date"
+    )
+    .eq("id", invoiceId)
+    .eq("organization_id", organizationId)
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (error || !invoice) {
+    return { error: error?.message || "Invoice not found." };
+  }
+  if (invoice.status !== "draft") {
+    return {
+      error: `Only draft invoices can be updated this way (status is ${invoice.status}).`,
+    };
+  }
+
+  const updates: Database["public"]["Tables"]["invoices"]["Update"] = {};
+
+  if (typeof patch.dueInDays === "number" && Number.isFinite(patch.dueInDays)) {
+    updates.due_date = addDaysISO(
+      todayISO(),
+      Math.max(0, Math.round(patch.dueInDays))
+    );
+  } else if (typeof patch.dueDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(patch.dueDate)) {
+    updates.due_date = patch.dueDate;
+  }
+
+  if (typeof patch.amount === "number" && Number.isFinite(patch.amount)) {
+    if (patch.amount <= 0) {
+      return { error: "A positive amount is required." };
+    }
+    const taxEnabled = Boolean(invoice.tax_enabled);
+    const taxRate = taxEnabled ? Number(invoice.tax_rate) || 0 : 0;
+    const pricesIncludeTax = taxEnabled
+      ? Boolean(invoice.prices_include_tax)
+      : false;
+    const qty = 1;
+    const unitPrice = patch.amount;
+    const lineAmt = lineAmount(qty, unitPrice);
+    const totals = computeInvoiceTotals([{ quantity: qty, unitPrice }], {
+      taxEnabled,
+      taxRate,
+      pricesIncludeTax,
+    });
+
+    const { data: existingLines } = await db
+      .from("invoice_line_items")
+      .select("id")
+      .eq("invoice_id", invoice.id)
+      .eq("organization_id", organizationId)
+      .order("position", { ascending: true })
+      .limit(1);
+
+    if (existingLines?.[0]?.id) {
+      const lineUpdate: Database["public"]["Tables"]["invoice_line_items"]["Update"] =
+        {
+          quantity: qty,
+          unit_price: unitPrice,
+          amount: lineAmt,
+        };
+      if (typeof patch.description === "string" && patch.description.trim()) {
+        lineUpdate.description = patch.description.trim();
+      }
+      const { error: lineError } = await db
+        .from("invoice_line_items")
+        .update(lineUpdate)
+        .eq("id", existingLines[0].id)
+        .eq("organization_id", organizationId);
+      if (lineError) return { error: lineError.message };
+    } else {
+      const { error: lineError } = await db.from("invoice_line_items").insert({
+        invoice_id: invoice.id,
+        organization_id: organizationId,
+        description: patch.description?.trim() || "Services",
+        quantity: qty,
+        unit: "flat",
+        unit_price: unitPrice,
+        amount: lineAmt,
+        position: 0,
+      });
+      if (lineError) return { error: lineError.message };
+    }
+
+    updates.subtotal = totals.subtotal;
+    updates.tax_total = totals.taxTotal;
+    updates.total = totals.total;
+  } else if (typeof patch.description === "string" && patch.description.trim()) {
+    const { data: existingLines } = await db
+      .from("invoice_line_items")
+      .select("id")
+      .eq("invoice_id", invoice.id)
+      .eq("organization_id", organizationId)
+      .order("position", { ascending: true })
+      .limit(1);
+    if (existingLines?.[0]?.id) {
+      const { error: lineError } = await db
+        .from("invoice_line_items")
+        .update({ description: patch.description.trim() })
+        .eq("id", existingLines[0].id)
+        .eq("organization_id", organizationId);
+      if (lineError) return { error: lineError.message };
+    }
+  }
+
+  if (Object.keys(updates).length) {
+    const { error: updateError } = await db
+      .from("invoices")
+      .update(updates)
+      .eq("id", invoice.id)
+      .eq("organization_id", organizationId);
+    if (updateError) return { error: updateError.message };
+  }
+
+  return loadInvoiceSummary(db, organizationId, invoiceId);
 }
 
 async function searchProjects(
@@ -2141,6 +2383,59 @@ export async function executeAssistantTool(
         };
       }
 
+      case "get_invoice": {
+        const pendingId =
+          ctx.pendingAction?.type === "send_invoice"
+            ? ctx.pendingAction.invoice_id
+            : null;
+        const invoiceId =
+          (args.invoice_id ? String(args.invoice_id) : null) || pendingId;
+        if (!invoiceId) {
+          return {
+            error:
+              "No invoice id. Pass invoice_id or create/select a draft first.",
+          };
+        }
+        return loadInvoiceSummary(db, organizationId, invoiceId);
+      }
+
+      case "update_invoice_draft": {
+        const pendingId =
+          ctx.pendingAction?.type === "send_invoice"
+            ? ctx.pendingAction.invoice_id
+            : null;
+        const invoiceId =
+          (args.invoice_id ? String(args.invoice_id) : null) || pendingId;
+        if (!invoiceId) {
+          return {
+            error:
+              "No invoice to update. Pass invoice_id or use the pending draft.",
+          };
+        }
+
+        const updated = await updateDraftInvoice(db, organizationId, invoiceId, {
+          amount:
+            args.amount !== undefined ? Number(args.amount) : undefined,
+          description:
+            typeof args.description === "string"
+              ? args.description
+              : undefined,
+          dueDate:
+            typeof args.due_date === "string" ? args.due_date : undefined,
+          dueInDays:
+            args.due_in_days !== undefined
+              ? Number(args.due_in_days)
+              : undefined,
+        });
+        if ("error" in updated) return updated;
+
+        await ctx.setPendingAction({
+          type: "send_invoice",
+          invoice_id: invoiceId,
+        });
+        return { ok: true, invoice: updated.invoice, ask_to_send: true };
+      }
+
       case "send_invoice": {
         if (args.confirmed !== true) {
           return {
@@ -2176,6 +2471,7 @@ export async function executeAssistantTool(
         return {
           ok: true,
           sent: true,
+          invoice_id: invoiceId,
           number: result.number,
           recipient_email: result.recipientEmail,
           url: result.url,
