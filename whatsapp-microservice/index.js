@@ -101,6 +101,7 @@ async function forwardInbound(payload) {
       method: "POST",
       headers,
       body,
+      signal: AbortSignal.timeout(55000),
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
@@ -108,6 +109,8 @@ async function forwardInbound(payload) {
         `Webhook failed (${res.status}):`,
         text.slice(0, 500)
       );
+    } else {
+      console.log(`Webhook ok for chatId=${payload.chatId || "?"}`);
     }
   } catch (error) {
     console.error("Failed to forward inbound WhatsApp message:", error);
@@ -183,6 +186,19 @@ app.get("/health", (_req, res) => {
   });
 });
 
+function withTimeout(promise, ms, label) {
+  let timer;
+  return Promise.race([
+    promise.finally(() => clearTimeout(timer)),
+    new Promise((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`${label || "operation"} timed out after ${ms}ms`)),
+        ms
+      );
+    }),
+  ]);
+}
+
 app.post("/send", authenticate, async (req, res) => {
   try {
     if (!clientReady) {
@@ -193,7 +209,11 @@ app.post("/send", authenticate, async (req, res) => {
     }
 
     const { to, message, mediaUrl, chatId } = req.body;
-    const target = resolveChatId(chatId || to);
+    // Prefer phone digits (@c.us) when provided — @lid sendMessage often hangs.
+    const toDigits = digitsOnly(to);
+    const target = toDigits
+      ? `${toDigits}@c.us`
+      : resolveChatId(chatId || to);
 
     if (!target || (!message && !mediaUrl)) {
       return res.status(400).json({
@@ -202,14 +222,24 @@ app.post("/send", authenticate, async (req, res) => {
       });
     }
 
+    const SEND_TIMEOUT_MS = 18000;
+
     if (message) {
-      await client.sendMessage(target, message);
+      await withTimeout(
+        client.sendMessage(target, message),
+        SEND_TIMEOUT_MS,
+        `sendMessage(${target})`
+      );
       console.log(`Message sent to ${target}`);
     }
 
     if (mediaUrl) {
       const media = await MessageMedia.fromUrl(mediaUrl, { unsafeMime: true });
-      await client.sendMessage(target, media);
+      await withTimeout(
+        client.sendMessage(target, media),
+        SEND_TIMEOUT_MS,
+        `sendMedia(${target})`
+      );
       console.log(`Media sent to ${target}: ${mediaUrl}`);
     }
 

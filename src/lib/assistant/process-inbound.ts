@@ -170,22 +170,27 @@ export async function processWhatsAppInbound(
     return { reply: null, skipped: true };
   }
 
-  const replyTarget = {
-    chatId: chatId || null,
-    phone: phone || null,
-  };
-
   const verifyReply = await tryVerifyCode({
     phone: phone || null,
     chatId,
     body,
   });
   if (verifyReply) {
-    await replyToSender({ ...replyTarget, message: verifyReply });
+    // Prefer E.164 for outbound — @lid chat ids often hang in whatsapp-web.js.
+    await replyToSender({
+      chatId: chatId || null,
+      phone: phone || null,
+      message: verifyReply,
+    });
     return { reply: verifyReply };
   }
 
   const link = await resolveLink({ phone: phone || null, chatId });
+
+  const replyTarget = {
+    chatId: chatId || link?.wa_chat_id || null,
+    phone: phone || link?.phone_e164 || null,
+  };
 
   if (!link || !link.verified_at) {
     const appUrl = getAppUrl();

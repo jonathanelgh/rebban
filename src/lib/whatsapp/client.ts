@@ -72,6 +72,22 @@ export async function sendWhatsAppMessage(options: {
     return { ok: false, error: "Missing message." };
   }
 
+  // Prefer E.164 digits over @lid chat ids — whatsapp-web.js often hangs
+  // indefinitely on sendMessage to Linked Device (@lid) targets.
+  const preferPhone = Boolean(toDigits);
+  const payload = preferPhone
+    ? {
+        to: toDigits,
+        message: message || undefined,
+        mediaUrl: options.mediaUrl || undefined,
+      }
+    : {
+        chatId: chatId || undefined,
+        to: toDigits || undefined,
+        message: message || undefined,
+        mediaUrl: options.mediaUrl || undefined,
+      };
+
   try {
     const res = await fetch(`${apiUrl.replace(/\/$/, "")}/send`, {
       method: "POST",
@@ -79,12 +95,8 @@ export async function sendWhatsAppMessage(options: {
         "Content-Type": "application/json",
         "x-api-key": apiKey,
       },
-      body: JSON.stringify({
-        to: toDigits || undefined,
-        chatId: chatId || undefined,
-        message: message || undefined,
-        mediaUrl: options.mediaUrl || undefined,
-      }),
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(20_000),
     });
 
     const json = (await res.json().catch(() => ({}))) as {
