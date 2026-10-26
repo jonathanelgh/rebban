@@ -75,6 +75,16 @@ function digitsOnly(value) {
   return String(value || "").replace(/[^0-9]/g, "");
 }
 
+function isLidChat(chatId) {
+  return String(chatId || "").endsWith("@lid");
+}
+
+/** contact.number often returns the LID user id — that is not a phone. */
+function isLidDigitsPosingAsPhone(chatId, number) {
+  if (!isLidChat(chatId) || !number) return false;
+  return digitsOnly(number) === digitsOnly(chatId);
+}
+
 function signPayload(body) {
   if (!REBBAN_WEBHOOK_SECRET) return "";
   return crypto
@@ -121,7 +131,9 @@ async function resolveSenderPhone(message, chatId) {
   try {
     const contact = await message.getContact();
     const number = digitsOnly(contact?.number || "");
-    if (number) return number;
+    if (number && !isLidDigitsPosingAsPhone(chatId, number)) {
+      return number;
+    }
   } catch (error) {
     console.warn("getContact failed:", error?.message || error);
   }
@@ -199,6 +211,43 @@ function withTimeout(promise, ms, label) {
   ]);
 }
 
+async function deliverToChat(target, content) {
+  if (isLidChat(target)) {
+    const chat = await client.getChatById(target);
+    if (!chat) {
+      throw new Error(`Chat not found for ${target}`);
+    }
+    return chat.sendMessage(content);
+  }
+  return client.sendMessage(target, content);
+}
+
+/** Build ordered send targets. Never treat @lid digits as @c.us. */
+function buildSendTargets({ to, chatId }) {
+  const toDigits = digitsOnly(to);
+  const resolvedChat = resolveChatId(chatId);
+  const lidAlias =
+    resolvedChat &&
+    isLidChat(resolvedChat) &&
+    toDigits &&
+    toDigits === digitsOnly(resolvedChat);
+
+  const phoneTarget =
+    toDigits && !lidAlias ? `${toDigits}@c.us` : null;
+
+  const targets = [];
+  if (resolvedChat && isLidChat(resolvedChat)) {
+    targets.push(resolvedChat);
+    if (phoneTarget) targets.push(phoneTarget);
+  } else if (phoneTarget) {
+    targets.push(phoneTarget);
+    if (resolvedChat) targets.push(resolvedChat);
+  } else if (resolvedChat) {
+    targets.push(resolvedChat);
+  }
+  return [...new Set(targets.filter(Boolean))];
+}
+
 app.post("/send", authenticate, async (req, res) => {
   try {
     if (!clientReady) {
@@ -209,13 +258,9 @@ app.post("/send", authenticate, async (req, res) => {
     }
 
     const { to, message, mediaUrl, chatId } = req.body;
-    // Prefer phone digits (@c.us) when provided — @lid sendMessage often hangs.
-    const toDigits = digitsOnly(to);
-    const target = toDigits
-      ? `${toDigits}@c.us`
-      : resolveChatId(chatId || to);
+    const targets = buildSendTargets({ to, chatId });
 
-    if (!target || (!message && !mediaUrl)) {
+    if (!targets.length || (!message && !mediaUrl)) {
       return res.status(400).json({
         success: false,
         error: 'Missing "to"/"chatId", and need "message" and/or "mediaUrl"',
@@ -223,27 +268,45 @@ app.post("/send", authenticate, async (req, res) => {
     }
 
     const SEND_TIMEOUT_MS = 18000;
+    let lastError = null;
+    let sentVia = null;
 
-    if (message) {
-      await withTimeout(
-        client.sendMessage(target, message),
-        SEND_TIMEOUT_MS,
-        `sendMessage(${target})`
-      );
-      console.log(`Message sent to ${target}`);
+    for (const target of targets) {
+      try {
+        if (message) {
+          await withTimeout(
+            deliverToChat(target, message),
+            SEND_TIMEOUT_MS,
+            `sendMessage(${target})`
+          );
+        }
+        if (mediaUrl) {
+          const media = await MessageMedia.fromUrl(mediaUrl, {
+            unsafeMime: true,
+          });
+          await withTimeout(
+            deliverToChat(target, media),
+            SEND_TIMEOUT_MS,
+            `sendMedia(${target})`
+          );
+        }
+        sentVia = target;
+        break;
+      } catch (error) {
+        lastError = error;
+        console.warn(
+          `Send via ${target} failed:`,
+          error?.message || error
+        );
+      }
     }
 
-    if (mediaUrl) {
-      const media = await MessageMedia.fromUrl(mediaUrl, { unsafeMime: true });
-      await withTimeout(
-        client.sendMessage(target, media),
-        SEND_TIMEOUT_MS,
-        `sendMedia(${target})`
-      );
-      console.log(`Media sent to ${target}: ${mediaUrl}`);
+    if (!sentVia) {
+      throw lastError || new Error("All send targets failed");
     }
 
-    res.json({ success: true });
+    console.log(`Message sent via ${sentVia}`);
+    res.json({ success: true, via: sentVia });
   } catch (error) {
     console.error("Failed to send WhatsApp message:", error);
     res.status(500).json({ success: false, error: error.message });

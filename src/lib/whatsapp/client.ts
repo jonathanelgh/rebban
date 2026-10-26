@@ -62,7 +62,14 @@ export async function sendWhatsAppMessage(options: {
   }
 
   const chatId = options.chatId?.trim() || "";
-  const toDigits = String(options.to || "").replace(/[^0-9]/g, "");
+  const rawDigits = String(options.to || "").replace(/[^0-9]/g, "");
+  // Never treat @lid user ids as phone numbers (causes "No LID for user").
+  const lidDigits = chatId.endsWith("@lid")
+    ? chatId.replace(/[^0-9]/g, "")
+    : "";
+  const toDigits =
+    lidDigits && rawDigits === lidDigits ? "" : rawDigits;
+
   if (!chatId && !toDigits) {
     return { ok: false, error: "Missing recipient phone number or chat id." };
   }
@@ -72,21 +79,14 @@ export async function sendWhatsAppMessage(options: {
     return { ok: false, error: "Missing message." };
   }
 
-  // Prefer E.164 digits over @lid chat ids — whatsapp-web.js often hangs
-  // indefinitely on sendMessage to Linked Device (@lid) targets.
-  const preferPhone = Boolean(toDigits);
-  const payload = preferPhone
-    ? {
-        to: toDigits,
-        message: message || undefined,
-        mediaUrl: options.mediaUrl || undefined,
-      }
-    : {
-        chatId: chatId || undefined,
-        to: toDigits || undefined,
-        message: message || undefined,
-        mediaUrl: options.mediaUrl || undefined,
-      };
+  // For @lid chats, always pass chatId (microservice sends via getChatById).
+  // Real E.164 is included as a fallback target when available.
+  const payload = {
+    chatId: chatId || undefined,
+    to: toDigits || undefined,
+    message: message || undefined,
+    mediaUrl: options.mediaUrl || undefined,
+  };
 
   try {
     const res = await fetch(`${apiUrl.replace(/\/$/, "")}/send`, {

@@ -11,7 +11,10 @@ import {
 } from "@/lib/assistant/tools";
 import { getAppUrl } from "@/lib/email/resend";
 import { sendWhatsAppMessage } from "@/lib/whatsapp/client";
-import { normalizeWhatsAppPhone } from "@/lib/whatsapp/phone";
+import {
+  isLidDigitsAsPhone,
+  normalizeWhatsAppPhone,
+} from "@/lib/whatsapp/phone";
 
 export type InboundWhatsAppPayload = {
   from: string;
@@ -162,9 +165,11 @@ export async function processWhatsAppInbound(
   payload: InboundWhatsAppPayload
 ): Promise<{ reply: string | null; skipped?: boolean }> {
   const chatId = (payload.chatId || "").trim();
-  const phone = normalizeWhatsAppPhone(
+  const rawPhone = normalizeWhatsAppPhone(
     payload.phone || payload.from || ""
   );
+  // getContact() often returns the LID user id as "number" — ignore that.
+  const phone = isLidDigitsAsPhone(chatId, rawPhone) ? "" : rawPhone;
   const body = (payload.body || "").trim();
   if (!body || (!phone && !chatId)) {
     return { reply: null, skipped: true };
@@ -176,7 +181,6 @@ export async function processWhatsAppInbound(
     body,
   });
   if (verifyReply) {
-    // Prefer E.164 for outbound — @lid chat ids often hang in whatsapp-web.js.
     await replyToSender({
       chatId: chatId || null,
       phone: phone || null,
@@ -189,7 +193,8 @@ export async function processWhatsAppInbound(
 
   const replyTarget = {
     chatId: chatId || link?.wa_chat_id || null,
-    phone: phone || link?.phone_e164 || null,
+    // Prefer the verified linked number; never the LID id-as-phone.
+    phone: link?.phone_e164 || phone || null,
   };
 
   if (!link || !link.verified_at) {
