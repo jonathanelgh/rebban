@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import {
   isPendingSendAffirmation,
   isPendingSendDecline,
-} from "./chat.ts";
+} from "./pending-confirm.ts";
 
 describe("isPendingSendAffirmation", () => {
   it("accepts short yes/send replies", () => {
