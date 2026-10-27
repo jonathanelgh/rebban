@@ -17,13 +17,6 @@ export type InAppConversation = {
   created_at: string;
 };
 
-function titleFromMessage(body: string) {
-  const cleaned = body.replace(/\s+/g, " ").trim();
-  if (!cleaned) return "New chat";
-  if (cleaned.length <= 72) return cleaned;
-  return `${cleaned.slice(0, 71)}…`;
-}
-
 export async function getInAppConversationForUser(
   db: Db,
   conversationId: string,
@@ -40,6 +33,22 @@ export async function getInAppConversationForUser(
     .maybeSingle();
   if (error) throw new Error(error.message);
   return data;
+}
+
+/** One continuous in-app thread per user (most recently updated). */
+export async function getPrimaryInAppConversation(db: Db, userId: string) {
+  const { data, error } = await db
+    .from("assistant_conversations")
+    .select(
+      "id, title, pending_action, support_ticket_id, updated_at, created_at"
+    )
+    .eq("user_id", userId)
+    .eq("channel", "in_app")
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data || null) as InAppConversation | null;
 }
 
 export async function listInAppConversations(
@@ -75,7 +84,7 @@ export async function createInAppConversation(options: {
       link_id: null,
       wa_chat_id: null,
       pending_action: null,
-      title: options.title || "New chat",
+      title: options.title || "Rebban",
     })
     .select(
       "id, title, pending_action, support_ticket_id, updated_at, created_at"
@@ -87,6 +96,10 @@ export async function createInAppConversation(options: {
   return data as InAppConversation;
 }
 
+/**
+ * Always reuse the user's single primary in-app thread.
+ * Older multi-thread rows stay in DB; new messages go to the latest one.
+ */
 export async function getOrCreateInAppConversation(options: {
   db: Db;
   userId: string;
@@ -94,22 +107,17 @@ export async function getOrCreateInAppConversation(options: {
   conversationId?: string | null;
   firstMessage?: string | null;
 }) {
-  if (options.conversationId) {
-    const existing = await getInAppConversationForUser(
-      options.db,
-      options.conversationId,
-      options.userId
-    );
-    if (existing) return existing as InAppConversation;
-  }
+  void options.conversationId;
+  void options.firstMessage;
+
+  const primary = await getPrimaryInAppConversation(options.db, options.userId);
+  if (primary) return primary;
 
   return createInAppConversation({
     db: options.db,
     userId: options.userId,
     organizationId: options.organizationId,
-    title: options.firstMessage
-      ? titleFromMessage(options.firstMessage)
-      : "New chat",
+    title: "Rebban",
   });
 }
 
@@ -155,13 +163,16 @@ export async function appendInAppMessage(options: {
   return data;
 }
 
+/** Soft cap for scrollback — model still only sees a recent window. */
+const IN_APP_MESSAGE_KEEP = 500;
+
 export async function trimInAppMessages(db: Db, conversationId: string) {
   const { data: oldIds } = await db
     .from("assistant_messages")
     .select("id")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: false })
-    .range(40, 200);
+    .range(IN_APP_MESSAGE_KEEP, IN_APP_MESSAGE_KEEP + 2000);
 
   if (oldIds?.length) {
     await db

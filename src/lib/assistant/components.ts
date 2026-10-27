@@ -551,6 +551,7 @@ export function deriveComponentsFromToolResults(
 
     if (
       name === "add_client" ||
+      name === "update_client" ||
       name === "get_client" ||
       name === "find_client" ||
       name === "list_clients"

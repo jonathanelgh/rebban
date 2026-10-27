@@ -149,6 +149,43 @@ export const ASSISTANT_TOOL_DEFINITIONS = [
   {
     type: "function" as const,
     function: {
+      name: "update_client",
+      description:
+        "Update an existing client's details (email, phone, company, website, name, notes, status). Use this when the user asks to add/change a client's email or other fields — never use add_client for updates.",
+      parameters: {
+        type: "object",
+        properties: {
+          client_id: {
+            type: "string",
+            description: "Preferred when known from a prior tool result",
+          },
+          client_query: {
+            type: "string",
+            description: "Name/company/email to resolve if client_id is unknown",
+          },
+          name: { type: "string" },
+          company: { type: "string" },
+          email: { type: "string" },
+          phone: { type: "string" },
+          website: { type: "string" },
+          notes: { type: "string" },
+          status: {
+            type: "string",
+            enum: ["active", "idle", "prospect"],
+          },
+          force_same_email: {
+            type: "boolean",
+            description:
+              "Set true only after the user confirms using an email that another client already has",
+          },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
       name: "list_clients",
       description:
         "Count and list clients in the workspace. Use for 'how many clients', 'list my clients', or overview questions. Never invent a client count.",
@@ -1699,8 +1736,7 @@ export async function executeAssistantTool(
               ok: true,
               already_existed: true,
               client: existing,
-              message:
-                "Client with this email already exists. Use this client_id — do not create another.",
+              message: `A client named "${existing.name}" already uses this email. Do not create a duplicate, and do not say a different person already has this email — ask whether to use that existing client or update someone else with update_client.`,
             };
           }
         }
@@ -1728,6 +1764,122 @@ export async function executeAssistantTool(
         const query = String(args.query || "").trim();
         const clients = await searchClients(db, organizationId, query);
         return { ok: true, count: clients.length, clients };
+      }
+
+      case "update_client": {
+        const resolved = await resolveClient(db, organizationId, args);
+        if (!resolved.ok) {
+          return {
+            error: resolved.error,
+            matches: resolved.matches,
+          };
+        }
+
+        const updates: Database["public"]["Tables"]["clients"]["Update"] = {};
+        if (typeof args.name === "string" && args.name.trim()) {
+          updates.name = args.name.trim();
+        }
+        if (args.company !== undefined) {
+          const companyRaw =
+            args.company === null ? "" : String(args.company).trim();
+          updates.company = companyRaw || null;
+        }
+        if (args.phone !== undefined) {
+          const phoneRaw =
+            args.phone === null ? "" : String(args.phone).trim();
+          updates.phone = phoneRaw || null;
+        }
+        if (args.notes !== undefined) {
+          const notesRaw =
+            args.notes === null ? "" : String(args.notes).trim();
+          updates.notes = notesRaw || null;
+        }
+        if (args.website !== undefined) {
+          const websiteRaw =
+            args.website === null ? "" : String(args.website).trim();
+          updates.website = websiteRaw
+            ? normalizeWebsite(websiteRaw)
+            : null;
+        }
+        if (args.status !== undefined) {
+          const statusRaw = String(args.status || "").toLowerCase();
+          if (
+            statusRaw === "active" ||
+            statusRaw === "idle" ||
+            statusRaw === "prospect"
+          ) {
+            updates.status = statusRaw;
+          }
+        }
+
+        let emailConflict: {
+          id: string;
+          name: string;
+          company: string | null;
+          email: string | null;
+        } | null = null;
+        if (args.email !== undefined) {
+          const emailRaw =
+            args.email === null ? "" : String(args.email).trim().toLowerCase();
+          const nextEmail = emailRaw || null;
+          if (nextEmail) {
+            const { data: existing } = await db
+              .from("clients")
+              .select("id, name, company, email")
+              .eq("organization_id", organizationId)
+              .eq("email", nextEmail)
+              .is("deleted_at", null)
+              .neq("id", resolved.id)
+              .order("created_at", { ascending: true })
+              .limit(1)
+              .maybeSingle();
+            if (existing && !args.force_same_email) {
+              emailConflict = existing;
+            } else {
+              updates.email = nextEmail;
+            }
+          } else {
+            updates.email = null;
+          }
+        }
+
+        if (emailConflict) {
+          return {
+            ok: false,
+            error: "email_in_use",
+            message: `That email is already on "${emailConflict.name}"${
+              emailConflict.company ? ` (${emailConflict.company})` : ""
+            }. Tell the user clearly, and ask if they still want it on "${resolved.label}" too. If they confirm, call update_client again with force_same_email=true.`,
+            client_id: resolved.id,
+            client_label: resolved.label,
+            conflicting_client: emailConflict,
+          };
+        }
+
+        if (!Object.keys(updates).length) {
+          return {
+            error:
+              "Provide at least one field to update (name, email, phone, company, website, notes, status).",
+          };
+        }
+
+        updates.updated_at = new Date().toISOString();
+        const { error: updateError } = await db
+          .from("clients")
+          .update(updates)
+          .eq("id", resolved.id)
+          .eq("organization_id", organizationId);
+        if (updateError) return { error: updateError.message };
+
+        const card = await loadClientCard(db, organizationId, resolved.id);
+        if (!card) {
+          return { error: "Client updated but could not reload." };
+        }
+        return {
+          ok: true,
+          updated_fields: Object.keys(updates).filter((k) => k !== "updated_at"),
+          client: { id: card.entityId, ...card.snapshot },
+        };
       }
 
       case "list_clients": {
