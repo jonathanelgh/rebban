@@ -15,7 +15,27 @@ export type AttentionItem = {
   entity_type: string;
   entity_id: string;
   client?: string | null;
+  /** ISO timestamp of last automated payment reminder, if any. */
+  last_reminder_at?: string | null;
 };
+
+function daysBetween(fromIso: string, to = new Date()) {
+  const from = new Date(fromIso);
+  if (Number.isNaN(from.getTime())) return 0;
+  return Math.max(
+    0,
+    Math.floor((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24))
+  );
+}
+
+/** Human line for digests: "reminder sent yesterday". */
+export function formatLastReminderNote(sentAt: string | null | undefined) {
+  if (!sentAt) return "no payment reminder sent yet";
+  const days = daysBetween(sentAt);
+  if (days === 0) return "reminder sent today";
+  if (days === 1) return "reminder sent yesterday";
+  return `reminder sent ${days} days ago`;
+}
 
 export function formatAttentionDigest(
   items: AttentionItem[],

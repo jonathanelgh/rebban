@@ -3,12 +3,16 @@ import type { Database } from "@/types/database";
 import { formatInvoiceMoney } from "@/lib/invoices/totals";
 import { DEFAULT_HOURLY_RATE } from "@/lib/time-entries";
 import type { AttentionItem } from "@/lib/assistant/needs-attention-format";
+import { formatLastReminderNote } from "@/lib/assistant/needs-attention-format";
 import type { UnbilledDigestClient } from "@/lib/assistant/billing-digest";
 export type {
   AttentionItem,
   AttentionKind,
 } from "@/lib/assistant/needs-attention-format";
-export { formatAttentionDigest } from "@/lib/assistant/needs-attention-format";
+export {
+  formatAttentionDigest,
+  formatLastReminderNote,
+} from "@/lib/assistant/needs-attention-format";
 
 type Db = SupabaseClient<Database>;
 
@@ -35,6 +39,30 @@ function daysBetween(fromIso: string, to = new Date()) {
     0,
     Math.floor((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24))
   );
+}
+
+async function loadLastReminderByInvoice(
+  db: Db,
+  organizationId: string,
+  invoiceIds: string[]
+) {
+  const map = new Map<string, string>();
+  if (!invoiceIds.length) return map;
+
+  const { data } = await db
+    .from("invoice_reminders")
+    .select("invoice_id, sent_at")
+    .eq("organization_id", organizationId)
+    .in("invoice_id", invoiceIds)
+    .eq("status", "sent")
+    .not("sent_at", "is", null)
+    .order("sent_at", { ascending: false });
+
+  for (const row of data || []) {
+    if (!row.sent_at || map.has(row.invoice_id)) continue;
+    map.set(row.invoice_id, row.sent_at);
+  }
+  return map;
 }
 
 /**
@@ -125,14 +153,17 @@ export async function collectNeedsAttention(
     });
   }
 
+  const invoiceAttentionIds: string[] = [];
+
   for (const inv of overdueRes.data || []) {
+    invoiceAttentionIds.push(inv.id);
     items.push({
       id: `overdue_invoice:${inv.id}`,
       kind: "overdue_invoice",
       priority: 90,
       title: inv.number || "Invoice",
       detail: `Overdue · ${formatInvoiceMoney(Number(inv.total) || 0, inv.currency || "EUR")}${inv.due_date ? ` · due ${inv.due_date}` : ""}`,
-      suggested_action: "Send a payment reminder or mark paid if settled.",
+      suggested_action: "Check payment status; automation may already be reminding.",
       entity_type: "invoice",
       entity_id: inv.id,
       client: clientLabel(inv as never),
@@ -143,6 +174,7 @@ export async function collectNeedsAttention(
     if (items.some((i) => i.entity_id === inv.id && i.kind === "overdue_invoice")) {
       continue;
     }
+    invoiceAttentionIds.push(inv.id);
     const age = inv.sent_at ? daysBetween(inv.sent_at) : UNPAID_SENT_DAYS;
     items.push({
       id: `unpaid_invoice:${inv.id}`,
@@ -150,11 +182,38 @@ export async function collectNeedsAttention(
       priority: 60 + Math.min(age, 20),
       title: inv.number || "Invoice",
       detail: `Unpaid for ${age} days · ${formatInvoiceMoney(Number(inv.total) || 0, inv.currency || "EUR")}`,
-      suggested_action: "Nudge the client or confirm payment status.",
+      suggested_action: "Check payment status; automation may already be reminding.",
       entity_type: "invoice",
       entity_id: inv.id,
       client: clientLabel(inv as never),
     });
+  }
+
+  if (invoiceAttentionIds.length) {
+    const lastReminder = await loadLastReminderByInvoice(
+      db,
+      organizationId,
+      invoiceAttentionIds
+    );
+    for (const item of items) {
+      if (
+        item.kind !== "overdue_invoice" &&
+        item.kind !== "unpaid_invoice"
+      ) {
+        continue;
+      }
+      const sentAt = lastReminder.get(item.entity_id) || null;
+      item.last_reminder_at = sentAt;
+      const note = formatLastReminderNote(sentAt);
+      item.detail = `${item.detail} · ${note}`;
+      if (sentAt && daysBetween(sentAt) <= 3) {
+        item.suggested_action =
+          "Already reminded recently — no need to nudge again unless you want a personal follow-up.";
+      } else if (!sentAt) {
+        item.suggested_action =
+          "No automated reminder sent yet — check the invoice reminder schedule or payment status.";
+      }
+    }
   }
 
   for (const project of projectsRes.data || []) {

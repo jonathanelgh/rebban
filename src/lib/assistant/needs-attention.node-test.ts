@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   formatAttentionDigest,
+  formatLastReminderNote,
   type AttentionItem,
 } from "./needs-attention-format.ts";
 
@@ -11,8 +12,8 @@ const sample: AttentionItem[] = [
     kind: "overdue_invoice",
     priority: 90,
     title: "INV-001",
-    detail: "Overdue · €500",
-    suggested_action: "Send a reminder",
+    detail: "Overdue · €500 · reminder sent yesterday",
+    suggested_action: "Already reminded recently",
     entity_type: "invoice",
     entity_id: "1",
     client: "Acme",
@@ -40,6 +41,7 @@ describe("formatAttentionDigest", () => {
     const text = formatAttentionDigest(sample, { maxItems: 6 });
     assert.match(text, /needs attention/i);
     assert.match(text, /INV-001 \(Acme\)/);
+    assert.match(text, /reminder sent yesterday/);
     assert.match(text, /Northwind/);
     assert.match(text, /Reply here/i);
   });
@@ -49,5 +51,32 @@ describe("formatAttentionDigest", () => {
       appUrl: "https://app.rebban.test",
     });
     assert.match(text, /https:\/\/app\.rebban\.test/);
+  });
+});
+
+describe("formatLastReminderNote", () => {
+  it("handles missing reminder", () => {
+    assert.equal(formatLastReminderNote(null), "no payment reminder sent yet");
+  });
+
+  it("handles today and yesterday", () => {
+    const today = new Date().toISOString();
+    assert.equal(formatLastReminderNote(today), "reminder sent today");
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    assert.equal(
+      formatLastReminderNote(yesterday.toISOString()),
+      "reminder sent yesterday"
+    );
+  });
+
+  it("handles older reminders", () => {
+    const d = new Date();
+    d.setDate(d.getDate() - 5);
+    assert.equal(
+      formatLastReminderNote(d.toISOString()),
+      "reminder sent 5 days ago"
+    );
   });
 });
