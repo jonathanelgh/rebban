@@ -41,7 +41,7 @@ export function isAssistantAiConfigured() {
   return Boolean(process.env.OPENAI_API_KEY?.trim());
 }
 
-const MAX_TOOL_ROUNDS = 5;
+const MAX_TOOL_ROUNDS = 8;
 
 const IN_APP_UI_HINT = `
 For in-app / native chat, the product renders interactive cards from your tools automatically (invoices, proposals, clients, leads, projects, tasks, payment summaries, unbilled hours). Keep the text reply short — do not paste long tables. Prefer tools so cards stay in sync with the database.`;

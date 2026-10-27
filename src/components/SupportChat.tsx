@@ -503,6 +503,21 @@ export function SupportChat() {
                           components={m.components}
                           conversationId={conversationId}
                           onError={setError}
+                          onAssistantMessage={(msg) => {
+                            setMessages((prev) => {
+                              if (prev.some((x) => x.id === msg.id)) return prev;
+                              return [
+                                ...prev,
+                                {
+                                  id: msg.id,
+                                  role: "assistant",
+                                  agent: "ai",
+                                  content: msg.content,
+                                  components: msg.components || [],
+                                },
+                              ];
+                            });
+                          }}
                         />
                       ) : null}
                     </div>

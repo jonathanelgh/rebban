@@ -128,6 +128,44 @@ export type Database = {
           },
         ]
       }
+      assistant_digest_sends: {
+        Row: {
+          channel: string
+          created_at: string
+          id: string
+          item_count: number
+          organization_id: string
+          payload: Json
+          user_id: string | null
+        }
+        Insert: {
+          channel?: string
+          created_at?: string
+          id?: string
+          item_count?: number
+          organization_id: string
+          payload?: Json
+          user_id?: string | null
+        }
+        Update: {
+          channel?: string
+          created_at?: string
+          id?: string
+          item_count?: number
+          organization_id?: string
+          payload?: Json
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assistant_digest_sends_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       assistant_messages: {
         Row: {
           content: string

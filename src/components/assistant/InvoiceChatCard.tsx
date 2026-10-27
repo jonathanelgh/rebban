@@ -38,6 +38,11 @@ type Props = {
   conversationId?: string | null;
   onUpdated?: (next: InvoiceChatComponent | null) => void;
   onError?: (message: string) => void;
+  onAssistantMessage?: (message: {
+    id: string;
+    content: string;
+    components?: InvoiceChatComponent[];
+  }) => void;
 };
 
 export function InvoiceChatCard({
@@ -45,6 +50,7 @@ export function InvoiceChatCard({
   conversationId,
   onUpdated,
   onError,
+  onAssistantMessage,
 }: Props) {
   const [data, setData] = useState<InvoiceChatComponent>(component);
   const [loading, setLoading] = useState(true);
@@ -113,6 +119,24 @@ export function InvoiceChatCard({
         onUpdated?.(json.component);
       } else {
         await refresh();
+      }
+      if (action === "approve_and_send") {
+        const confirmationMessage = json.confirmationMessage as
+          | {
+              id: string;
+              content: string;
+              components?: InvoiceChatComponent[];
+            }
+          | undefined;
+        if (confirmationMessage?.content) {
+          onAssistantMessage?.(confirmationMessage);
+        } else if (typeof json.confirmation === "string" && json.confirmation) {
+          onAssistantMessage?.({
+            id: `sent-${data.entityId}-${Date.now()}`,
+            content: json.confirmation,
+            components: json.component ? [json.component] : undefined,
+          });
+        }
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Action failed.";

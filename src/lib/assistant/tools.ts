@@ -20,6 +20,16 @@ import {
   isProposalAiConfigured,
 } from "@/lib/proposals/generate";
 import { sendProposalForOrganization } from "@/lib/proposals/send-proposal";
+import { convertLeadToClient } from "@/lib/leads/convert";
+import { convertProposalToProject } from "@/lib/projects/convert-from-proposal";
+import {
+  loadClientCard,
+  loadLeadCard,
+  loadProjectCard,
+  loadProposalCard,
+  loadTaskCard,
+} from "@/lib/assistant/card-loaders";
+import { collectNeedsAttention } from "@/lib/assistant/needs-attention";
 
 type Db = SupabaseClient<Database>;
 
@@ -465,6 +475,215 @@ export const ASSISTANT_TOOL_DEFINITIONS = [
           client_query: {
             type: "string",
             description: "Optional filter by client name/company/email",
+          },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "list_proposals",
+      description:
+        "List proposals filtered by status (draft, sent, viewed, accepted, declined). Use status=accepted before converting a proposal into a project.",
+      parameters: {
+        type: "object",
+        properties: {
+          status: {
+            type: "string",
+            description:
+              "draft | sent | viewed | accepted | declined. Omit for recent of any status.",
+          },
+          limit: { type: "number", description: "Max results (default 10)" },
+          client_query: {
+            type: "string",
+            description: "Optional filter by client name/company/email",
+          },
+          client_id: { type: "string" },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "convert_proposal_to_project",
+      description:
+        "Convert an accepted proposal into an active project. Optionally generate AI tasks from the proposal scope and create a deposit/full invoice draft. Prefer this over create_project when the user mentions an accepted proposal.",
+      parameters: {
+        type: "object",
+        properties: {
+          proposal_id: {
+            type: "string",
+            description: "Proposal id (preferred when known)",
+          },
+          client_query: {
+            type: "string",
+            description:
+              "If proposal_id unknown, find accepted proposals for this client name/company",
+          },
+          name: {
+            type: "string",
+            description: "Project name override (defaults to proposal title)",
+          },
+          invoice_kind: {
+            type: "string",
+            description:
+              "none | deposit | full | retainer. Default none — ask before creating invoices unless the user already specified.",
+          },
+          deposit_amount: {
+            type: "number",
+            description: "Required when invoice_kind=deposit",
+          },
+          generate_tasks: {
+            type: "boolean",
+            description:
+              "Generate starter tasks from the proposal (default true)",
+          },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "list_needs_attention",
+      description:
+        "List things that need the freelancer's attention: stale proposals awaiting reply, overdue/unpaid invoices, unbilled hours, projects with near deadlines. Use when they ask what's overdue, what needs attention, or for a weekly review.",
+      parameters: {
+        type: "object",
+        properties: {
+          limit: { type: "number", description: "Max items (default 12)" },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "get_client",
+      description: "Fetch one client by id for details or follow-up actions.",
+      parameters: {
+        type: "object",
+        properties: {
+          client_id: { type: "string" },
+        },
+        required: ["client_id"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "get_lead",
+      description: "Fetch one lead by id for details or conversion.",
+      parameters: {
+        type: "object",
+        properties: {
+          lead_id: { type: "string" },
+        },
+        required: ["lead_id"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "convert_lead_to_client",
+      description:
+        "Convert a lead into a client. Use when the user asks to convert a lead / turn a prospect into a client.",
+      parameters: {
+        type: "object",
+        properties: {
+          lead_id: { type: "string" },
+          status: {
+            type: "string",
+            enum: ["prospect", "active"],
+            description: "Client status after conversion (default prospect)",
+          },
+        },
+        required: ["lead_id"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "get_project",
+      description: "Fetch one project by id including task and time summary.",
+      parameters: {
+        type: "object",
+        properties: {
+          project_id: { type: "string" },
+        },
+        required: ["project_id"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "get_task",
+      description: "Fetch one task by id.",
+      parameters: {
+        type: "object",
+        properties: {
+          task_id: { type: "string" },
+        },
+        required: ["task_id"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "update_task",
+      description:
+        "Update a task column/status, title, or due date. Use mark complete by setting column to done.",
+      parameters: {
+        type: "object",
+        properties: {
+          task_id: { type: "string" },
+          title: { type: "string" },
+          column: {
+            type: "string",
+            enum: ["backlog", "todo", "in_progress", "review", "done"],
+          },
+          due_date: {
+            type: "string",
+            description: "YYYY-MM-DD or empty to clear",
+          },
+          priority: {
+            type: "string",
+            enum: ["low", "medium", "high", "urgent"],
+          },
+        },
+        required: ["task_id"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "get_proposal",
+      description:
+        "Fetch one proposal by id (preferred) or the pending draft from this conversation.",
+      parameters: {
+        type: "object",
+        properties: {
+          proposal_id: {
+            type: "string",
+            description: "Proposal id; omit to use pending send_proposal draft",
           },
         },
         additionalProperties: false,
@@ -2383,6 +2602,394 @@ export async function executeAssistantTool(
         };
       }
 
+      case "list_proposals": {
+        const limit = Math.min(25, Math.max(1, Number(args.limit) || 10));
+        const statusRaw = String(args.status || "")
+          .trim()
+          .toLowerCase();
+        const status =
+          statusRaw === "draft" ||
+          statusRaw === "sent" ||
+          statusRaw === "viewed" ||
+          statusRaw === "accepted" ||
+          statusRaw === "declined"
+            ? statusRaw
+            : null;
+
+        let clientFilterIds: string[] | null = null;
+        if (args.client_id || args.client_query) {
+          const resolved = await resolveClient(db, organizationId, args);
+          if (!resolved.ok) {
+            return {
+              error: resolved.error,
+              ...(resolved.matches ? { matches: resolved.matches } : {}),
+            };
+          }
+          clientFilterIds = [resolved.id];
+        }
+
+        let query = db
+          .from("proposals")
+          .select(
+            "id, title, status, amount, currency, expires_at, client_id, updated_at, sent_at"
+          )
+          .eq("organization_id", organizationId)
+          .is("deleted_at", null)
+          .order("updated_at", { ascending: false })
+          .limit(limit);
+
+        if (status) query = query.eq("status", status);
+        if (clientFilterIds) query = query.in("client_id", clientFilterIds);
+
+        const { data, error } = await query;
+        if (error) return { error: error.message };
+
+        const clientIds = [
+          ...new Set(
+            (data || [])
+              .map((row) => row.client_id)
+              .filter((id): id is string => Boolean(id))
+          ),
+        ];
+        const clientMap = await loadClientMap(db, organizationId, clientIds);
+
+        const proposals = (data || []).map((row) => {
+          const client = row.client_id
+            ? clientMap.get(row.client_id)
+            : undefined;
+          return {
+            id: row.id,
+            title: row.title,
+            status: row.status,
+            expires_at: row.expires_at,
+            sent_at: row.sent_at,
+            amount: formatInvoiceMoney(
+              Number(row.amount) || 0,
+              row.currency || "EUR"
+            ),
+            amount_raw: Number(row.amount) || 0,
+            currency: row.currency || "EUR",
+            client: client?.company || client?.name || "Unknown",
+            client_id: row.client_id,
+          };
+        });
+
+        return {
+          ok: true,
+          count: proposals.length,
+          proposals,
+          message:
+            proposals.length === 0
+              ? status
+                ? `No ${status} proposals found.`
+                : "No proposals found."
+              : undefined,
+        };
+      }
+
+      case "convert_proposal_to_project": {
+        let proposalId = String(args.proposal_id || "").trim();
+
+        if (!proposalId) {
+          const clientQuery = String(args.client_query || "").trim();
+          if (!clientQuery) {
+            return {
+              error:
+                "Pass proposal_id, or client_query to find an accepted proposal.",
+            };
+          }
+          const resolved = await resolveClient(db, organizationId, {
+            client_query: clientQuery,
+          });
+          if (!resolved.ok) {
+            return {
+              error: resolved.error,
+              ...(resolved.matches ? { matches: resolved.matches } : {}),
+            };
+          }
+          const { data: accepted, error: acceptedError } = await db
+            .from("proposals")
+            .select("id, title, status, project_id")
+            .eq("organization_id", organizationId)
+            .eq("client_id", resolved.id)
+            .eq("status", "accepted")
+            .is("deleted_at", null)
+            .is("project_id", null)
+            .order("updated_at", { ascending: false })
+            .limit(5);
+          if (acceptedError) return { error: acceptedError.message };
+          if (!accepted?.length) {
+            return {
+              error: `No accepted proposals without a project for ${resolved.label}.`,
+            };
+          }
+          if (accepted.length > 1) {
+            return {
+              error: "Multiple accepted proposals — pass proposal_id.",
+              matches: accepted.map((p) => ({
+                id: p.id,
+                title: p.title,
+                status: p.status,
+              })),
+            };
+          }
+          proposalId = accepted[0].id;
+        }
+
+        const invoiceKindRaw = String(args.invoice_kind || "none")
+          .trim()
+          .toLowerCase();
+        const invoiceKind =
+          invoiceKindRaw === "deposit" ||
+          invoiceKindRaw === "full" ||
+          invoiceKindRaw === "retainer"
+            ? invoiceKindRaw
+            : "none";
+        const generateTasks =
+          args.generate_tasks === undefined
+            ? true
+            : Boolean(args.generate_tasks);
+
+        try {
+          const result = await convertProposalToProject(db, {
+            proposalId,
+            userId,
+            organizationId,
+            name: String(args.name || "").trim(),
+            invoiceKind,
+            depositAmount:
+              args.deposit_amount !== undefined
+                ? Number(args.deposit_amount)
+                : null,
+            generateAiTasks: generateTasks,
+          });
+
+          if (result.invoiceId) {
+            await ctx.setPendingAction({
+              type: "send_invoice",
+              invoice_id: result.invoiceId,
+            });
+          }
+
+          return {
+            ok: true,
+            project_id: result.projectId,
+            project_name: result.projectName,
+            billing_type: result.billingType,
+            task_count: result.taskCount,
+            invoice_id: result.invoiceId,
+            invoice_number: result.invoiceNumber,
+            ask_to_send: Boolean(result.invoiceId),
+            message: result.invoiceId
+              ? "Project created. An invoice draft is ready — ask before sending."
+              : "Project created. Summarize name and task count briefly.",
+          };
+        } catch (err) {
+          return {
+            error:
+              err instanceof Error
+                ? err.message
+                : "Could not convert proposal to project.",
+          };
+        }
+      }
+
+      case "list_needs_attention": {
+        const limit = Math.min(20, Math.max(1, Number(args.limit) || 12));
+        const items = await collectNeedsAttention(db, organizationId, {
+          limit,
+        });
+        return {
+          ok: true,
+          count: items.length,
+          items,
+          message:
+            items.length === 0
+              ? "Nothing urgent needs attention right now."
+              : "Summarize the top items and offer to take the suggested action.",
+        };
+      }
+
+      case "get_client": {
+        const clientId = String(args.client_id || "").trim();
+        if (!clientId) return { error: "client_id is required." };
+        const card = await loadClientCard(db, organizationId, clientId);
+        if (!card) return { error: "Client not found." };
+        return {
+          ok: true,
+          client: { id: card.entityId, ...card.snapshot },
+        };
+      }
+
+      case "get_lead": {
+        const leadId = String(args.lead_id || "").trim();
+        if (!leadId) return { error: "lead_id is required." };
+        const card = await loadLeadCard(db, organizationId, leadId);
+        if (!card) return { error: "Lead not found." };
+        return {
+          ok: true,
+          lead: { id: card.entityId, ...card.snapshot },
+        };
+      }
+
+      case "convert_lead_to_client": {
+        const leadId = String(args.lead_id || "").trim();
+        if (!leadId) return { error: "lead_id is required." };
+        const statusRaw = String(args.status || "prospect").toLowerCase();
+        const status = statusRaw === "active" ? "active" : "prospect";
+        try {
+          const converted = await convertLeadToClient(db, {
+            leadId,
+            organizationId,
+            userId,
+            status,
+          });
+          const leadCard = await loadLeadCard(db, organizationId, leadId);
+          const clientCard = converted.clientId
+            ? await loadClientCard(db, organizationId, converted.clientId)
+            : null;
+          return {
+            ok: true,
+            converted: true,
+            client_id: converted.clientId,
+            lead: leadCard
+              ? { id: leadCard.entityId, ...leadCard.snapshot }
+              : { id: leadId, status: "converted" },
+            client: clientCard
+              ? { id: clientCard.entityId, ...clientCard.snapshot }
+              : null,
+          };
+        } catch (err) {
+          return {
+            error:
+              err instanceof Error ? err.message : "Could not convert lead.",
+          };
+        }
+      }
+
+      case "get_project": {
+        const projectId = String(args.project_id || "").trim();
+        if (!projectId) return { error: "project_id is required." };
+        const card = await loadProjectCard(db, organizationId, projectId);
+        if (!card) return { error: "Project not found." };
+        return {
+          ok: true,
+          project: {
+            id: card.entityId,
+            name: card.snapshot?.name,
+            client: card.snapshot?.client,
+            status: card.snapshot?.status,
+            billing_type: card.snapshot?.billingType,
+            tasks_done: card.snapshot?.tasksDone,
+            tasks_open: card.snapshot?.tasksOpen,
+            tracked_hours: card.snapshot?.trackedHours,
+          },
+        };
+      }
+
+      case "get_task": {
+        const taskId = String(args.task_id || "").trim();
+        if (!taskId) return { error: "task_id is required." };
+        const card = await loadTaskCard(db, organizationId, taskId);
+        if (!card) return { error: "Task not found." };
+        return {
+          ok: true,
+          task: {
+            id: card.entityId,
+            title: card.snapshot?.title,
+            column: card.snapshot?.status,
+            priority: card.snapshot?.priority,
+            due_date: card.snapshot?.dueDate,
+            client: card.snapshot?.client,
+            project: card.snapshot?.project,
+          },
+        };
+      }
+
+      case "update_task": {
+        const taskId = String(args.task_id || "").trim();
+        if (!taskId) return { error: "task_id is required." };
+
+        const { data: taskRow } = await db
+          .from("tasks")
+          .select("id")
+          .eq("id", taskId)
+          .eq("organization_id", organizationId)
+          .is("deleted_at", null)
+          .maybeSingle();
+        if (!taskRow) return { error: "Task not found." };
+
+        const updates: Database["public"]["Tables"]["tasks"]["Update"] = {};
+        if (typeof args.title === "string" && args.title.trim()) {
+          updates.title = args.title.trim();
+        }
+        if (args.column !== undefined) {
+          updates.column_id = normalizeTaskColumn(args.column);
+        }
+        if (args.priority !== undefined) {
+          updates.priority = normalizeTaskPriority(args.priority);
+        }
+        if (args.due_date !== undefined) {
+          const dueRaw = String(args.due_date || "").trim();
+          updates.due_date = /^\d{4}-\d{2}-\d{2}$/.test(dueRaw) ? dueRaw : null;
+        }
+        if (!Object.keys(updates).length) {
+          return { error: "Provide title, column, priority, and/or due_date." };
+        }
+
+        const { error: updateError } = await db
+          .from("tasks")
+          .update(updates)
+          .eq("id", taskId)
+          .eq("organization_id", organizationId);
+        if (updateError) return { error: updateError.message };
+
+        const card = await loadTaskCard(db, organizationId, taskId);
+        if (!card) return { error: "Task updated but could not reload." };
+        return {
+          ok: true,
+          task: {
+            id: card.entityId,
+            title: card.snapshot?.title,
+            column: card.snapshot?.status,
+            priority: card.snapshot?.priority,
+            due_date: card.snapshot?.dueDate,
+            client: card.snapshot?.client,
+            project: card.snapshot?.project,
+          },
+        };
+      }
+
+      case "get_proposal": {
+        const pendingId =
+          ctx.pendingAction?.type === "send_proposal"
+            ? ctx.pendingAction.proposal_id
+            : null;
+        const proposalId =
+          (args.proposal_id ? String(args.proposal_id) : null) || pendingId;
+        if (!proposalId) {
+          return {
+            error:
+              "No proposal id. Pass proposal_id or create/select a draft first.",
+          };
+        }
+        const card = await loadProposalCard(db, organizationId, proposalId);
+        if (!card) return { error: "Proposal not found." };
+        return {
+          ok: true,
+          proposal: {
+            id: card.entityId,
+            title: card.snapshot?.title,
+            client: card.snapshot?.client,
+            amount: card.snapshot?.amount,
+            amount_raw: card.snapshot?.amountRaw,
+            currency: card.snapshot?.currency,
+            status: card.snapshot?.status,
+            expires_at: card.snapshot?.expiresAt,
+          },
+        };
+      }
+
       case "get_invoice": {
         const pendingId =
           ctx.pendingAction?.type === "send_invoice"
@@ -2476,6 +3083,8 @@ export async function executeAssistantTool(
           recipient_email: result.recipientEmail,
           url: result.url,
           status: result.status,
+          message:
+            "Invoice sent. Confirm warmly in one short line, e.g. I've now sent the invoice :) — optionally mention the invoice number and recipient email.",
         };
       }
 
@@ -2514,6 +3123,7 @@ export async function executeAssistantTool(
         return {
           ok: true,
           sent: true,
+          proposal_id: proposalId,
           title: result.title,
           recipient_email: result.recipientEmail,
           url: result.url,

@@ -5,9 +5,12 @@ import { sendInvoiceForOrganization } from "@/lib/invoices/send-invoice";
 import { formatInvoiceMoney } from "@/lib/invoices/totals";
 import {
   actionsForInvoiceStatus,
+  messageMetadataToJson,
   type InvoiceChatComponent,
 } from "@/lib/assistant/components";
 import { pendingActionToJson } from "@/lib/assistant/tools";
+import { appendInAppMessage } from "@/lib/assistant/in-app";
+import type { Json } from "@/types/database";
 
 export const runtime = "nodejs";
 
@@ -162,6 +165,36 @@ export async function POST(request: Request) {
       },
     };
 
+    const confirmation = result.number
+      ? `I've now sent invoice ${result.number} to ${result.recipientEmail || clientLabel} :)`
+      : `I've now sent the invoice :)`;
+
+    let confirmationMessage: {
+      id: string;
+      content: string;
+      components: InvoiceChatComponent[];
+    } | null = null;
+
+    const conversationId = body?.conversationId?.trim();
+    if (conversationId) {
+      try {
+        const saved = await appendInAppMessage({
+          db: supabase,
+          conversationId,
+          role: "assistant",
+          content: confirmation,
+          metadata: messageMetadataToJson([component]) as unknown as Json,
+        });
+        confirmationMessage = {
+          id: saved.id,
+          content: confirmation,
+          components: [component],
+        };
+      } catch (err) {
+        console.error("[assistant] failed to save send confirmation", err);
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       sent: true,
@@ -170,6 +203,8 @@ export async function POST(request: Request) {
       url: result.url,
       status: result.status,
       component,
+      confirmation,
+      confirmationMessage,
     });
   }
 
