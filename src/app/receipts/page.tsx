@@ -115,6 +115,8 @@ function ReceiptsPageInner() {
   const [selectedId, setSelectedId] = useState<string | null>(
     searchParams.get("receipt")
   );
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDownloading, setBulkDownloading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [yearsOpen, setYearsOpen] = useState<Record<number, boolean>>({
@@ -203,6 +205,10 @@ function ReceiptsPageInner() {
     void loadReceipts();
   }, [loadReceipts]);
 
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [year, month, viewMode]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return receipts.filter((r) => {
@@ -290,6 +296,67 @@ function ReceiptsPageInner() {
       setError(err instanceof Error ? err.message : "Export failed");
     } finally {
       setExporting(false);
+    }
+  }
+
+  const allFilteredSelected =
+    filtered.length > 0 && filtered.every((r) => selectedIds.has(r.id));
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAllFiltered() {
+    setSelectedIds((prev) => {
+      if (filtered.length > 0 && filtered.every((r) => prev.has(r.id))) {
+        const next = new Set(prev);
+        for (const r of filtered) next.delete(r.id);
+        return next;
+      }
+      const next = new Set(prev);
+      for (const r of filtered) next.add(r.id);
+      return next;
+    });
+  }
+
+  async function downloadSelected() {
+    const ids = Array.from(selectedIds);
+    if (!ids.length) return;
+    setBulkDownloading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/receipts/download-selected", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ receipt_ids: ids }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || "Download failed");
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename="([^"]+)"/);
+      const filename =
+        match?.[1] ||
+        (ids.length === 1 ? "receipt.pdf" : `receipts-${ids.length}-files.zip`);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Download failed");
+    } finally {
+      setBulkDownloading(false);
     }
   }
 
@@ -549,6 +616,34 @@ function ReceiptsPageInner() {
             </select>
           </div>
 
+          {selectedIds.size > 0 ? (
+            <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2.5">
+              <span className="text-sm text-gray-700">
+                {selectedIds.size} selected
+              </span>
+              <button
+                type="button"
+                onClick={() => void downloadSelected()}
+                disabled={bulkDownloading}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-gray-900 px-3 py-1.5 text-sm text-white hover:bg-gray-800 disabled:opacity-60"
+              >
+                <Download className="h-4 w-4" />
+                {bulkDownloading
+                  ? "Preparing…"
+                  : selectedIds.size === 1
+                    ? "Download PDF"
+                    : "Download ZIP"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedIds(new Set())}
+                className="text-sm text-gray-500 hover:text-gray-800"
+              >
+                Clear
+              </button>
+            </div>
+          ) : null}
+
           <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
             {loading ? (
               <div className="px-4 py-10 text-sm text-gray-500">Loading…</div>
@@ -571,11 +666,20 @@ function ReceiptsPageInner() {
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 text-left text-xs text-gray-500">
                     <tr>
+                      <th className="px-3 py-2.5 w-10">
+                        <input
+                          type="checkbox"
+                          checked={allFilteredSelected}
+                          onChange={toggleSelectAllFiltered}
+                          aria-label="Select all receipts"
+                          className="rounded border-gray-300"
+                        />
+                      </th>
                       <th className="px-4 py-2.5 font-medium">Merchant</th>
                       <th className="px-4 py-2.5 font-medium">Date</th>
                       <th className="px-4 py-2.5 font-medium">Amount</th>
                       <th className="px-4 py-2.5 font-medium">Source</th>
-                      <th className="px-4 py-2.5 font-medium">Status</th>
+                      <th className="px-4 py-2.5 font-medium text-right">File</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -585,6 +689,18 @@ function ReceiptsPageInner() {
                         onClick={() => setSelectedId(r.id)}
                         className="border-t border-gray-100 hover:bg-gray-50 cursor-pointer"
                       >
+                        <td
+                          className="px-3 py-3"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(r.id)}
+                            onChange={() => toggleSelect(r.id)}
+                            aria-label={`Select ${r.merchant || r.original_filename || "receipt"}`}
+                            className="rounded border-gray-300"
+                          />
+                        </td>
                         <td className="px-4 py-3">
                           <div className="font-medium text-gray-900">
                             {r.merchant || "Unknown merchant"}
@@ -602,12 +718,15 @@ function ReceiptsPageInner() {
                         <td className="px-4 py-3 capitalize text-gray-600">
                           {r.source}
                         </td>
-                        <td className="px-4 py-3">
-                          <span
-                            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[r.review_status]}`}
+                        <td className="px-4 py-3 text-right">
+                          <a
+                            href={`/api/receipts/${r.id}/download`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
                           >
-                            {statusLabel(r.review_status)}
-                          </span>
+                            <Download className="h-3.5 w-3.5" />
+                            Download
+                          </a>
                         </td>
                       </tr>
                     ))}

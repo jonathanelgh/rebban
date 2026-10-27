@@ -7,6 +7,12 @@ import {
   lineAmount,
 } from "@/lib/invoices/totals";
 import { sendInvoiceForOrganization } from "@/lib/invoices/send-invoice";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { buildMonthExportZip } from "@/lib/receipts/export-month";
+import { sendReceiptExportEmail } from "@/lib/receipts/email-export";
+import { parseReceiptMonthYear } from "@/lib/receipts/month-parse";
+import { downloadReceiptBytes } from "@/lib/receipts/storage";
+import { MONTH_NAMES } from "@/lib/receipts/constants";
 import {
   addTimeEntriesToInvoice,
   appendTimeSpecification,
@@ -152,7 +158,7 @@ export const ASSISTANT_TOOL_DEFINITIONS = [
     function: {
       name: "update_client",
       description:
-        "Update an existing client's details (email, phone, company, website, name, notes, status). Use this when the user asks to add/change a client's email or other fields — never use add_client for updates.",
+        "Update an existing client (rename, email, phone, company, website, notes, status). Use for 'name them X', 'rename to…', 'change their email', 'update this client' — never add_client for those. Prefer client_id from a prior tool/card result.",
       parameters: {
         type: "object",
         properties: {
@@ -675,6 +681,67 @@ export const ASSISTANT_TOOL_DEFINITIONS = [
         properties: {
           limit: { type: "number", description: "Max items (default 12)" },
         },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "export_receipts_month",
+      description:
+        "Build a ZIP of original receipts for a calendar month (plus CSV). Use when the user asks for October receipts, this month's expenses, accountant package, etc. Returns a downloadable export in chat. Then ask once if they want it emailed to themselves or their bookkeeper.",
+      parameters: {
+        type: "object",
+        properties: {
+          month: {
+            type: "string",
+            description: 'Month number 1-12 or name like "october" / "oct"',
+          },
+          year: {
+            type: "number",
+            description: "Four-digit year (defaults sensibly from context)",
+          },
+          month_query: {
+            type: "string",
+            description: 'Free text like "October 2026" when clearer',
+          },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "send_receipts_export",
+      description:
+        "Email a receipt month ZIP. Use after export_receipts_month, when the user confirms sending to themselves or a bookkeeper. recipient=me uses their Rebban profile email; recipient=email requires to_email.",
+      parameters: {
+        type: "object",
+        properties: {
+          export_id: {
+            type: "string",
+            description: "From export_receipts_month result",
+          },
+          year: { type: "number" },
+          month: { type: "string" },
+          month_query: { type: "string" },
+          recipient: {
+            type: "string",
+            enum: ["me", "email"],
+            description: "me = user's profile email; email = to_email required",
+          },
+          to_email: {
+            type: "string",
+            description: "Bookkeeper or other recipient when recipient=email",
+          },
+          confirmed: {
+            type: "boolean",
+            description: "Must be true — user asked to email the package",
+          },
+        },
+        required: ["recipient", "confirmed"],
         additionalProperties: false,
       },
     },
@@ -1957,11 +2024,21 @@ export async function executeAssistantTool(
             .limit(1)
             .maybeSingle();
           if (existing) {
+            const nameDiffers =
+              clientName.localeCompare(existing.name, undefined, {
+                sensitivity: "accent",
+              }) !== 0;
             return {
               ok: true,
               already_existed: true,
               client: existing,
-              message: `A client named "${existing.name}" already uses this email. Do not create a duplicate, and do not say a different person already has this email — ask whether to use that existing client or update someone else with update_client.`,
+              name_differs: nameDiffers,
+              suggested_update: nameDiffers
+                ? { client_id: existing.id, name: clientName }
+                : null,
+              message: nameDiffers
+                ? `A client already exists with this email (id=${existing.id}, current name="${existing.name}"). The user asked for name "${clientName}". Immediately call update_client with client_id="${existing.id}" and name="${clientName}" — do not call add_client again and do not ask again unless intent is unclear.`
+                : `A client named "${existing.name}" already uses this email (id=${existing.id}). Reuse this client_id. Do not create a duplicate.`,
             };
           }
         }
@@ -3557,6 +3634,199 @@ export async function executeAssistantTool(
             items.length === 0
               ? "Nothing urgent needs attention right now."
               : "Summarize the top items and offer to take the suggested action.",
+        };
+      }
+
+      case "export_receipts_month": {
+        const parsed = parseReceiptMonthYear(args);
+        if (!parsed.ok) return { error: parsed.error };
+
+        const admin = createAdminClient();
+        const zip = await buildMonthExportZip({
+          db: admin,
+          organizationId,
+          year: parsed.year,
+          month: parsed.month,
+        });
+
+        const { data: exportRow, error: exportError } = await db
+          .from("receipt_exports")
+          .insert({
+            organization_id: organizationId,
+            year: parsed.year,
+            month: parsed.month,
+            storage_key: zip.storageKey,
+            expires_at: zip.expiresAt,
+            created_by: userId,
+            status: "ready",
+          })
+          .select("id, year, month, expires_at, generated_at")
+          .single();
+
+        if (exportError || !exportRow) {
+          return {
+            error: exportError?.message || "Failed to record export.",
+          };
+        }
+
+        return {
+          ok: true,
+          export_id: exportRow.id,
+          year: parsed.year,
+          month: parsed.month,
+          label: parsed.label,
+          receipt_count: zip.receiptCount,
+          unfiled_count: zip.unfiledCount,
+          download_path: `/api/receipts/exports/${exportRow.id}/download`,
+          expires_at: exportRow.expires_at,
+          message:
+            zip.receiptCount === 0
+              ? `No dated receipts found for ${parsed.label}. Mention Unfiled (${zip.unfiledCount}) if any, and offer to help fix dates.`
+              : `ZIP ready for ${parsed.label} (${zip.receiptCount} receipt${zip.receiptCount === 1 ? "" : "s"}). Tell them briefly and ask once if they want it emailed to themselves or their bookkeeper.`,
+        };
+      }
+
+      case "send_receipts_export": {
+        if (args.confirmed !== true) {
+          return {
+            error:
+              "Emailing requires confirmed=true after the user asks to send the package.",
+          };
+        }
+
+        const recipientMode = String(args.recipient || "").toLowerCase();
+        let toEmail = "";
+        let recipientName: string | null = null;
+
+        const { data: profile } = await db
+          .from("profiles")
+          .select("full_name, email")
+          .eq("id", userId)
+          .maybeSingle();
+
+        if (recipientMode === "me") {
+          toEmail = (profile?.email || "").trim().toLowerCase();
+          recipientName = profile?.full_name || null;
+          if (!toEmail) {
+            return {
+              error:
+                "No email on the user's profile. Ask them for an address and call again with recipient=email and to_email.",
+            };
+          }
+        } else if (recipientMode === "email") {
+          toEmail = String(args.to_email || "")
+            .trim()
+            .toLowerCase();
+          if (!toEmail || !toEmail.includes("@")) {
+            return {
+              error: "Provide to_email when recipient=email.",
+            };
+          }
+        } else {
+          return { error: "recipient must be me or email." };
+        }
+
+        let exportId = args.export_id ? String(args.export_id).trim() : "";
+        let year = 0;
+        let month = 0;
+        let storageKey: string | null = null;
+
+        if (exportId) {
+          const { data: existing } = await db
+            .from("receipt_exports")
+            .select("id, year, month, storage_key, expires_at")
+            .eq("id", exportId)
+            .eq("organization_id", organizationId)
+            .maybeSingle();
+          if (!existing?.storage_key) {
+            return { error: "Export not found. Call export_receipts_month first." };
+          }
+          if (
+            existing.expires_at &&
+            new Date(existing.expires_at).getTime() < Date.now()
+          ) {
+            return {
+              error: "That export expired. Call export_receipts_month again.",
+            };
+          }
+          year = existing.year;
+          month = existing.month;
+          storageKey = existing.storage_key;
+        } else {
+          const parsed = parseReceiptMonthYear(args);
+          if (!parsed.ok) return { error: parsed.error };
+          const admin = createAdminClient();
+          const zip = await buildMonthExportZip({
+            db: admin,
+            organizationId,
+            year: parsed.year,
+            month: parsed.month,
+          });
+          const { data: created, error: createError } = await db
+            .from("receipt_exports")
+            .insert({
+              organization_id: organizationId,
+              year: parsed.year,
+              month: parsed.month,
+              storage_key: zip.storageKey,
+              expires_at: zip.expiresAt,
+              created_by: userId,
+              status: "ready",
+            })
+            .select("id, year, month, storage_key")
+            .single();
+          if (createError || !created?.storage_key) {
+            return {
+              error: createError?.message || "Failed to create export.",
+            };
+          }
+          exportId = created.id;
+          year = created.year;
+          month = created.month;
+          storageKey = created.storage_key;
+        }
+
+        const admin = createAdminClient();
+        const zipBytes = await downloadReceiptBytes(admin, storageKey!);
+        const label = `${MONTH_NAMES[month - 1]} ${year}`;
+        const filename = `receipts-${MONTH_NAMES[month - 1]}-${year}.zip`.replace(
+          /\s+/g,
+          "-"
+        );
+
+        // Count dated receipts for the email copy
+        const start = `${year}-${String(month).padStart(2, "0")}-01`;
+        const endDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+        const end = `${year}-${String(month).padStart(2, "0")}-${String(endDay).padStart(2, "0")}`;
+        const { count } = await db
+          .from("receipts")
+          .select("id", { count: "exact", head: true })
+          .eq("organization_id", organizationId)
+          .is("deleted_at", null)
+          .gte("receipt_date", start)
+          .lte("receipt_date", end);
+
+        const emailResult = await sendReceiptExportEmail({
+          to: toEmail,
+          recipientName,
+          senderName: profile?.full_name || null,
+          monthLabel: label,
+          receiptCount: count || 0,
+          zipBytes,
+          filename,
+        });
+
+        return {
+          ok: true,
+          sent: true,
+          export_id: exportId,
+          to: toEmail,
+          label,
+          provider:
+            emailResult && "provider" in emailResult
+              ? emailResult.provider
+              : "resend",
+          message: `Sent ${label} receipts ZIP to ${toEmail}. Confirm briefly.`,
         };
       }
 

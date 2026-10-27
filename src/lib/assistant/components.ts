@@ -17,7 +17,8 @@ export type ChatComponentAction =
   | "create_follow_up"
   | "add_task"
   | "log_time"
-  | "mark_complete";
+  | "mark_complete"
+  | "download";
 
 export type InvoiceStatus =
   | "draft"
@@ -166,6 +167,23 @@ export type TimeSummaryChatComponent = {
   currency?: string | null;
 };
 
+export type ReceiptExportCardSnapshot = {
+  label?: string | null;
+  year?: number | null;
+  month?: number | null;
+  receiptCount?: number | null;
+  unfiledCount?: number | null;
+  downloadPath?: string | null;
+  expiresAt?: string | null;
+};
+
+export type ReceiptExportChatComponent = {
+  type: "receipt_export_card";
+  entityId: string;
+  actions: ChatComponentAction[];
+  snapshot?: ReceiptExportCardSnapshot;
+};
+
 export type AssistantChatComponent =
   | InvoiceChatComponent
   | PaymentSummaryChatComponent
@@ -174,7 +192,8 @@ export type AssistantChatComponent =
   | LeadChatComponent
   | ProjectChatComponent
   | TaskChatComponent
-  | TimeSummaryChatComponent;
+  | TimeSummaryChatComponent
+  | ReceiptExportChatComponent;
 
 export type AssistantMessageMetadata = {
   components?: AssistantChatComponent[];
@@ -468,6 +487,28 @@ export function deriveComponentsFromToolResults(
         const card = invoiceCardFromToolInvoice(inv);
         if (card) byKey.set(`invoice:${card.entityId}`, card);
       }
+      continue;
+    }
+
+    if (name === "export_receipts_month" && result.ok === true) {
+      const exportId = asString(result.export_id);
+      if (!exportId) continue;
+      byKey.set(`receipt_export:${exportId}`, {
+        type: "receipt_export_card",
+        entityId: exportId,
+        actions: ["download"],
+        snapshot: {
+          label: asString(result.label),
+          year: asNumber(result.year),
+          month: asNumber(result.month),
+          receiptCount: asNumber(result.receipt_count),
+          unfiledCount: asNumber(result.unfiled_count),
+          downloadPath:
+            asString(result.download_path) ||
+            `/api/receipts/exports/${exportId}/download`,
+          expiresAt: asString(result.expires_at),
+        },
+      });
       continue;
     }
 

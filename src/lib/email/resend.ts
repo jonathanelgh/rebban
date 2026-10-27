@@ -31,7 +31,7 @@ export type EmailAttachment = {
   contentType?: string;
 };
 
-async function sendHtmlEmail(options: {
+export async function sendHtmlEmail(options: {
   to: string;
   subject: string;
   html: string;

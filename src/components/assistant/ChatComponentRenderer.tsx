@@ -12,6 +12,7 @@ import {
   TaskChatCard,
   TimeSummaryChatCard,
 } from "@/components/assistant/EntityChatCards";
+import { ReceiptExportChatCard } from "@/components/assistant/ReceiptExportChatCard";
 
 type Props = {
   components?: AssistantChatComponent[] | null;
@@ -96,6 +97,8 @@ export function ChatComponentRenderer({
             );
           case "time_summary":
             return <TimeSummaryChatCard key={key} component={component} />;
+          case "receipt_export_card":
+            return <ReceiptExportChatCard key={key} component={component} />;
           default:
             return null;
         }

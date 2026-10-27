@@ -27,6 +27,7 @@ export const STATUS_PILL: Record<string, string> = {
   in_progress: "bg-amber-50 text-amber-800",
   review: "bg-[#F5F3FF] text-violet-700",
   done: "bg-[#F3FAF6] text-emerald-700",
+  ready: "bg-[#F3FAF6] text-emerald-700",
 };
 
 export function statusLabel(status: string) {
