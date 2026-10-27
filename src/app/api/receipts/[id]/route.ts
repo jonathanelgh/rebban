@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requireOrgEntitlement } from "@/lib/billing/require-entitlement";
 import type { Database, Json } from "@/types/database";
 import { createReceiptSignedUrl } from "@/lib/receipts/storage";
@@ -92,17 +93,20 @@ export async function GET(
       inbound = data;
     }
 
-    const original = (files || []).find((f) => f.role === "original") || (files || [])[0];
-    let downloadUrl: string | null = null;
+    const original =
+      (files || []).find((f) => f.role === "original") || (files || [])[0];
+    let previewUrl: string | null = null;
     if (original) {
       try {
-        downloadUrl = await createReceiptSignedUrl(
-          supabase,
+        // Admin client for reliable private-bucket signed URLs
+        const admin = createAdminClient();
+        previewUrl = await createReceiptSignedUrl(
+          admin,
           original.storage_key,
           180
         );
       } catch {
-        downloadUrl = null;
+        previewUrl = null;
       }
     }
 
@@ -112,7 +116,10 @@ export async function GET(
       extractions: extractions || [],
       events: events || [],
       inbound,
-      downloadUrl,
+      previewUrl,
+      downloadUrl: previewUrl,
+      downloadPath: `/api/receipts/${id}/download`,
+      hasOriginal: Boolean(original),
     });
   } catch (error) {
     const message =

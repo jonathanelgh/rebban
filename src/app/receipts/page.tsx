@@ -625,7 +625,8 @@ function ReceiptDetailDrawer({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [hasOriginal, setHasOriginal] = useState(false);
   const [inbound, setInbound] = useState<{
     sender: string | null;
     subject: string | null;
@@ -671,7 +672,8 @@ function ReceiptDetailDrawer({
         original_filename: r.original_filename || "",
         source: r.source,
       });
-      setDownloadUrl(json.downloadUrl || null);
+      setPreviewUrl(json.previewUrl || json.downloadUrl || null);
+      setHasOriginal(Boolean(json.hasOriginal));
       setInbound(json.inbound || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load");
@@ -781,28 +783,27 @@ function ReceiptDetailDrawer({
           ) : (
             <>
               <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                {downloadUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
+                {previewUrl ? (
                   <iframe
                     title="Receipt preview"
-                    src={downloadUrl}
+                    src={previewUrl}
                     className="w-full h-72 rounded-lg bg-white border border-gray-200"
                   />
                 ) : (
                   <div className="h-40 flex items-center justify-center text-sm text-gray-500">
-                    Preview unavailable
+                    {hasOriginal
+                      ? "Preview unavailable — download the original PDF below."
+                      : "Original file missing."}
                   </div>
                 )}
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {downloadUrl ? (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {hasOriginal ? (
                     <a
-                      href={downloadUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1.5 text-sm text-gray-700 underline-offset-2 hover:underline"
+                      href={`/api/receipts/${receiptId}/download`}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-800 hover:bg-gray-50"
                     >
                       <Download className="h-3.5 w-3.5" />
-                      Download original
+                      Download original PDF
                     </a>
                   ) : null}
                   <span
