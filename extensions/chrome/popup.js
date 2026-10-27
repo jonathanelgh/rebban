@@ -467,6 +467,9 @@ function renderBid() {
         </div>
       `
           : `
+        ${
+          bidPartyKey === "new"
+            ? `
         <div class="field">
           <label for="bid-contact-name">Contact name</label>
           <input id="bid-contact-name" value="${escapeHtml(bidContactName)}" placeholder="From email sender" />
@@ -475,6 +478,9 @@ function renderBid() {
           <label for="bid-contact-email">Contact email</label>
           <input id="bid-contact-email" type="email" value="${escapeHtml(bidContactEmail)}" placeholder="name@company.com" />
         </div>
+        `
+            : ""
+        }
         <div class="field">
           <label for="bid-party">Client / lead</label>
           <select id="bid-party">${partyOptionsHtml()}</select>
