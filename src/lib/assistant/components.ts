@@ -416,7 +416,8 @@ export function deriveComponentsFromToolResults(
       name === "create_invoice_draft" ||
       name === "create_invoice_from_unbilled" ||
       name === "get_invoice" ||
-      name === "update_invoice_draft"
+      name === "update_invoice_draft" ||
+      name === "update_invoice_status"
     ) {
       const inv = asRecord(result.invoice);
       if (!inv) continue;

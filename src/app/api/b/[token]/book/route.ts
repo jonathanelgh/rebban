@@ -102,7 +102,7 @@ export async function POST(
     p_starts_at: startsAt.toISOString(),
     p_guest_name: body.guest_name || "",
     p_guest_email: body.guest_email || "",
-    p_guest_notes: body.guest_notes || null,
+    p_guest_notes: body.guest_notes || undefined,
   });
 
   if (error) {

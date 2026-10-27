@@ -12,6 +12,7 @@ import {
   appendTimeSpecification,
   fetchUnbilledTimeEntries,
   summarizeUnbilled,
+  unlockTimeEntriesForInvoice,
 } from "@/lib/invoices/unbilled";
 import { DEFAULT_HOURLY_RATE, formatDurationMinutes } from "@/lib/time-entries";
 import { toProposalContentJson } from "@/lib/proposals/content";
@@ -906,19 +907,69 @@ export const ASSISTANT_TOOL_DEFINITIONS = [
   {
     type: "function" as const,
     function: {
-      name: "send_invoice",
+      name: "update_invoice_status",
       description:
-        "Send one draft invoice by email. ONLY after explicit confirmation. For several drafts use send_invoices.",
+        "Mark an invoice as paid or void. Use when the user says mark as paid / void this invoice / mark Acme's latest invoice paid. Prefer invoice_id when known; otherwise resolve by client_query (latest unpaid for paid, latest non-void for void).",
       parameters: {
         type: "object",
         properties: {
           invoice_id: {
             type: "string",
-            description: "Invoice id; omit to use pending confirmed invoice",
+            description: "Invoice id when known from a prior tool result",
+          },
+          client_query: {
+            type: "string",
+            description:
+              "Client name/company/email when resolving their latest invoice",
+          },
+          client_id: { type: "string" },
+          which: {
+            type: "string",
+            enum: ["latest", "latest_unpaid"],
+            description:
+              "When resolving by client: latest any open invoice, or latest unpaid (sent/viewed/overdue). Default latest_unpaid for paid, latest for void.",
+          },
+          status: {
+            type: "string",
+            enum: ["paid", "void"],
+            description: "New status",
+          },
+        },
+        required: ["status"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "send_invoice",
+      description:
+        "Email one invoice (first send or send again / resend). Works for draft, sent, viewed, or overdue — not paid or void. ONLY with confirmed=true after the user clearly asks to send/resend (or confirms a pending draft). Prefer invoice_id when known; otherwise client_query + which. For several drafts use send_invoices.",
+      parameters: {
+        type: "object",
+        properties: {
+          invoice_id: {
+            type: "string",
+            description:
+              "Invoice id when known; omit to use pending send_invoice or resolve by client",
+          },
+          client_query: {
+            type: "string",
+            description:
+              "Client name/company/email when sending/resending their invoice without an id",
+          },
+          client_id: { type: "string" },
+          which: {
+            type: "string",
+            enum: ["latest", "latest_sent", "latest_draft"],
+            description:
+              "When resolving by client: latest any sendable invoice, latest already-sent (sent/viewed/overdue) for resend, or latest draft. Default latest_sent for resend wording, else latest.",
           },
           confirmed: {
             type: "boolean",
-            description: "Must be true — user confirmed send in this chat",
+            description:
+              "Must be true — user asked to send/resend or confirmed a pending draft",
           },
         },
         required: ["confirmed"],
@@ -1405,6 +1456,180 @@ async function loadInvoiceSummary(
       description,
     },
   };
+}
+
+async function resolveInvoiceForStatusUpdate(
+  db: Db,
+  organizationId: string,
+  args: {
+    invoice_id?: unknown;
+    client_id?: unknown;
+    client_query?: unknown;
+    which?: unknown;
+    status: "paid" | "void";
+  }
+): Promise<
+  | { ok: true; invoiceId: string }
+  | { ok: false; error: string; matches?: Array<Record<string, unknown>> }
+> {
+  const invoiceIdArg = args.invoice_id ? String(args.invoice_id).trim() : "";
+  if (invoiceIdArg) {
+    const { data: invoice } = await db
+      .from("invoices")
+      .select("id")
+      .eq("id", invoiceIdArg)
+      .eq("organization_id", organizationId)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (!invoice) return { ok: false, error: "Invoice not found." };
+    return { ok: true, invoiceId: invoice.id };
+  }
+
+  const resolved = await resolveClient(db, organizationId, args);
+  if (!resolved.ok) {
+    return {
+      ok: false,
+      error: resolved.error,
+      matches: resolved.matches,
+    };
+  }
+
+  const whichRaw = String(args.which || "").toLowerCase();
+  const which =
+    whichRaw === "latest" || whichRaw === "latest_unpaid"
+      ? whichRaw
+      : args.status === "paid"
+        ? "latest_unpaid"
+        : "latest";
+
+  let query = db
+    .from("invoices")
+    .select("id, number, status, total, currency, due_date, issue_date")
+    .eq("organization_id", organizationId)
+    .eq("client_id", resolved.id)
+    .is("deleted_at", null)
+    .order("issue_date", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
+    .limit(8);
+
+  if (which === "latest_unpaid") {
+    query = query.in("status", ["sent", "viewed", "overdue"]);
+  } else {
+    query = query.neq("status", "void");
+  }
+
+  const { data, error } = await query;
+  if (error) return { ok: false, error: error.message };
+  if (!data?.length) {
+    return {
+      ok: false,
+      error:
+        which === "latest_unpaid"
+          ? `No unpaid invoice found for ${resolved.label}.`
+          : `No invoice found for ${resolved.label}.`,
+    };
+  }
+
+  return { ok: true, invoiceId: data[0].id };
+}
+
+async function resolveInvoiceForSend(
+  db: Db,
+  organizationId: string,
+  args: {
+    invoice_id?: unknown;
+    client_id?: unknown;
+    client_query?: unknown;
+    which?: unknown;
+    pendingId?: string | null;
+  }
+): Promise<
+  | { ok: true; invoiceId: string }
+  | { ok: false; error: string; matches?: Array<Record<string, unknown>> }
+> {
+  const invoiceIdArg = args.invoice_id ? String(args.invoice_id).trim() : "";
+  if (invoiceIdArg) {
+    const { data: invoice } = await db
+      .from("invoices")
+      .select("id, status")
+      .eq("id", invoiceIdArg)
+      .eq("organization_id", organizationId)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (!invoice) return { ok: false, error: "Invoice not found." };
+    if (invoice.status === "paid" || invoice.status === "void") {
+      return {
+        ok: false,
+        error: `Invoice cannot be sent (status is ${invoice.status}).`,
+      };
+    }
+    return { ok: true, invoiceId: invoice.id };
+  }
+
+  const hasClient =
+    Boolean(args.client_id && String(args.client_id).trim()) ||
+    Boolean(args.client_query && String(args.client_query).trim());
+
+  if (!hasClient) {
+    if (args.pendingId) return { ok: true, invoiceId: args.pendingId };
+    return {
+      ok: false,
+      error:
+        "No invoice to send. Pass invoice_id, client_query, or confirm a pending draft.",
+    };
+  }
+
+  const resolved = await resolveClient(db, organizationId, args);
+  if (!resolved.ok) {
+    return {
+      ok: false,
+      error: resolved.error,
+      matches: resolved.matches,
+    };
+  }
+
+  const whichRaw = String(args.which || "").toLowerCase();
+  const which =
+    whichRaw === "latest_sent" ||
+    whichRaw === "latest_draft" ||
+    whichRaw === "latest"
+      ? whichRaw
+      : "latest";
+
+  let query = db
+    .from("invoices")
+    .select("id, number, status, total, currency, due_date, issue_date")
+    .eq("organization_id", organizationId)
+    .eq("client_id", resolved.id)
+    .is("deleted_at", null)
+    .order("issue_date", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
+    .limit(8);
+
+  if (which === "latest_sent") {
+    query = query.in("status", ["sent", "viewed", "overdue"]);
+  } else if (which === "latest_draft") {
+    query = query.eq("status", "draft");
+  } else {
+    query = query.in("status", ["draft", "sent", "viewed", "overdue"]);
+  }
+
+  const { data, error } = await query;
+  if (error) return { ok: false, error: error.message };
+  if (!data?.length) {
+    const label =
+      which === "latest_sent"
+        ? "No previously sent invoice"
+        : which === "latest_draft"
+          ? "No draft invoice"
+          : "No sendable invoice";
+    return {
+      ok: false,
+      error: `${label} found for ${resolved.label}.`,
+    };
+  }
+
+  return { ok: true, invoiceId: data[0].id };
 }
 
 async function updateDraftInvoice(
@@ -3678,11 +3903,147 @@ export async function executeAssistantTool(
         return { ok: true, invoice: updated.invoice, ask_to_send: true };
       }
 
+      case "update_invoice_status": {
+        const statusRaw = String(args.status || "").toLowerCase();
+        if (statusRaw !== "paid" && statusRaw !== "void") {
+          return { error: "status must be paid or void." };
+        }
+        const nextStatus = statusRaw as "paid" | "void";
+
+        const pendingId =
+          ctx.pendingAction?.type === "send_invoice"
+            ? ctx.pendingAction.invoice_id
+            : null;
+        const resolved = await resolveInvoiceForStatusUpdate(
+          db,
+          organizationId,
+          {
+            invoice_id: args.invoice_id || pendingId,
+            client_id: args.client_id,
+            client_query: args.client_query,
+            which: args.which,
+            status: nextStatus,
+          }
+        );
+        if (!resolved.ok) {
+          return {
+            error: resolved.error,
+            matches: resolved.matches,
+          };
+        }
+
+        const { data: current, error: loadError } = await db
+          .from("invoices")
+          .select("id, status, number")
+          .eq("id", resolved.invoiceId)
+          .eq("organization_id", organizationId)
+          .is("deleted_at", null)
+          .maybeSingle();
+        if (loadError || !current) {
+          return { error: loadError?.message || "Invoice not found." };
+        }
+
+        if (current.status === nextStatus) {
+          const summary = await loadInvoiceSummary(
+            db,
+            organizationId,
+            resolved.invoiceId
+          );
+          if ("error" in summary) return summary;
+          return {
+            ok: true,
+            already_status: true,
+            invoice: summary.invoice,
+            message: `Invoice is already ${nextStatus}.`,
+          };
+        }
+
+        if (current.status === "void") {
+          return { error: "This invoice is voided and cannot be updated." };
+        }
+        if (nextStatus === "paid" && current.status === "paid") {
+          return { error: "This invoice is already paid." };
+        }
+        if (nextStatus === "void" && current.status === "paid") {
+          return {
+            error:
+              "Paid invoices cannot be voided. Leave it paid or adjust in the dashboard.",
+          };
+        }
+
+        const now = new Date().toISOString();
+        const updates: Database["public"]["Tables"]["invoices"]["Update"] = {
+          status: nextStatus,
+          updated_at: now,
+        };
+        if (nextStatus === "paid") {
+          updates.paid_at = now;
+        }
+
+        const { error: updateError } = await db
+          .from("invoices")
+          .update(updates)
+          .eq("id", resolved.invoiceId)
+          .eq("organization_id", organizationId);
+        if (updateError) return { error: updateError.message };
+
+        try {
+          await db.rpc("cancel_invoice_reminders", {
+            p_invoice_id: resolved.invoiceId,
+          });
+        } catch {
+          // non-fatal
+        }
+
+        if (nextStatus === "void") {
+          try {
+            await unlockTimeEntriesForInvoice(db, {
+              organizationId,
+              invoiceId: resolved.invoiceId,
+            });
+          } catch {
+            // non-fatal
+          }
+        }
+
+        await db.from("invoice_events").insert({
+          organization_id: organizationId,
+          invoice_id: resolved.invoiceId,
+          event_type: nextStatus === "paid" ? "paid" : "voided",
+          actor_type: "freelancer",
+          metadata: { source: "assistant" },
+        });
+
+        if (
+          ctx.pendingAction?.type === "send_invoice" &&
+          ctx.pendingAction.invoice_id === resolved.invoiceId
+        ) {
+          await ctx.setPendingAction(null);
+        }
+
+        const summary = await loadInvoiceSummary(
+          db,
+          organizationId,
+          resolved.invoiceId
+        );
+        if ("error" in summary) return summary;
+        return {
+          ok: true,
+          updated: true,
+          status: nextStatus,
+          invoice: summary.invoice,
+          message:
+            nextStatus === "paid"
+              ? "Invoice marked as paid. Confirm briefly to the user."
+              : "Invoice voided. Confirm briefly to the user.",
+        };
+      }
+
       case "send_invoice": {
         if (args.confirmed !== true) {
           return {
             error:
-              "Sending requires confirmed=true after the user explicitly agrees.",
+              "Sending requires confirmed=true after the user explicitly agrees to send or resend.",
           };
         }
 
@@ -3693,15 +4054,21 @@ export async function executeAssistantTool(
                 ctx.pendingAction.invoices.length === 1
               ? ctx.pendingAction.invoices[0].invoice_id
               : null;
-        const invoiceId =
-          (args.invoice_id ? String(args.invoice_id) : null) || pendingId;
 
-        if (!invoiceId) {
+        const resolved = await resolveInvoiceForSend(db, organizationId, {
+          invoice_id: args.invoice_id,
+          client_id: args.client_id,
+          client_query: args.client_query,
+          which: args.which,
+          pendingId,
+        });
+        if (!resolved.ok) {
           return {
-            error:
-              "No invoice to send. Create a draft first, or pass invoice_id after confirmation.",
+            error: resolved.error,
+            ...(resolved.matches ? { matches: resolved.matches } : {}),
           };
         }
+        const invoiceId = resolved.invoiceId;
 
         const result = await sendInvoiceForOrganization({
           db,
@@ -3742,7 +4109,7 @@ export async function executeAssistantTool(
           url: result.url,
           status: result.status,
           message:
-            "Invoice sent. Confirm warmly in one short line, e.g. I've now sent the invoice :) — optionally mention the invoice number and recipient email.",
+            "Invoice emailed. Confirm warmly in one short line, e.g. I've sent the invoice again :) — optionally mention the invoice number and recipient email.",
         };
       }
 

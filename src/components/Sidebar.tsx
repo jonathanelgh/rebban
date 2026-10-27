@@ -37,6 +37,7 @@ import {
   Newspaper,
   Activity,
   CalendarDays,
+  Receipt,
   type LucideIcon,
 } from "lucide-react";
 import { useTimeTracking, formatElapsed } from "@/components/TimeTrackingContext";
@@ -331,6 +332,13 @@ function SidebarInner({
               icon={FileSpreadsheet}
               label="Invoices"
               active={pathname.startsWith("/invoices")}
+              onNavigate={handleNavigate}
+            />
+            <NavItem
+              href="/receipts"
+              icon={Receipt}
+              label="Receipts"
+              active={pathname.startsWith("/receipts")}
               onNavigate={handleNavigate}
             />
             <NavItem

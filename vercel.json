@@ -39,6 +39,10 @@
     {
       "path": "/api/cron/assistant-digest",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/receipts",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

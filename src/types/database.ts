@@ -292,6 +292,96 @@ export type Database = {
           },
         ]
       }
+      blog_automation_runs: {
+        Row: {
+          blog_post_id: string | null
+          created_at: string
+          error: string | null
+          id: string
+          slot_date: string
+          slot_time: string
+          status: string
+          topic_id: string | null
+        }
+        Insert: {
+          blog_post_id?: string | null
+          created_at?: string
+          error?: string | null
+          id?: string
+          slot_date: string
+          slot_time: string
+          status?: string
+          topic_id?: string | null
+        }
+        Update: {
+          blog_post_id?: string | null
+          created_at?: string
+          error?: string | null
+          id?: string
+          slot_date?: string
+          slot_time?: string
+          status?: string
+          topic_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "blog_automation_runs_blog_post_id_fkey"
+            columns: ["blog_post_id"]
+            isOneToOne: false
+            referencedRelation: "blog_posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "blog_automation_runs_topic_id_fkey"
+            columns: ["topic_id"]
+            isOneToOne: false
+            referencedRelation: "blog_topics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      blog_automation_settings: {
+        Row: {
+          author: string
+          enabled: boolean
+          id: number
+          last_error: string | null
+          last_run_at: string | null
+          posts_per_day: number
+          publish_times: string[]
+          timezone: string
+          topic_batch_size: number
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          author?: string
+          enabled?: boolean
+          id?: number
+          last_error?: string | null
+          last_run_at?: string | null
+          posts_per_day?: number
+          publish_times?: string[]
+          timezone?: string
+          topic_batch_size?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          author?: string
+          enabled?: boolean
+          id?: number
+          last_error?: string | null
+          last_run_at?: string | null
+          posts_per_day?: number
+          publish_times?: string[]
+          timezone?: string
+          topic_batch_size?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       blog_categories: {
         Row: {
           created_at: string
@@ -393,81 +483,6 @@ export type Database = {
           },
         ]
       }
-      blog_automation_runs: {
-        Row: {
-          blog_post_id: string | null
-          created_at: string
-          error: string | null
-          id: string
-          slot_date: string
-          slot_time: string
-          status: string
-          topic_id: string | null
-        }
-        Insert: {
-          blog_post_id?: string | null
-          created_at?: string
-          error?: string | null
-          id?: string
-          slot_date: string
-          slot_time: string
-          status?: string
-          topic_id?: string | null
-        }
-        Update: {
-          blog_post_id?: string | null
-          created_at?: string
-          error?: string | null
-          id?: string
-          slot_date?: string
-          slot_time?: string
-          status?: string
-          topic_id?: string | null
-        }
-        Relationships: []
-      }
-      blog_automation_settings: {
-        Row: {
-          author: string
-          enabled: boolean
-          id: number
-          last_error: string | null
-          last_run_at: string | null
-          posts_per_day: number
-          publish_times: string[]
-          timezone: string
-          topic_batch_size: number
-          updated_at: string
-          updated_by: string | null
-        }
-        Insert: {
-          author?: string
-          enabled?: boolean
-          id?: number
-          last_error?: string | null
-          last_run_at?: string | null
-          posts_per_day?: number
-          publish_times?: string[]
-          timezone?: string
-          topic_batch_size?: number
-          updated_at?: string
-          updated_by?: string | null
-        }
-        Update: {
-          author?: string
-          enabled?: boolean
-          id?: number
-          last_error?: string | null
-          last_run_at?: string | null
-          posts_per_day?: number
-          publish_times?: string[]
-          timezone?: string
-          topic_batch_size?: number
-          updated_at?: string
-          updated_by?: string | null
-        }
-        Relationships: []
-      }
       blog_topics: {
         Row: {
           angle: string
@@ -518,6 +533,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "blog_topics_blog_post_id_fkey"
+            columns: ["blog_post_id"]
+            isOneToOne: false
+            referencedRelation: "blog_posts"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "blog_topics_category_id_fkey"
             columns: ["category_id"]
@@ -573,7 +595,9 @@ export type Database = {
           is_active: boolean
           location_details: string | null
           location_type: Database["public"]["Enums"]["booking_location_type"]
-          online_provider: Database["public"]["Enums"]["booking_online_provider"] | null
+          online_provider:
+            | Database["public"]["Enums"]["booking_online_provider"]
+            | null
           organization_id: string
           public_token: string
           title: string
@@ -589,7 +613,9 @@ export type Database = {
           is_active?: boolean
           location_details?: string | null
           location_type?: Database["public"]["Enums"]["booking_location_type"]
-          online_provider?: Database["public"]["Enums"]["booking_online_provider"] | null
+          online_provider?:
+            | Database["public"]["Enums"]["booking_online_provider"]
+            | null
           organization_id: string
           public_token: string
           title: string
@@ -605,7 +631,9 @@ export type Database = {
           is_active?: boolean
           location_details?: string | null
           location_type?: Database["public"]["Enums"]["booking_location_type"]
-          online_provider?: Database["public"]["Enums"]["booking_online_provider"] | null
+          online_provider?:
+            | Database["public"]["Enums"]["booking_online_provider"]
+            | null
           organization_id?: string
           public_token?: string
           title?: string
@@ -689,10 +717,14 @@ export type Database = {
           guest_notes: string | null
           id: string
           location_details: string | null
-          location_type: Database["public"]["Enums"]["booking_location_type"] | null
+          location_type:
+            | Database["public"]["Enums"]["booking_location_type"]
+            | null
           meeting_id: string | null
           meeting_url: string | null
-          online_provider: Database["public"]["Enums"]["booking_online_provider"] | null
+          online_provider:
+            | Database["public"]["Enums"]["booking_online_provider"]
+            | null
           organization_id: string
           reminder_1d_sent_at: string | null
           reminder_1h_sent_at: string | null
@@ -712,10 +744,14 @@ export type Database = {
           guest_notes?: string | null
           id?: string
           location_details?: string | null
-          location_type?: Database["public"]["Enums"]["booking_location_type"] | null
+          location_type?:
+            | Database["public"]["Enums"]["booking_location_type"]
+            | null
           meeting_id?: string | null
           meeting_url?: string | null
-          online_provider?: Database["public"]["Enums"]["booking_online_provider"] | null
+          online_provider?:
+            | Database["public"]["Enums"]["booking_online_provider"]
+            | null
           organization_id: string
           reminder_1d_sent_at?: string | null
           reminder_1h_sent_at?: string | null
@@ -735,10 +771,14 @@ export type Database = {
           guest_notes?: string | null
           id?: string
           location_details?: string | null
-          location_type?: Database["public"]["Enums"]["booking_location_type"] | null
+          location_type?:
+            | Database["public"]["Enums"]["booking_location_type"]
+            | null
           meeting_id?: string | null
           meeting_url?: string | null
-          online_provider?: Database["public"]["Enums"]["booking_online_provider"] | null
+          online_provider?:
+            | Database["public"]["Enums"]["booking_online_provider"]
+            | null
           organization_id?: string
           reminder_1d_sent_at?: string | null
           reminder_1h_sent_at?: string | null
@@ -823,6 +863,56 @@ export type Database = {
           },
         ]
       }
+      gmail_connections: {
+        Row: {
+          access_token: string
+          connected_at: string
+          email: string
+          id: string
+          organization_id: string | null
+          refresh_token: string
+          revoked_at: string | null
+          scope: string | null
+          token_expiry: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_token: string
+          connected_at?: string
+          email: string
+          id?: string
+          organization_id?: string | null
+          refresh_token: string
+          revoked_at?: string | null
+          scope?: string | null
+          token_expiry: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_token?: string
+          connected_at?: string
+          email?: string
+          id?: string
+          organization_id?: string | null
+          refresh_token?: string
+          revoked_at?: string | null
+          scope?: string | null
+          token_expiry?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gmail_connections_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       google_calendar_connections: {
         Row: {
           access_token: string
@@ -869,109 +959,6 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "google_calendar_connections_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      zoom_connections: {
-        Row: {
-          access_token: string
-          connected_at: string
-          email: string
-          id: string
-          organization_id: string | null
-          refresh_token: string
-          revoked_at: string | null
-          scope: string | null
-          token_expiry: string
-          updated_at: string
-          user_id: string
-          zoom_user_id: string | null
-        }
-        Insert: {
-          access_token: string
-          connected_at?: string
-          email: string
-          id?: string
-          organization_id?: string | null
-          refresh_token: string
-          revoked_at?: string | null
-          scope?: string | null
-          token_expiry: string
-          updated_at?: string
-          user_id: string
-          zoom_user_id?: string | null
-        }
-        Update: {
-          access_token?: string
-          connected_at?: string
-          email?: string
-          id?: string
-          organization_id?: string | null
-          refresh_token?: string
-          revoked_at?: string | null
-          scope?: string | null
-          token_expiry?: string
-          updated_at?: string
-          user_id?: string
-          zoom_user_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "zoom_connections_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      gmail_connections: {
-        Row: {
-          access_token: string
-          connected_at: string
-          email: string
-          id: string
-          organization_id: string | null
-          refresh_token: string
-          revoked_at: string | null
-          scope: string | null
-          token_expiry: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          access_token: string
-          connected_at?: string
-          email: string
-          id?: string
-          organization_id?: string | null
-          refresh_token: string
-          revoked_at?: string | null
-          scope?: string | null
-          token_expiry: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          access_token?: string
-          connected_at?: string
-          email?: string
-          id?: string
-          organization_id?: string | null
-          refresh_token?: string
-          revoked_at?: string | null
-          scope?: string | null
-          token_expiry?: string
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "gmail_connections_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
@@ -3078,6 +3065,413 @@ export type Database = {
           },
         ]
       }
+      receipt_events: {
+        Row: {
+          actor_id: string | null
+          event_type: string
+          id: string
+          new_values: Json | null
+          occurred_at: string
+          old_values: Json | null
+          organization_id: string
+          receipt_id: string
+        }
+        Insert: {
+          actor_id?: string | null
+          event_type: string
+          id?: string
+          new_values?: Json | null
+          occurred_at?: string
+          old_values?: Json | null
+          organization_id: string
+          receipt_id: string
+        }
+        Update: {
+          actor_id?: string | null
+          event_type?: string
+          id?: string
+          new_values?: Json | null
+          occurred_at?: string
+          old_values?: Json | null
+          organization_id?: string
+          receipt_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "receipt_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "receipt_events_receipt_id_fkey"
+            columns: ["receipt_id"]
+            isOneToOne: false
+            referencedRelation: "receipts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      receipt_exports: {
+        Row: {
+          created_by: string | null
+          error: string | null
+          expires_at: string | null
+          generated_at: string
+          id: string
+          month: number
+          organization_id: string
+          status: string
+          storage_key: string | null
+          year: number
+        }
+        Insert: {
+          created_by?: string | null
+          error?: string | null
+          expires_at?: string | null
+          generated_at?: string
+          id?: string
+          month: number
+          organization_id: string
+          status?: string
+          storage_key?: string | null
+          year: number
+        }
+        Update: {
+          created_by?: string | null
+          error?: string | null
+          expires_at?: string | null
+          generated_at?: string
+          id?: string
+          month?: number
+          organization_id?: string
+          status?: string
+          storage_key?: string | null
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "receipt_exports_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      receipt_extractions: {
+        Row: {
+          confidence_json: Json
+          extracted_at: string
+          id: string
+          model: string | null
+          organization_id: string
+          raw_json: Json
+          receipt_id: string
+          version: number
+          warnings: Json
+        }
+        Insert: {
+          confidence_json?: Json
+          extracted_at?: string
+          id?: string
+          model?: string | null
+          organization_id: string
+          raw_json?: Json
+          receipt_id: string
+          version?: number
+          warnings?: Json
+        }
+        Update: {
+          confidence_json?: Json
+          extracted_at?: string
+          id?: string
+          model?: string | null
+          organization_id?: string
+          raw_json?: Json
+          receipt_id?: string
+          version?: number
+          warnings?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "receipt_extractions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "receipt_extractions_receipt_id_fkey"
+            columns: ["receipt_id"]
+            isOneToOne: false
+            referencedRelation: "receipts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      receipt_files: {
+        Row: {
+          bytes: number
+          created_at: string
+          id: string
+          mime_type: string
+          organization_id: string
+          original_filename: string
+          receipt_id: string
+          role: Database["public"]["Enums"]["receipt_file_role"]
+          sha256: string
+          storage_key: string
+        }
+        Insert: {
+          bytes: number
+          created_at?: string
+          id?: string
+          mime_type: string
+          organization_id: string
+          original_filename: string
+          receipt_id: string
+          role?: Database["public"]["Enums"]["receipt_file_role"]
+          sha256: string
+          storage_key: string
+        }
+        Update: {
+          bytes?: number
+          created_at?: string
+          id?: string
+          mime_type?: string
+          organization_id?: string
+          original_filename?: string
+          receipt_id?: string
+          role?: Database["public"]["Enums"]["receipt_file_role"]
+          sha256?: string
+          storage_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "receipt_files_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "receipt_files_receipt_id_fkey"
+            columns: ["receipt_id"]
+            isOneToOne: false
+            referencedRelation: "receipts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      receipt_inbound_messages: {
+        Row: {
+          created_at: string
+          error: string | null
+          id: string
+          inbox_id: string | null
+          message_id: string | null
+          organization_id: string
+          provider: string
+          provider_email_id: string
+          raw_metadata: Json
+          received_at: string
+          recipient: string | null
+          sender: string | null
+          status: Database["public"]["Enums"]["receipt_inbound_status"]
+          subject: string | null
+        }
+        Insert: {
+          created_at?: string
+          error?: string | null
+          id?: string
+          inbox_id?: string | null
+          message_id?: string | null
+          organization_id: string
+          provider?: string
+          provider_email_id: string
+          raw_metadata?: Json
+          received_at?: string
+          recipient?: string | null
+          sender?: string | null
+          status?: Database["public"]["Enums"]["receipt_inbound_status"]
+          subject?: string | null
+        }
+        Update: {
+          created_at?: string
+          error?: string | null
+          id?: string
+          inbox_id?: string | null
+          message_id?: string | null
+          organization_id?: string
+          provider?: string
+          provider_email_id?: string
+          raw_metadata?: Json
+          received_at?: string
+          recipient?: string | null
+          sender?: string | null
+          status?: Database["public"]["Enums"]["receipt_inbound_status"]
+          subject?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "receipt_inbound_messages_inbox_id_fkey"
+            columns: ["inbox_id"]
+            isOneToOne: false
+            referencedRelation: "receipt_inboxes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "receipt_inbound_messages_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      receipt_inboxes: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          display_address: string
+          id: string
+          organization_id: string
+          rotated_at: string | null
+          token_hash: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          display_address: string
+          id?: string
+          organization_id: string
+          rotated_at?: string | null
+          token_hash: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          display_address?: string
+          id?: string
+          organization_id?: string
+          rotated_at?: string | null
+          token_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "receipt_inboxes_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      receipts: {
+        Row: {
+          amount_minor: number | null
+          attachment_index: number | null
+          category: string | null
+          created_at: string
+          created_by: string | null
+          currency: string | null
+          deleted_at: string | null
+          document_type: Database["public"]["Enums"]["receipt_document_type"]
+          duplicate_of: string | null
+          id: string
+          inbound_message_id: string | null
+          is_possible_duplicate: boolean
+          merchant: string | null
+          note: string | null
+          organization_id: string
+          original_filename: string | null
+          receipt_date: string | null
+          review_status: Database["public"]["Enums"]["receipt_review_status"]
+          reviewed_at: string | null
+          reviewed_by: string | null
+          source: Database["public"]["Enums"]["receipt_source"]
+          tax_amount_minor: number | null
+          updated_at: string
+        }
+        Insert: {
+          amount_minor?: number | null
+          attachment_index?: number | null
+          category?: string | null
+          created_at?: string
+          created_by?: string | null
+          currency?: string | null
+          deleted_at?: string | null
+          document_type?: Database["public"]["Enums"]["receipt_document_type"]
+          duplicate_of?: string | null
+          id?: string
+          inbound_message_id?: string | null
+          is_possible_duplicate?: boolean
+          merchant?: string | null
+          note?: string | null
+          organization_id: string
+          original_filename?: string | null
+          receipt_date?: string | null
+          review_status?: Database["public"]["Enums"]["receipt_review_status"]
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          source: Database["public"]["Enums"]["receipt_source"]
+          tax_amount_minor?: number | null
+          updated_at?: string
+        }
+        Update: {
+          amount_minor?: number | null
+          attachment_index?: number | null
+          category?: string | null
+          created_at?: string
+          created_by?: string | null
+          currency?: string | null
+          deleted_at?: string | null
+          document_type?: Database["public"]["Enums"]["receipt_document_type"]
+          duplicate_of?: string | null
+          id?: string
+          inbound_message_id?: string | null
+          is_possible_duplicate?: boolean
+          merchant?: string | null
+          note?: string | null
+          organization_id?: string
+          original_filename?: string | null
+          receipt_date?: string | null
+          review_status?: Database["public"]["Enums"]["receipt_review_status"]
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          source?: Database["public"]["Enums"]["receipt_source"]
+          tax_amount_minor?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "receipts_duplicate_of_fkey"
+            columns: ["duplicate_of"]
+            isOneToOne: false
+            referencedRelation: "receipts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "receipts_inbound_message_id_fkey"
+            columns: ["inbound_message_id"]
+            isOneToOne: false
+            referencedRelation: "receipt_inbound_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "receipts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       stripe_webhook_events: {
         Row: {
           id: string
@@ -3541,6 +3935,59 @@ export type Database = {
           },
         ]
       }
+      zoom_connections: {
+        Row: {
+          access_token: string
+          connected_at: string
+          email: string
+          id: string
+          organization_id: string | null
+          refresh_token: string
+          revoked_at: string | null
+          scope: string | null
+          token_expiry: string
+          updated_at: string
+          user_id: string
+          zoom_user_id: string | null
+        }
+        Insert: {
+          access_token: string
+          connected_at?: string
+          email: string
+          id?: string
+          organization_id?: string | null
+          refresh_token: string
+          revoked_at?: string | null
+          scope?: string | null
+          token_expiry: string
+          updated_at?: string
+          user_id: string
+          zoom_user_id?: string | null
+        }
+        Update: {
+          access_token?: string
+          connected_at?: string
+          email?: string
+          id?: string
+          organization_id?: string | null
+          refresh_token?: string
+          revoked_at?: string | null
+          scope?: string | null
+          token_expiry?: string
+          updated_at?: string
+          user_id?: string
+          zoom_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "zoom_connections_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -3631,6 +4078,65 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      claim_pending_receipt_extractions: {
+        Args: { p_limit?: number }
+        Returns: {
+          amount_minor: number | null
+          attachment_index: number | null
+          category: string | null
+          created_at: string
+          created_by: string | null
+          currency: string | null
+          deleted_at: string | null
+          document_type: Database["public"]["Enums"]["receipt_document_type"]
+          duplicate_of: string | null
+          id: string
+          inbound_message_id: string | null
+          is_possible_duplicate: boolean
+          merchant: string | null
+          note: string | null
+          organization_id: string
+          original_filename: string | null
+          receipt_date: string | null
+          review_status: Database["public"]["Enums"]["receipt_review_status"]
+          reviewed_at: string | null
+          reviewed_by: string | null
+          source: Database["public"]["Enums"]["receipt_source"]
+          tax_amount_minor: number | null
+          updated_at: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "receipts"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      claim_pending_receipt_inbound: {
+        Args: { p_limit?: number }
+        Returns: {
+          created_at: string
+          error: string | null
+          id: string
+          inbox_id: string | null
+          message_id: string | null
+          organization_id: string
+          provider: string
+          provider_email_id: string
+          raw_metadata: Json
+          received_at: string
+          recipient: string | null
+          sender: string | null
+          status: Database["public"]["Enums"]["receipt_inbound_status"]
+          subject: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "receipt_inbound_messages"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       create_organization: {
         Args: {
           p_name: string
@@ -3683,6 +4189,16 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      create_public_booking: {
+        Args: {
+          p_guest_email: string
+          p_guest_name: string
+          p_guest_notes?: string
+          p_starts_at: string
+          p_token: string
+        }
+        Returns: Json
+      }
       create_user_notification: {
         Args: {
           p_body: string
@@ -3707,27 +4223,19 @@ export type Database = {
         }
         Returns: Json
       }
-      get_public_invoice: { Args: { p_token: string }; Returns: Json }
-      get_public_lead_form: { Args: { p_token: string }; Returns: Json }
-      get_public_booking_link: { Args: { p_token: string }; Returns: Json }
       get_public_booking_busy: {
         Args: { p_from: string; p_to: string; p_token: string }
         Returns: Json
       }
-      create_public_booking: {
-        Args: {
-          p_guest_email: string
-          p_guest_name: string
-          p_guest_notes?: string | null
-          p_starts_at: string
-          p_token: string
-        }
-        Returns: Json
-      }
+      get_public_booking_link: { Args: { p_token: string }; Returns: Json }
+      get_public_invoice: { Args: { p_token: string }; Returns: Json }
+      get_public_lead_form: { Args: { p_token: string }; Returns: Json }
       get_public_proposal: { Args: { p_token: string }; Returns: Json }
       get_signed_proposal_bundle: { Args: { p_token: string }; Returns: Json }
       is_org_admin: { Args: { p_org_id: string }; Returns: boolean }
+      is_org_entitled: { Args: { p_org_id: string }; Returns: boolean }
       is_org_member: { Args: { p_org_id: string }; Returns: boolean }
+      is_org_member_entitled: { Args: { p_org_id: string }; Returns: boolean }
       is_org_owner: { Args: { p_org_id: string }; Returns: boolean }
       is_platform_admin: { Args: never; Returns: boolean }
       record_public_invoice_view: {
@@ -3836,6 +4344,27 @@ export type Database = {
       project_billing_type: "fixed" | "hourly" | "daily" | "retainer" | "mixed"
       project_status: "active" | "on_hold" | "completed" | "archived"
       proposal_status: "draft" | "sent" | "viewed" | "accepted" | "declined"
+      receipt_document_type:
+        | "receipt"
+        | "invoice"
+        | "credit_note"
+        | "other"
+        | "unknown"
+      receipt_file_role: "original" | "preview" | "body"
+      receipt_inbound_status:
+        | "received"
+        | "processing"
+        | "processed"
+        | "failed"
+        | "ignored"
+      receipt_review_status:
+        | "processing"
+        | "ready"
+        | "needs_review"
+        | "possible_duplicate"
+        | "failed"
+        | "reviewed"
+      receipt_source: "email" | "upload"
       support_agent: "ai" | "human" | "user" | "system"
       support_ticket_channel: "in_app_chat" | "email"
       support_ticket_priority: "low" | "normal" | "high" | "urgent"
@@ -4014,6 +4543,30 @@ export const Constants = {
       project_billing_type: ["fixed", "hourly", "daily", "retainer", "mixed"],
       project_status: ["active", "on_hold", "completed", "archived"],
       proposal_status: ["draft", "sent", "viewed", "accepted", "declined"],
+      receipt_document_type: [
+        "receipt",
+        "invoice",
+        "credit_note",
+        "other",
+        "unknown",
+      ],
+      receipt_file_role: ["original", "preview", "body"],
+      receipt_inbound_status: [
+        "received",
+        "processing",
+        "processed",
+        "failed",
+        "ignored",
+      ],
+      receipt_review_status: [
+        "processing",
+        "ready",
+        "needs_review",
+        "possible_duplicate",
+        "failed",
+        "reviewed",
+      ],
+      receipt_source: ["email", "upload"],
       support_agent: ["ai", "human", "user", "system"],
       support_ticket_channel: ["in_app_chat", "email"],
       support_ticket_priority: ["low", "normal", "high", "urgent"],

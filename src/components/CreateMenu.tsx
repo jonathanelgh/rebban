@@ -11,6 +11,7 @@ import {
   ListTodo,
   Contact,
   CalendarDays,
+  Receipt,
 } from "lucide-react";
 import { useBilling } from "@/components/BillingContext";
 
@@ -50,6 +51,12 @@ const CREATE_ITEMS = [
     label: "New invoice",
     description: "Bill for time or accepted proposals",
     icon: FileSpreadsheet,
+  },
+  {
+    href: "/receipts",
+    label: "Upload receipt",
+    description: "Add expense receipts for your accountant",
+    icon: Receipt,
   },
   {
     href: "/calendar?new=1",

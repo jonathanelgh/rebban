@@ -20,6 +20,7 @@
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.117.3",
     "clsx": "^2.1.1",
+    "jszip": "^3.10.2",
     "lucide-react": "^1.53.0",
     "mammoth": "^1.13.0",
     "nanoid": "^6.0.2",
@@ -36,6 +37,7 @@
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
+    "@types/jszip": "^3.4.0",
     "@types/node": "^20",
     "@types/pdf-parse": "^1.1.5",
     "@types/pdfkit": "^0.17.6",

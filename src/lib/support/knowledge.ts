@@ -50,7 +50,7 @@ Create:
 1. Open Invoices, or + → "New invoice".
 2. Use the new-invoice flow on the page (title "New invoice", then "Create invoice").
 3. Opens the invoice editor (/invoices/[id]/edit).
-Send: in the editor, "Send invoice" (or "Send again") opens the send modal; email goes through connected Gmail/Outlook when available.
+Send: in the editor, "Send invoice" (or "Send again") opens the send modal; email goes through connected Gmail/Outlook when available. The assistant can also send or resend via chat (e.g. "send Acme's latest invoice again").
 Clients can pay via hosted payment pages when Stripe Connect is set up.
 Reminders can run for unpaid invoices.
 
