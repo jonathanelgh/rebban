@@ -1,7 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { formatInvoiceMoney } from "@/lib/invoices/totals";
+import { DEFAULT_HOURLY_RATE } from "@/lib/time-entries";
 import type { AttentionItem } from "@/lib/assistant/needs-attention-format";
+import type { UnbilledDigestClient } from "@/lib/assistant/billing-digest";
 export type {
   AttentionItem,
   AttentionKind,
@@ -222,4 +224,66 @@ export async function collectNeedsAttention(
 
   items.sort((a, b) => b.priority - a.priority);
   return items.slice(0, limit);
+}
+
+/** Unbilled hours grouped by client — for invoicing digests + pending propose. */
+export async function collectUnbilledClients(
+  db: Db,
+  organizationId: string,
+  options?: { limit?: number; minMinutes?: number }
+): Promise<UnbilledDigestClient[]> {
+  const limit = Math.min(25, Math.max(1, options?.limit || 12));
+  const minMinutes = options?.minMinutes ?? 15;
+
+  const { data: unbilledRows } = await db
+    .from("time_entries")
+    .select("id, duration_minutes, hourly_rate, client_id, clients(name, company)")
+    .eq("organization_id", organizationId)
+    .eq("billable", true)
+    .is("deleted_at", null)
+    .is("invoice_id", null)
+    .not("ended_at", "is", null)
+    .gt("duration_minutes", 0)
+    .limit(400);
+
+  const byClient = new Map<
+    string,
+    { label: string; minutes: number; amount: number }
+  >();
+
+  for (const row of unbilledRows || []) {
+    if (!row.client_id) continue;
+    const clients = row.clients as
+      | { name: string; company: string | null }
+      | null
+      | undefined;
+    const label = clients?.company?.trim() || clients?.name || "Client";
+    const minutes = Number(row.duration_minutes) || 0;
+    const rate =
+      Number(row.hourly_rate) > 0
+        ? Number(row.hourly_rate)
+        : DEFAULT_HOURLY_RATE;
+    const prev = byClient.get(row.client_id) || {
+      label,
+      minutes: 0,
+      amount: 0,
+    };
+    prev.minutes += minutes;
+    prev.amount += (minutes / 60) * rate;
+    byClient.set(row.client_id, prev);
+  }
+
+  return Array.from(byClient.entries())
+    .filter(([, row]) => row.minutes >= minMinutes)
+    .sort((a, b) => b[1].amount - a[1].amount)
+    .slice(0, limit)
+    .map(([clientId, row]) => {
+      const hours = Math.round((row.minutes / 60) * 10) / 10;
+      return {
+        client_id: clientId,
+        label: row.label,
+        hours: `${hours}h`,
+        amount: formatInvoiceMoney(row.amount, "EUR"),
+      };
+    });
 }

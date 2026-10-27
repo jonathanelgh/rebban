@@ -425,6 +425,19 @@ export function deriveComponentsFromToolResults(
       continue;
     }
 
+    if (
+      name === "create_invoices_from_unbilled_batch" &&
+      Array.isArray(result.invoices)
+    ) {
+      for (const row of result.invoices.slice(0, 8)) {
+        const inv = asRecord(row);
+        if (!inv) continue;
+        const card = invoiceCardFromToolInvoice(inv);
+        if (card) byKey.set(`invoice:${card.entityId}`, card);
+      }
+      continue;
+    }
+
     if (name === "send_invoice" && result.ok === true) {
       const id =
         asString(result.invoice_id) ||

@@ -268,6 +268,35 @@ describe("deriveComponentsFromToolResults", () => {
   });
 });
 
+describe("create_invoices_from_unbilled_batch cards", () => {
+  it("builds a card per draft invoice", () => {
+    const components = deriveComponentsFromToolResults([
+      {
+        name: "create_invoices_from_unbilled_batch",
+        result: {
+          ok: true,
+          invoices: [
+            {
+              id: "inv-a",
+              client: "Acme",
+              amount: "€100.00",
+              status: "draft",
+            },
+            {
+              id: "inv-b",
+              client: "Beta",
+              amount: "€200.00",
+              status: "draft",
+            },
+          ],
+        },
+      },
+    ]);
+    assert.equal(components.length, 2);
+    assert.ok(components.every((c) => c.type === "invoice_card"));
+  });
+});
+
 describe("convert_proposal_to_project cards", () => {
   it("builds project and invoice cards from convert result", () => {
     const components = deriveComponentsFromToolResults([

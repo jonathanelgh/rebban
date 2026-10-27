@@ -3,12 +3,16 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getAppUrl } from "@/lib/email/resend";
 import {
   collectNeedsAttention,
-  formatAttentionDigest,
+  collectUnbilledClients,
 } from "@/lib/assistant/needs-attention";
+import { formatBillingDigest } from "@/lib/assistant/billing-digest";
 import {
-  isDigestSendWindow,
-  resolveDigestTimezone,
-} from "@/lib/assistant/digest-schedule";
+  billingCooldownDays,
+  billingScheduleFromPrefs,
+  isBillingScheduleWindow,
+} from "@/lib/assistant/billing-schedule";
+import { resolveDigestTimezone } from "@/lib/assistant/digest-schedule";
+import { pendingActionToJson } from "@/lib/assistant/tools";
 import {
   isWhatsAppConfigured,
   sendWhatsAppMessage,
@@ -16,10 +20,6 @@ import {
 
 export const runtime = "nodejs";
 
-/** Minimum days between digests per user. */
-const DIGEST_COOLDOWN_DAYS = 6;
-/** Only send when at least this many attention items exist. */
-const MIN_ITEMS = 1;
 const MAX_LINKS_PER_RUN = 200;
 
 function authorize(request: Request) {
@@ -31,17 +31,10 @@ function authorize(request: Request) {
   return bearer === secret || querySecret === secret;
 }
 
-function cooldownCutoffIso() {
-  const d = new Date();
-  d.setDate(d.getDate() - DIGEST_COOLDOWN_DAYS);
-  return d.toISOString();
-}
-
 async function processDigests(options?: { force?: boolean }) {
   const supabase = createAdminClient();
   const appUrl = getAppUrl();
   const waReady = isWhatsAppConfigured();
-  const cutoff = cooldownCutoffIso();
   const now = new Date();
   const force = Boolean(options?.force);
 
@@ -62,14 +55,21 @@ async function processDigests(options?: { force?: boolean }) {
     ),
   ];
 
-  const timezoneByUser = new Map<string, string>();
+  const profileByUser = new Map<
+    string,
+    { timezone: string; schedule: ReturnType<typeof billingScheduleFromPrefs> }
+  >();
+
   if (userIds.length) {
     const { data: profiles } = await supabase
       .from("profiles")
-      .select("id, timezone")
+      .select("id, timezone, notification_prefs")
       .in("id", userIds);
     for (const profile of profiles || []) {
-      timezoneByUser.set(profile.id, resolveDigestTimezone(profile.timezone));
+      profileByUser.set(profile.id, {
+        timezone: resolveDigestTimezone(profile.timezone),
+        schedule: billingScheduleFromPrefs(profile.notification_prefs),
+      });
     }
   }
 
@@ -77,6 +77,7 @@ async function processDigests(options?: { force?: boolean }) {
   let sent = 0;
   let skipped = 0;
   let skippedTimezone = 0;
+  let skippedDisabled = 0;
   let failed = 0;
 
   for (const link of links || []) {
@@ -90,19 +91,33 @@ async function processDigests(options?: { force?: boolean }) {
     }
     seenUsers.add(link.user_id);
 
-    const timeZone =
-      timezoneByUser.get(link.user_id) || resolveDigestTimezone(null);
+    const profile = profileByUser.get(link.user_id) || {
+      timezone: resolveDigestTimezone(null),
+      schedule: billingScheduleFromPrefs(null),
+    };
 
-    if (!force && !isDigestSendWindow(timeZone, now)) {
+    if (!profile.schedule.enabled) {
+      skippedDisabled += 1;
+      continue;
+    }
+
+    if (
+      !force &&
+      !isBillingScheduleWindow(profile.schedule, profile.timezone, now)
+    ) {
       skippedTimezone += 1;
       continue;
     }
+
+    const cooldownDays = billingCooldownDays(profile.schedule.cadence);
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - cooldownDays);
 
     const { data: recent } = await supabase
       .from("assistant_digest_sends")
       .select("id")
       .eq("user_id", link.user_id)
-      .gte("created_at", cutoff)
+      .gte("created_at", cutoff.toISOString())
       .limit(1)
       .maybeSingle();
 
@@ -111,19 +126,23 @@ async function processDigests(options?: { force?: boolean }) {
       continue;
     }
 
-    const items = await collectNeedsAttention(
-      supabase,
-      link.organization_id,
-      { limit: 8 }
-    );
+    const [unbilled, attention] = await Promise.all([
+      collectUnbilledClients(supabase, link.organization_id, {
+        limit: 8,
+        minMinutes: 15,
+      }),
+      collectNeedsAttention(supabase, link.organization_id, { limit: 8 }),
+    ]);
 
-    if (items.length < MIN_ITEMS) {
+    const attentionExtras = attention.filter((a) => a.kind !== "unbilled_hours");
+    if (!unbilled.length && !attentionExtras.length) {
       skipped += 1;
       continue;
     }
 
-    const message = formatAttentionDigest(items, {
-      maxItems: 6,
+    const message = formatBillingDigest({
+      unbilled,
+      attention: attentionExtras,
       appUrl,
     });
 
@@ -169,6 +188,22 @@ async function processDigests(options?: { force?: boolean }) {
     }
 
     if (conversation?.id) {
+      const pending =
+        unbilled.length > 0
+          ? pendingActionToJson({
+              type: "propose_unbilled_invoices",
+              clients: unbilled.map((c) => ({
+                client_id: c.client_id,
+                label: c.label,
+              })),
+            })
+          : null;
+
+      await supabase
+        .from("assistant_conversations")
+        .update({ pending_action: pending })
+        .eq("id", conversation.id);
+
       await supabase.from("assistant_messages").insert({
         conversation_id: conversation.id,
         role: "assistant",
@@ -179,9 +214,11 @@ async function processDigests(options?: { force?: boolean }) {
     await supabase.rpc("create_user_notification", {
       p_organization_id: link.organization_id,
       p_user_id: link.user_id,
-      p_type: "assistant_digest",
-      p_title: "Needs attention",
-      p_body: `${items.length} item${items.length === 1 ? "" : "s"} need your attention. Open Assistant or reply on WhatsApp.`,
+      p_type: "assistant_billing_digest",
+      p_title: "Invoicing check-in",
+      p_body: unbilled.length
+        ? `${unbilled.length} client${unbilled.length === 1 ? "" : "s"} with unbilled hours. Reply on WhatsApp to create drafts.`
+        : "Something needs attention — open Assistant or reply on WhatsApp.",
       p_link: "/settings?section=assistant",
       p_entity_type: "organization",
       p_entity_id: link.organization_id,
@@ -193,12 +230,13 @@ async function processDigests(options?: { force?: boolean }) {
         organization_id: link.organization_id,
         user_id: link.user_id,
         channel: waOk ? "whatsapp" : "in_app",
-        item_count: items.length,
+        item_count: unbilled.length + attentionExtras.length,
         payload: {
-          kinds: items.map((i) => i.kind),
-          item_ids: items.map((i) => i.id),
+          cadence: profile.schedule.cadence,
+          timezone: profile.timezone,
+          unbilled_client_ids: unbilled.map((c) => c.client_id),
+          attention_kinds: attentionExtras.map((a) => a.kind),
           wa_sent: waOk,
-          timezone: timeZone,
           forced: force,
         },
       });
@@ -217,6 +255,7 @@ async function processDigests(options?: { force?: boolean }) {
     sent,
     skipped,
     skippedTimezone,
+    skippedDisabled,
     failed,
     users: seenUsers.size,
   };
@@ -227,8 +266,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const force =
-    new URL(request.url).searchParams.get("force") === "1";
+  const force = new URL(request.url).searchParams.get("force") === "1";
 
   try {
     const result = await processDigests({ force });

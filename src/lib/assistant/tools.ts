@@ -30,12 +30,39 @@ import {
   loadTaskCard,
 } from "@/lib/assistant/card-loaders";
 import { collectNeedsAttention } from "@/lib/assistant/needs-attention";
+import {
+  selectPendingClients,
+  selectPendingSendInvoices,
+  type PendingSendInvoice,
+  type PendingUnbilledClient,
+} from "@/lib/assistant/pending-invoice-selection";
+import {
+  billingScheduleFromPrefs,
+  defaultBiweeklyAnchor,
+  describeBillingSchedule,
+  isBillingCadence,
+  isBillingWeekday,
+  mergeBillingScheduleIntoPrefs,
+  parseBillingSchedule,
+  type AssistantBillingSchedule,
+  type BillingCadence,
+  type BillingWeekday,
+} from "@/lib/assistant/billing-schedule";
+import { resolveDigestTimezone } from "@/lib/assistant/digest-schedule";
 
 type Db = SupabaseClient<Database>;
 
 export type AssistantPendingAction =
   | { type: "send_invoice"; invoice_id: string }
-  | { type: "send_proposal"; proposal_id: string };
+  | { type: "send_proposal"; proposal_id: string }
+  | {
+      type: "propose_unbilled_invoices";
+      clients: PendingUnbilledClient[];
+    }
+  | {
+      type: "send_invoices";
+      invoices: PendingSendInvoice[];
+    };
 
 export type AssistantToolContext = {
   db: Db;
@@ -377,7 +404,7 @@ export const ASSISTANT_TOOL_DEFINITIONS = [
     function: {
       name: "list_unbilled_hours",
       description:
-        "List unbilled billable time (hours not yet on an invoice), grouped by client. Use before creating an invoice from worked hours.",
+        "List unbilled billable time (hours not yet on an invoice), grouped by client. Use before creating invoices from worked hours. Stores a pending proposal so the user can reply with all / some clients (e.g. invoice Acme and Beta, skip Northwind).",
       parameters: {
         type: "object",
         properties: {
@@ -396,7 +423,7 @@ export const ASSISTANT_TOOL_DEFINITIONS = [
     function: {
       name: "create_invoice_from_unbilled",
       description:
-        "Create a draft invoice from all unbilled billable hours for a client. Locks those time entries to the invoice. Sets pending send confirmation.",
+        "Create a draft invoice from all unbilled billable hours for one client. Prefer create_invoices_from_unbilled_batch when the user names several clients or says 'all'.",
       parameters: {
         type: "object",
         properties: {
@@ -413,6 +440,50 @@ export const ASSISTANT_TOOL_DEFINITIONS = [
             type: "boolean",
             description:
               "If true (default), one summary line with time details in notes. If false, one line per time entry.",
+          },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "create_invoices_from_unbilled_batch",
+      description:
+        "Create draft invoices from unbilled hours for one or more clients. Use when the user wants several clients invoiced, or when pending propose_unbilled_invoices is set and they confirm all or a subset (include/exclude by name).",
+      parameters: {
+        type: "object",
+        properties: {
+          all_pending: {
+            type: "boolean",
+            description:
+              "If true, invoice every client on the pending propose_unbilled_invoices list (after excludes).",
+          },
+          include_client_ids: {
+            type: "array",
+            items: { type: "string" },
+            description: "Explicit client ids to invoice",
+          },
+          include_client_queries: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "Client name/company fragments to include (e.g. Acme, Beta)",
+          },
+          exclude_client_queries: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "Client name/company fragments to skip (e.g. Northwind)",
+          },
+          due_in_days: {
+            type: "number",
+            description: "Days until due from today (default 14)",
+          },
+          consolidate: {
+            type: "boolean",
+            description: "Consolidate time lines (default true)",
           },
         },
         additionalProperties: false,
@@ -557,6 +628,51 @@ export const ASSISTANT_TOOL_DEFINITIONS = [
         type: "object",
         properties: {
           limit: { type: "number", description: "Max items (default 12)" },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "get_billing_schedule",
+      description:
+        "Get the user's invoicing reminder schedule (weekday/time/cadence in their timezone). Use when they ask when reminders run or what their billing day is.",
+      parameters: {
+        type: "object",
+        properties: {},
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "set_billing_schedule",
+      description:
+        "Set when the assistant should ping about invoicing (WhatsApp/in-app). Examples: every Friday at 9, every other Friday, first day of the month, last day of the month. Disables with enabled=false.",
+      parameters: {
+        type: "object",
+        properties: {
+          enabled: {
+            type: "boolean",
+            description: "false turns reminders off",
+          },
+          cadence: {
+            type: "string",
+            description:
+              "weekly | biweekly | monthly_first | monthly_last",
+          },
+          weekday: {
+            type: "string",
+            description:
+              "Mon|Tue|Wed|Thu|Fri|Sat|Sun — required for weekly/biweekly",
+          },
+          hour: {
+            type: "number",
+            description: "Local hour 0-23 (e.g. 9 for 09:00)",
+          },
         },
         additionalProperties: false,
       },
@@ -747,7 +863,7 @@ export const ASSISTANT_TOOL_DEFINITIONS = [
     function: {
       name: "send_invoice",
       description:
-        "Send a draft invoice by email. ONLY call after the user explicitly confirmed sending (yes / send it). Prefer the pending invoice from create_invoice_draft / create_invoice_from_unbilled, or a draft id from list_draft_invoices.",
+        "Send one draft invoice by email. ONLY after explicit confirmation. For several drafts use send_invoices.",
       parameters: {
         type: "object",
         properties: {
@@ -758,6 +874,44 @@ export const ASSISTANT_TOOL_DEFINITIONS = [
           confirmed: {
             type: "boolean",
             description: "Must be true — user confirmed send in this chat",
+          },
+        },
+        required: ["confirmed"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "send_invoices",
+      description:
+        "Send one or more draft invoices after confirmation. Use when pending send_invoices lists several drafts, or the user says send all / only Acme / skip Northwind.",
+      parameters: {
+        type: "object",
+        properties: {
+          confirmed: {
+            type: "boolean",
+            description: "Must be true — user confirmed send in this chat",
+          },
+          all_pending: {
+            type: "boolean",
+            description: "Send every invoice on pending send_invoices",
+          },
+          invoice_ids: {
+            type: "array",
+            items: { type: "string" },
+            description: "Explicit invoice ids to send",
+          },
+          include_client_queries: {
+            type: "array",
+            items: { type: "string" },
+            description: "Send drafts whose client label matches these names",
+          },
+          exclude_client_queries: {
+            type: "array",
+            items: { type: "string" },
+            description: "Skip drafts whose client label matches these names",
           },
         },
         required: ["confirmed"],
@@ -793,7 +947,7 @@ export const ASSISTANT_TOOL_DEFINITIONS = [
     function: {
       name: "clear_pending_action",
       description:
-        "Cancel a pending send confirmation (invoice or proposal) when the user says no.",
+        "Cancel a pending confirmation (send invoice(s), send proposal, or proposed unbilled invoices) when the user declines or wants to wait.",
       parameters: {
         type: "object",
         properties: {},
@@ -802,6 +956,185 @@ export const ASSISTANT_TOOL_DEFINITIONS = [
     },
   },
 ];
+
+async function createUnbilledInvoiceForClient(
+  ctx: AssistantToolContext,
+  options: {
+    clientId: string;
+    clientLabel: string;
+    dueInDays: number;
+    consolidate: boolean;
+  }
+): Promise<
+  | {
+      ok: true;
+      invoice: {
+        id: string;
+        client: string;
+        amount: string;
+        amount_raw: number;
+        currency: string;
+        due_date: string;
+        due_in_days: number;
+        status: string;
+        hours: string;
+        hours_raw: number;
+        entries: number;
+        lines: number;
+      };
+    }
+  | { ok: false; error: string }
+> {
+  const { db, organizationId, userId } = ctx;
+  const entries = await fetchUnbilledTimeEntries(db, {
+    organizationId,
+    clientId: options.clientId,
+  });
+  if (!entries.length) {
+    return {
+      ok: false,
+      error: `No unbilled hours for ${options.clientLabel}.`,
+    };
+  }
+
+  const summary = summarizeUnbilled(entries);
+  const { data: org } = await db
+    .from("organizations")
+    .select(
+      "currency, default_tax_enabled, default_tax_rate, default_prices_include_tax, tax_id"
+    )
+    .eq("id", organizationId)
+    .maybeSingle();
+
+  const currency = org?.currency || "EUR";
+  const taxEnabled = Boolean(org?.default_tax_enabled);
+  const taxRate = taxEnabled ? Number(org?.default_tax_rate) || 0 : 0;
+  const pricesIncludeTax = taxEnabled
+    ? Boolean(org?.default_prices_include_tax)
+    : false;
+  const dueInDays = Math.max(0, Math.round(options.dueInDays || 14));
+  const issueDate = todayISO();
+  const dueDate = addDaysISO(issueDate, dueInDays);
+
+  const { data: invoice, error: invoiceError } = await db
+    .from("invoices")
+    .insert({
+      organization_id: organizationId,
+      client_id: options.clientId,
+      number: null,
+      status: "draft",
+      currency,
+      issue_date: issueDate,
+      due_date: dueDate,
+      created_by: userId,
+      subtotal: 0,
+      tax_total: 0,
+      total: 0,
+      payment_token: nanoid(24),
+      tax_enabled: taxEnabled,
+      tax_rate: taxEnabled ? taxRate : 0,
+      prices_include_tax: pricesIncludeTax,
+      show_tax_id: taxEnabled,
+      tax_id: taxEnabled ? org?.tax_id || null : null,
+      show_logo: true,
+    })
+    .select("id, status, currency, due_date, issue_date, notes")
+    .single();
+
+  if (invoiceError || !invoice) {
+    return {
+      ok: false,
+      error: invoiceError?.message || "Could not create invoice.",
+    };
+  }
+
+  try {
+    const { created, specification } = await addTimeEntriesToInvoice(db, {
+      organizationId,
+      invoiceId: invoice.id,
+      entries,
+      startPosition: 0,
+      consolidate: options.consolidate,
+      currency,
+    });
+
+    if (!created.length) {
+      await db
+        .from("invoices")
+        .update({ deleted_at: new Date().toISOString() })
+        .eq("id", invoice.id)
+        .eq("organization_id", organizationId);
+      return {
+        ok: false,
+        error: "Could not attach time entries to the invoice.",
+      };
+    }
+
+    const totals = computeInvoiceTotals(
+      created.map((line) => ({
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+      })),
+      { taxEnabled, taxRate, pricesIncludeTax }
+    );
+
+    let notes: string | null = invoice.notes;
+    if (specification) {
+      notes = appendTimeSpecification(notes || "", specification) || null;
+    }
+
+    const { error: updateError } = await db
+      .from("invoices")
+      .update({
+        subtotal: totals.subtotal,
+        tax_total: totals.taxTotal,
+        total: totals.total,
+        notes,
+      })
+      .eq("id", invoice.id)
+      .eq("organization_id", organizationId);
+
+    if (updateError) {
+      return {
+        ok: false,
+        error:
+          updateError.message ||
+          "Invoice created but totals could not be saved.",
+      };
+    }
+
+    return {
+      ok: true,
+      invoice: {
+        id: invoice.id,
+        client: options.clientLabel,
+        amount: formatInvoiceMoney(totals.total, currency),
+        amount_raw: totals.total,
+        currency,
+        due_date: dueDate,
+        due_in_days: dueInDays,
+        status: "draft",
+        hours: summary.label,
+        hours_raw: summary.totalHours,
+        entries: summary.count,
+        lines: created.length,
+      },
+    };
+  } catch (err) {
+    await db
+      .from("invoices")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("id", invoice.id)
+      .eq("organization_id", organizationId);
+    return {
+      ok: false,
+      error:
+        err instanceof Error
+          ? err.message
+          : "Could not create invoice from unbilled hours.",
+    };
+  }
+}
 
 function addDaysISO(isoDate: string, days: number) {
   const d = new Date(`${isoDate}T12:00:00.000Z`);
@@ -2150,6 +2483,20 @@ export async function executeAssistantTool(
         const totalMinutes = clients.reduce((sum, c) => sum + c.minutes, 0);
         const totalAmount = clients.reduce((sum, c) => sum + c.amount_raw, 0);
 
+        const proposeClients: PendingUnbilledClient[] = clients
+          .filter((c) => Boolean(c.client_id))
+          .map((c) => ({
+            client_id: String(c.client_id),
+            label: String(c.client),
+          }));
+
+        if (proposeClients.length > 0) {
+          await ctx.setPendingAction({
+            type: "propose_unbilled_invoices",
+            clients: proposeClients,
+          });
+        }
+
         return {
           ok: true,
           count: clients.length,
@@ -2157,10 +2504,13 @@ export async function executeAssistantTool(
           clients,
           total_hours: formatDurationMinutes(Math.round(totalMinutes)),
           total_amount: formatInvoiceMoney(totalAmount, currency),
+          pending_propose: proposeClients.length > 0,
           message:
             clients.length === 0
               ? "No unbilled hours."
-              : "Offer to create a draft invoice from unbilled hours for a client.",
+              : proposeClients.length > 1
+                ? "Summarize clients briefly, then ask which to invoice. They can say all, name a subset, or skip some (e.g. invoice Acme and Beta, skip Northwind). Then call create_invoices_from_unbilled_batch."
+                : "Offer to create a draft invoice from unbilled hours for this client.",
         };
       }
 
@@ -2173,160 +2523,175 @@ export async function executeAssistantTool(
           };
         }
         const { id: clientId, label: clientLabel } = resolved;
-
-        const entries = await fetchUnbilledTimeEntries(db, {
-          organizationId,
-          clientId,
-        });
-        if (!entries.length) {
-          return {
-            error: `No unbilled hours for ${clientLabel}.`,
-          };
-        }
-
-        const summary = summarizeUnbilled(entries);
         const consolidate = args.consolidate !== false;
-
-        const { data: org } = await db
-          .from("organizations")
-          .select(
-            "currency, default_tax_enabled, default_tax_rate, default_prices_include_tax, tax_id"
-          )
-          .eq("id", organizationId)
-          .maybeSingle();
-
-        const currency = org?.currency || "EUR";
-        const taxEnabled = Boolean(org?.default_tax_enabled);
-        const taxRate = taxEnabled ? Number(org?.default_tax_rate) || 0 : 0;
-        const pricesIncludeTax = taxEnabled
-          ? Boolean(org?.default_prices_include_tax)
-          : false;
         const dueInDays = Math.max(
           0,
           Math.round(Number(args.due_in_days) || 14)
         );
-        const issueDate = todayISO();
-        const dueDate = addDaysISO(issueDate, dueInDays);
 
-        const { data: invoice, error: invoiceError } = await db
-          .from("invoices")
-          .insert({
-            organization_id: organizationId,
-            client_id: clientId,
-            number: null,
-            status: "draft",
-            currency,
-            issue_date: issueDate,
-            due_date: dueDate,
-            created_by: userId,
-            subtotal: 0,
-            tax_total: 0,
-            total: 0,
-            payment_token: nanoid(24),
-            tax_enabled: taxEnabled,
-            tax_rate: taxEnabled ? taxRate : 0,
-            prices_include_tax: pricesIncludeTax,
-            show_tax_id: taxEnabled,
-            tax_id: taxEnabled ? org?.tax_id || null : null,
-            show_logo: true,
-          })
-          .select("id, status, currency, due_date, issue_date, notes")
-          .single();
+        const created = await createUnbilledInvoiceForClient(ctx, {
+          clientId,
+          clientLabel,
+          dueInDays,
+          consolidate,
+        });
+        if (!created.ok) return { error: created.error };
 
-        if (invoiceError || !invoice) {
-          return { error: invoiceError?.message || "Could not create invoice." };
-        }
+        await ctx.setPendingAction({
+          type: "send_invoice",
+          invoice_id: created.invoice.id,
+        });
 
-        try {
-          const { created, specification } = await addTimeEntriesToInvoice(db, {
-            organizationId,
-            invoiceId: invoice.id,
-            entries,
-            startPosition: 0,
-            consolidate,
-            currency,
-          });
+        return {
+          ok: true,
+          invoice: created.invoice,
+          ask_to_send: true,
+          message:
+            "Draft created from unbilled hours. Ask the user if they want you to send it to the client.",
+        };
+      }
 
-          if (!created.length) {
-            await db
-              .from("invoices")
-              .update({ deleted_at: new Date().toISOString() })
-              .eq("id", invoice.id)
-              .eq("organization_id", organizationId);
-            return { error: "Could not attach time entries to the invoice." };
-          }
+      case "create_invoices_from_unbilled_batch": {
+        const dueInDays = Math.max(
+          0,
+          Math.round(Number(args.due_in_days) || 14)
+        );
+        const consolidate = args.consolidate !== false;
+        const includeIds = Array.isArray(args.include_client_ids)
+          ? args.include_client_ids.map(String)
+          : [];
+        const includeQueries = Array.isArray(args.include_client_queries)
+          ? args.include_client_queries.map(String)
+          : [];
+        const excludeQueries = Array.isArray(args.exclude_client_queries)
+          ? args.exclude_client_queries.map(String)
+          : [];
+        const allPending = Boolean(args.all_pending);
 
-          const totals = computeInvoiceTotals(
-            created.map((line) => ({
-              quantity: line.quantity,
-              unitPrice: line.unitPrice,
-            })),
-            { taxEnabled, taxRate, pricesIncludeTax }
-          );
+        const pendingClients =
+          ctx.pendingAction?.type === "propose_unbilled_invoices"
+            ? ctx.pendingAction.clients
+            : [];
 
-          let notes: string | null = invoice.notes;
-          if (specification) {
-            notes = appendTimeSpecification(notes || "", specification) || null;
-          }
+        let targets: PendingUnbilledClient[] = [];
 
-          const { error: updateError } = await db
-            .from("invoices")
-            .update({
-              subtotal: totals.subtotal,
-              tax_total: totals.taxTotal,
-              total: totals.total,
-              notes,
-            })
-            .eq("id", invoice.id)
-            .eq("organization_id", organizationId);
-
-          if (updateError) {
+        if (pendingClients.length) {
+          if (includeIds.length) {
+            targets = selectPendingClients(pendingClients, {
+              includeIds,
+              excludeQueries,
+            });
+          } else if (includeQueries.length) {
+            targets = selectPendingClients(pendingClients, {
+              includeQueries,
+              excludeQueries,
+            });
+          } else if (allPending || excludeQueries.length) {
+            // all_pending, or "skip Northwind" implying the rest
+            targets = selectPendingClients(pendingClients, {
+              excludeQueries,
+            });
+          } else {
             return {
               error:
-                updateError.message ||
-                "Invoice created but totals could not be saved.",
-              invoice_id: invoice.id,
+                "Say which clients to invoice, or all_pending=true. Example include_client_queries: [\"Acme\",\"Beta\"].",
             };
           }
-
-          await ctx.setPendingAction({
-            type: "send_invoice",
-            invoice_id: invoice.id,
-          });
-
-          return {
-            ok: true,
-            invoice: {
-              id: invoice.id,
-              client: clientLabel,
-              amount: formatInvoiceMoney(totals.total, currency),
-              amount_raw: totals.total,
-              currency,
-              due_date: dueDate,
-              due_in_days: dueInDays,
-              status: "draft",
-              hours: summary.label,
-              hours_raw: summary.totalHours,
-              entries: summary.count,
-              lines: created.length,
-            },
-            ask_to_send: true,
-            message:
-              "Draft created from unbilled hours. Ask the user if they want you to send it to the client.",
-          };
-        } catch (err) {
-          await db
-            .from("invoices")
-            .update({ deleted_at: new Date().toISOString() })
-            .eq("id", invoice.id)
-            .eq("organization_id", organizationId);
+        } else if (includeIds.length || includeQueries.length) {
+          const seen = new Set<string>();
+          for (const id of includeIds) {
+            if (seen.has(id)) continue;
+            const { data: client } = await db
+              .from("clients")
+              .select("id, name, company")
+              .eq("organization_id", organizationId)
+              .eq("id", id)
+              .is("deleted_at", null)
+              .maybeSingle();
+            if (!client) continue;
+            seen.add(client.id);
+            targets.push({
+              client_id: client.id,
+              label: client.company?.trim() || client.name,
+            });
+          }
+          for (const query of includeQueries) {
+            const resolved = await resolveClient(db, organizationId, {
+              client_query: query,
+            });
+            if (!resolved.ok) continue;
+            if (seen.has(resolved.id)) continue;
+            seen.add(resolved.id);
+            targets.push({ client_id: resolved.id, label: resolved.label });
+          }
+          if (excludeQueries.length) {
+            targets = selectPendingClients(targets, { excludeQueries });
+          }
+        } else {
           return {
             error:
-              err instanceof Error
-                ? err.message
-                : "Could not create invoice from unbilled hours.",
+              "No pending unbilled list. Call list_unbilled_hours first, or pass include_client_ids / include_client_queries.",
           };
         }
+
+        if (!targets.length) {
+          return {
+            error:
+              "No matching clients to invoice from the pending list / queries.",
+          };
+        }
+
+        const invoices: Array<Record<string, unknown>> = [];
+        const errors: string[] = [];
+
+        for (const target of targets.slice(0, 10)) {
+          const created = await createUnbilledInvoiceForClient(ctx, {
+            clientId: target.client_id,
+            clientLabel: target.label,
+            dueInDays,
+            consolidate,
+          });
+          if (!created.ok) {
+            errors.push(`${target.label}: ${created.error}`);
+            continue;
+          }
+          invoices.push(created.invoice);
+        }
+
+        if (!invoices.length) {
+          return {
+            error: errors.join(" ") || "Could not create any invoices.",
+          };
+        }
+
+        const pendingSend: PendingSendInvoice[] = invoices.map((inv) => ({
+          invoice_id: String(inv.id),
+          client: String(inv.client || ""),
+        }));
+
+        if (pendingSend.length === 1) {
+          await ctx.setPendingAction({
+            type: "send_invoice",
+            invoice_id: pendingSend[0].invoice_id,
+          });
+        } else {
+          await ctx.setPendingAction({
+            type: "send_invoices",
+            invoices: pendingSend,
+          });
+        }
+
+        return {
+          ok: true,
+          count: invoices.length,
+          invoices,
+          errors: errors.length ? errors : undefined,
+          ask_to_send: true,
+          message:
+            invoices.length === 1
+              ? "Draft created. Ask if they want it sent."
+              : `Created ${invoices.length} drafts. Summarize clients/amounts briefly and ask if they want them sent (all, some, or wait).`,
+        };
       }
 
       case "list_unpaid_invoices": {
@@ -2810,6 +3175,116 @@ export async function executeAssistantTool(
         };
       }
 
+      case "get_billing_schedule": {
+        const { data: profile } = await db
+          .from("profiles")
+          .select("notification_prefs, timezone")
+          .eq("id", userId)
+          .maybeSingle();
+        const schedule = billingScheduleFromPrefs(profile?.notification_prefs);
+        const timezone = resolveDigestTimezone(profile?.timezone);
+        return {
+          ok: true,
+          schedule,
+          timezone,
+          summary: describeBillingSchedule(schedule),
+          message: `Tell them: ${describeBillingSchedule(schedule)} Timezone: ${timezone}.`,
+        };
+      }
+
+      case "set_billing_schedule": {
+        const { data: profile } = await db
+          .from("profiles")
+          .select("notification_prefs, timezone")
+          .eq("id", userId)
+          .maybeSingle();
+        const current = billingScheduleFromPrefs(profile?.notification_prefs);
+        const timezone = resolveDigestTimezone(profile?.timezone);
+
+        const next: AssistantBillingSchedule = { ...current };
+        if (args.enabled !== undefined) next.enabled = Boolean(args.enabled);
+
+        if (args.cadence !== undefined) {
+          const cadenceRaw = String(args.cadence).trim().toLowerCase();
+          if (!isBillingCadence(cadenceRaw)) {
+            return {
+              error:
+                "cadence must be weekly, biweekly, monthly_first, or monthly_last.",
+            };
+          }
+          next.cadence = cadenceRaw as BillingCadence;
+        }
+
+        if (args.weekday !== undefined) {
+          const raw = String(args.weekday).trim().toLowerCase();
+          const map: Record<string, BillingWeekday> = {
+            mon: "Mon",
+            monday: "Mon",
+            tue: "Tue",
+            tuesday: "Tue",
+            wed: "Wed",
+            wednesday: "Wed",
+            thu: "Thu",
+            thursday: "Thu",
+            fri: "Fri",
+            friday: "Fri",
+            sat: "Sat",
+            saturday: "Sat",
+            sun: "Sun",
+            sunday: "Sun",
+          };
+          const normalized = map[raw] || null;
+          if (!normalized) {
+            return {
+              error: "weekday must be Mon–Sun (e.g. Friday).",
+            };
+          }
+          next.weekday = normalized;
+        }
+
+        if (args.hour !== undefined) {
+          next.hour = Math.min(23, Math.max(0, Math.round(Number(args.hour))));
+        }
+
+        if (
+          next.cadence === "weekly" ||
+          next.cadence === "biweekly"
+        ) {
+          if (!next.weekday) {
+            return { error: "weekday is required for weekly/biweekly." };
+          }
+        }
+
+        if (next.cadence === "biweekly") {
+          next.biweekly_anchor_ymd =
+            next.biweekly_anchor_ymd || defaultBiweeklyAnchor(timezone);
+        } else {
+          next.biweekly_anchor_ymd = null;
+        }
+
+        // Normalize through parser
+        const schedule = parseBillingSchedule(next);
+        const prefs = mergeBillingScheduleIntoPrefs(
+          profile?.notification_prefs,
+          schedule
+        );
+
+        const { error } = await db
+          .from("profiles")
+          .update({ notification_prefs: prefs as Json })
+          .eq("id", userId);
+
+        if (error) return { error: error.message };
+
+        return {
+          ok: true,
+          schedule,
+          timezone,
+          summary: describeBillingSchedule(schedule),
+          message: `Confirm the new schedule briefly: ${describeBillingSchedule(schedule)} (${timezone}).`,
+        };
+      }
+
       case "get_client": {
         const clientId = String(args.client_id || "").trim();
         if (!clientId) return { error: "client_id is required." };
@@ -3054,7 +3529,10 @@ export async function executeAssistantTool(
         const pendingId =
           ctx.pendingAction?.type === "send_invoice"
             ? ctx.pendingAction.invoice_id
-            : null;
+            : ctx.pendingAction?.type === "send_invoices" &&
+                ctx.pendingAction.invoices.length === 1
+              ? ctx.pendingAction.invoices[0].invoice_id
+              : null;
         const invoiceId =
           (args.invoice_id ? String(args.invoice_id) : null) || pendingId;
 
@@ -3074,7 +3552,27 @@ export async function executeAssistantTool(
 
         if (!result.ok) return { error: result.error };
 
-        await ctx.setPendingAction(null);
+        if (ctx.pendingAction?.type === "send_invoices") {
+          const remaining = ctx.pendingAction.invoices.filter(
+            (inv) => inv.invoice_id !== invoiceId
+          );
+          if (remaining.length === 0) {
+            await ctx.setPendingAction(null);
+          } else if (remaining.length === 1) {
+            await ctx.setPendingAction({
+              type: "send_invoice",
+              invoice_id: remaining[0].invoice_id,
+            });
+          } else {
+            await ctx.setPendingAction({
+              type: "send_invoices",
+              invoices: remaining,
+            });
+          }
+        } else {
+          await ctx.setPendingAction(null);
+        }
+
         return {
           ok: true,
           sent: true,
@@ -3085,6 +3583,139 @@ export async function executeAssistantTool(
           status: result.status,
           message:
             "Invoice sent. Confirm warmly in one short line, e.g. I've now sent the invoice :) — optionally mention the invoice number and recipient email.",
+        };
+      }
+
+      case "send_invoices": {
+        if (args.confirmed !== true) {
+          return {
+            error:
+              "Sending requires confirmed=true after the user explicitly agrees.",
+          };
+        }
+
+        const pendingList =
+          ctx.pendingAction?.type === "send_invoices"
+            ? ctx.pendingAction.invoices
+            : ctx.pendingAction?.type === "send_invoice"
+              ? [
+                  {
+                    invoice_id: ctx.pendingAction.invoice_id,
+                    client: null,
+                  },
+                ]
+              : [];
+
+        const invoiceIds = Array.isArray(args.invoice_ids)
+          ? args.invoice_ids.map(String)
+          : [];
+        const includeQueries = Array.isArray(args.include_client_queries)
+          ? args.include_client_queries.map(String)
+          : [];
+        const excludeQueries = Array.isArray(args.exclude_client_queries)
+          ? args.exclude_client_queries.map(String)
+          : [];
+        const allPending = Boolean(args.all_pending);
+
+        let toSend: PendingSendInvoice[] = [];
+        if (invoiceIds.length) {
+          const idSet = new Set(invoiceIds);
+          toSend = (pendingList.length ? pendingList : invoiceIds.map((id) => ({
+            invoice_id: id,
+            client: null,
+          }))).filter((inv) => idSet.has(inv.invoice_id));
+          if (!pendingList.length) {
+            toSend = invoiceIds.map((id) => ({ invoice_id: id, client: null }));
+          }
+        } else if (pendingList.length) {
+          if (includeQueries.length) {
+            toSend = selectPendingSendInvoices(pendingList, {
+              includeQueries,
+              excludeQueries,
+            });
+          } else if (allPending || excludeQueries.length) {
+            toSend = selectPendingSendInvoices(pendingList, {
+              excludeQueries,
+            });
+          } else {
+            return {
+              error:
+                "Pass all_pending=true, invoice_ids, or include_client_queries for which drafts to send.",
+            };
+          }
+        } else {
+          return {
+            error:
+              "No pending invoices to send. Create drafts first, then confirm.",
+          };
+        }
+
+        if (!toSend.length) {
+          return { error: "No matching draft invoices to send." };
+        }
+
+        const sent: Array<Record<string, unknown>> = [];
+        const errors: string[] = [];
+
+        for (const item of toSend.slice(0, 10)) {
+          const result = await sendInvoiceForOrganization({
+            db,
+            invoiceId: item.invoice_id,
+            organizationId,
+            userId,
+          });
+          if (!result.ok) {
+            errors.push(
+              `${item.client || item.invoice_id}: ${result.error}`
+            );
+            continue;
+          }
+          sent.push({
+            invoice_id: item.invoice_id,
+            client: item.client,
+            number: result.number,
+            recipient_email: result.recipientEmail,
+            status: result.status,
+          });
+        }
+
+        const sentIds = new Set(sent.map((s) => String(s.invoice_id)));
+        if (pendingList.length) {
+          const remaining = pendingList.filter(
+            (inv) => !sentIds.has(inv.invoice_id)
+          );
+          if (remaining.length === 0) {
+            await ctx.setPendingAction(null);
+          } else if (remaining.length === 1) {
+            await ctx.setPendingAction({
+              type: "send_invoice",
+              invoice_id: remaining[0].invoice_id,
+            });
+          } else {
+            await ctx.setPendingAction({
+              type: "send_invoices",
+              invoices: remaining,
+            });
+          }
+        } else {
+          await ctx.setPendingAction(null);
+        }
+
+        if (!sent.length) {
+          return {
+            error: errors.join(" ") || "Could not send any invoices.",
+          };
+        }
+
+        return {
+          ok: true,
+          sent_count: sent.length,
+          sent,
+          errors: errors.length ? errors : undefined,
+          message:
+            sent.length === 1
+              ? "Invoice sent. Confirm warmly in one short line."
+              : `Sent ${sent.length} invoices. Confirm warmly and briefly list who received them.`,
         };
       }
 
@@ -3163,6 +3794,33 @@ export function parsePendingAction(
   }
   if (obj.type === "send_proposal" && typeof obj.proposal_id === "string") {
     return { type: "send_proposal", proposal_id: obj.proposal_id };
+  }
+  if (obj.type === "propose_unbilled_invoices" && Array.isArray(obj.clients)) {
+    const clients: PendingUnbilledClient[] = [];
+    for (const row of obj.clients) {
+      if (!row || typeof row !== "object") continue;
+      const rec = row as Record<string, unknown>;
+      if (typeof rec.client_id !== "string" || typeof rec.label !== "string") {
+        continue;
+      }
+      clients.push({ client_id: rec.client_id, label: rec.label });
+    }
+    if (!clients.length) return null;
+    return { type: "propose_unbilled_invoices", clients };
+  }
+  if (obj.type === "send_invoices" && Array.isArray(obj.invoices)) {
+    const invoices: PendingSendInvoice[] = [];
+    for (const row of obj.invoices) {
+      if (!row || typeof row !== "object") continue;
+      const rec = row as Record<string, unknown>;
+      if (typeof rec.invoice_id !== "string") continue;
+      invoices.push({
+        invoice_id: rec.invoice_id,
+        client: typeof rec.client === "string" ? rec.client : null,
+      });
+    }
+    if (!invoices.length) return null;
+    return { type: "send_invoices", invoices };
   }
   return null;
 }

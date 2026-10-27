@@ -78,11 +78,24 @@ export async function generateAssistantReply(options: {
     "gpt-4o-mini";
 
   const pending = options.toolContext.pendingAction;
-  const pendingHint = pending
-    ? pending.type === "send_proposal"
-      ? `\nThere is a pending action: ${JSON.stringify(pending)}. If the user confirms (yes / send / go ahead), call send_proposal with confirmed=true IMMEDIATELY — do not call get_proposal or ask again. If they decline, call clear_pending_action.`
-      : `\nThere is a pending action: ${JSON.stringify(pending)}. If the user confirms (yes / send / go ahead), call send_invoice with confirmed=true IMMEDIATELY — do not call get_invoice or ask again. If they decline, call clear_pending_action.`
-    : "";
+  let pendingHint = "";
+  if (pending?.type === "send_proposal") {
+    pendingHint = `\nPending: ${JSON.stringify(pending)}. Natural yes (go ahead, send it, ja) → send_proposal confirmed=true immediately. Wait/later/no → clear_pending_action.`;
+  } else if (pending?.type === "send_invoice") {
+    pendingHint = `\nPending: ${JSON.stringify(pending)}. Natural yes → send_invoice confirmed=true immediately. Wait/later/no → clear_pending_action.`;
+  } else if (pending?.type === "send_invoices") {
+    pendingHint = `\nPending multi-send: ${JSON.stringify(pending)}. Interpret the user message carefully:
+- yes / send them all / go ahead → send_invoices with confirmed=true and all_pending=true
+- send only Acme / invoice Acme and Beta / skip Northwind → send_invoices with confirmed=true and include_client_queries / exclude_client_queries matching the names they said
+- wait / later / no → clear_pending_action
+Do not re-list drafts or ask again if intent is clear.`;
+  } else if (pending?.type === "propose_unbilled_invoices") {
+    pendingHint = `\nPending unbilled invoice proposal: ${JSON.stringify(pending)}. The user is choosing which clients to draft invoices for:
+- yes / all / invoice them all / go ahead → create_invoices_from_unbilled_batch with all_pending=true
+- "invoice Acme and Beta, skip Northwind" → create_invoices_from_unbilled_batch with include_client_queries=["Acme","Beta"] (or exclude_client_queries=["Northwind"] if they only named skips)
+- wait / later / no → clear_pending_action
+After drafts are created, ask once whether to send. Do not invent clients outside this pending list unless they clearly ask for someone else.`;
+  }
 
   const channel = options.toolContext.channel || "whatsapp";
   const lengthHint =
@@ -104,23 +117,17 @@ ${lengthHint}`;
   const toolsUsed: string[] = [];
   const toolResults: ToolResultRecord[] = [];
 
-  // Deterministic confirm/decline for pending sends — models often re-ask instead.
+  // Deterministic confirm/decline for clear short replies — selective phrasing goes to the model.
   const lastUser = [...history].reverse().find((m) => m.role === "user");
-  if (
-    pending &&
-    (pending.type === "send_invoice" || pending.type === "send_proposal") &&
-    lastUser
-  ) {
-    if (isPendingSendAffirmation(lastUser.content)) {
-      const toolName =
-        pending.type === "send_proposal" ? "send_proposal" : "send_invoice";
-      const args =
-        pending.type === "send_proposal"
-          ? { confirmed: true, proposal_id: pending.proposal_id }
-          : { confirmed: true, invoice_id: pending.invoice_id };
-      const callId = "pending_send_confirm";
-      console.info("[assistant] auto-confirm pending send", {
+  if (pending && lastUser) {
+    const pushTool = async (
+      toolName: string,
+      args: Record<string, unknown>,
+      callId: string
+    ) => {
+      console.info("[assistant] auto-confirm pending action", {
         toolName,
+        pendingType: pending.type,
         userId: options.toolContext.userId,
       });
       const result = await executeAssistantTool(
@@ -148,34 +155,38 @@ ${lengthHint}`;
           content: JSON.stringify(result).slice(0, 12000),
         }
       );
-    } else if (isPendingSendDecline(lastUser.content)) {
-      const callId = "pending_send_decline";
-      const result = await executeAssistantTool(
-        options.toolContext,
-        "clear_pending_action",
-        "{}"
-      );
-      toolsUsed.push("clear_pending_action");
-      toolResults.push({ name: "clear_pending_action", result });
-      messages.push(
-        {
-          role: "assistant",
-          content: null,
-          tool_calls: [
-            {
-              id: callId,
-              type: "function",
-              function: { name: "clear_pending_action", arguments: "{}" },
-            },
-          ],
-        },
-        {
-          role: "tool",
-          tool_call_id: callId,
-          content: JSON.stringify(result).slice(0, 12000),
-        }
-      );
+    };
+
+    if (isPendingSendDecline(lastUser.content)) {
+      await pushTool("clear_pending_action", {}, "pending_decline");
+    } else if (isPendingSendAffirmation(lastUser.content)) {
+      if (pending.type === "send_proposal") {
+        await pushTool(
+          "send_proposal",
+          { confirmed: true, proposal_id: pending.proposal_id },
+          "pending_send_confirm"
+        );
+      } else if (pending.type === "send_invoice") {
+        await pushTool(
+          "send_invoice",
+          { confirmed: true, invoice_id: pending.invoice_id },
+          "pending_send_confirm"
+        );
+      } else if (pending.type === "send_invoices") {
+        await pushTool(
+          "send_invoices",
+          { confirmed: true, all_pending: true },
+          "pending_send_confirm"
+        );
+      } else if (pending.type === "propose_unbilled_invoices") {
+        await pushTool(
+          "create_invoices_from_unbilled_batch",
+          { all_pending: true },
+          "pending_create_confirm"
+        );
+      }
     }
+    // Selective messages (name some clients / skip others) fall through to the model with pendingHint.
   }
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
