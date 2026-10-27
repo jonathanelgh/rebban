@@ -58,15 +58,29 @@ async function notify(title, message) {
   }
 }
 
+async function enableSidePanel() {
+  try {
+    if (chrome.sidePanel?.setPanelBehavior) {
+      await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+    }
+  } catch {
+    /* side panel optional on older Chrome */
+  }
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.alarms.create("rebban-timer-badge", { periodInMinutes: 1 });
+  void enableSidePanel();
   void syncBadge();
 });
 
 chrome.runtime.onStartup.addListener(() => {
   chrome.alarms.create("rebban-timer-badge", { periodInMinutes: 1 });
+  void enableSidePanel();
   void syncBadge();
 });
+
+void enableSidePanel();
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === "rebban-timer-badge") void syncBadge();

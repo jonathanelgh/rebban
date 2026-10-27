@@ -1,16 +1,18 @@
 {
   "manifest_version": 3,
   "name": "Rebban Timer",
-  "version": "1.2.0",
-  "description": "Start and stop your Rebban timer, save leads, and see money alerts from Chrome.",
+  "version": "1.4.1",
+  "description": "Start and stop your Rebban timer, draft proposals, save leads, and see money alerts from Chrome.",
   "action": {
-    "default_popup": "popup.html",
-    "default_title": "Rebban Timer",
+    "default_title": "Rebban",
     "default_icon": {
       "16": "icons/icon-16.png",
       "48": "icons/icon-48.png",
       "128": "icons/icon-128.png"
     }
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
   },
   "background": {
     "service_worker": "background.js"
@@ -31,12 +33,17 @@
     "tabs",
     "activeTab",
     "scripting",
-    "notifications"
+    "notifications",
+    "sidePanel"
   ],
   "host_permissions": [
     "https://app.rebban.com/*",
     "https://*.rebban.com/*",
     "https://cvqcanrdvtzovbmfhiwz.supabase.co/*"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
   ],
   "icons": {
     "16": "icons/icon-16.png",

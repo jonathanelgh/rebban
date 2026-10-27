@@ -309,8 +309,15 @@ function ProposalsPageInner() {
       .eq("organization_id", organizationId)
       .maybeSingle();
 
-    if (loadError || !full?.client_id) {
+    if (loadError || !full) {
       setError(loadError?.message || "Could not load proposal.");
+      setCreatingInvoiceId(null);
+      return;
+    }
+    if (!full.client_id) {
+      setError(
+        "This proposal is still on a lead. Accept it (or convert the lead) before creating an invoice."
+      );
       setCreatingInvoiceId(null);
       return;
     }
@@ -1450,7 +1457,7 @@ function CreateProposalModal({
   }, [clients, leads, initialClientId, initialLeadId]);
 
   async function resolveClientAndLead(): Promise<{
-    clientId: string;
+    clientId: string | null;
     clientLabel: string;
     leadId: string | null;
   }> {
@@ -1471,47 +1478,21 @@ function CreateProposalModal({
     }
 
     const lead = selected.lead;
-    if (lead.converted_client_id) {
-      return {
-        clientId: lead.converted_client_id,
-        clientLabel: lead.company || lead.name,
-        leadId: lead.id,
-      };
-    }
-
-    const res = await fetch(`/api/leads/${lead.id}/convert`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: "prospect" }),
-    });
-    const json = (await res.json().catch(() => ({}))) as {
-      error?: string;
-      clientId?: string;
-    };
-    if (!res.ok || !json.clientId) {
-      throw new Error(json.error || "Could not convert lead to client.");
-    }
-
-    onClientsChanged();
+    // Keep as lead-only until the proposal is accepted (then we convert).
     return {
-      clientId: json.clientId,
+      clientId: lead.converted_client_id || null,
       clientLabel: lead.company || lead.name,
       leadId: lead.id,
     };
   }
 
-  async function linkLeadToProposal(
-    leadId: string,
-    proposalId: string,
-    clientId: string
-  ) {
+  async function linkLeadToProposal(leadId: string, proposalId: string) {
     const supabase = createClient();
     await supabase
       .from("leads")
       .update({
         proposal_id: proposalId,
         status: "proposal_sent",
-        converted_client_id: clientId,
       })
       .eq("id", leadId);
   }
@@ -1538,7 +1519,7 @@ function CreateProposalModal({
     setFormError(null);
 
     let resolved: {
-      clientId: string;
+      clientId: string | null;
       clientLabel: string;
       leadId: string | null;
     };
@@ -1556,7 +1537,8 @@ function CreateProposalModal({
       try {
         const form = new FormData();
         form.set("notes", aiText);
-        form.set("clientId", resolved.clientId);
+        if (resolved.clientId) form.set("clientId", resolved.clientId);
+        if (resolved.leadId) form.set("leadId", resolved.leadId);
         form.set("category", category);
         form.set("currency", currency);
         form.set("pricingHint", pricingModel.toLowerCase());
@@ -1580,16 +1562,7 @@ function CreateProposalModal({
         }
 
         if (resolved.leadId) {
-          const supabase = createClient();
-          await supabase
-            .from("proposals")
-            .update({ lead_id: resolved.leadId })
-            .eq("id", String(json.id));
-          await linkLeadToProposal(
-            resolved.leadId,
-            String(json.id),
-            resolved.clientId
-          );
+          await linkLeadToProposal(resolved.leadId, String(json.id));
         }
 
         setSaving(false);
@@ -1648,7 +1621,7 @@ function CreateProposalModal({
     }
 
     if (resolved.leadId) {
-      await linkLeadToProposal(resolved.leadId, data.id, resolved.clientId);
+      await linkLeadToProposal(resolved.leadId, data.id);
     }
 
     onCreated(data.id);

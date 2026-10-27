@@ -9,6 +9,7 @@ import {
 } from "@/lib/projects/billing";
 import { generateProjectTasksFromProposal } from "@/lib/projects/ai-tasks";
 import { createProjectInvoice } from "@/lib/projects/create-invoice-from-project";
+import { convertLeadToClient } from "@/lib/leads/convert";
 
 type Db = SupabaseClient<Database>;
 
@@ -34,7 +35,7 @@ export async function convertProposalToProject(
   const { data: proposal, error: proposalError } = await db
     .from("proposals")
     .select(
-      "id, title, amount, currency, content, client_id, project_id, organization_id, status, deleted_at"
+      "id, title, amount, currency, content, client_id, lead_id, project_id, organization_id, status, deleted_at"
     )
     .eq("id", input.proposalId)
     .maybeSingle();
@@ -45,11 +46,26 @@ export async function convertProposalToProject(
   if (proposal.organization_id !== input.organizationId) {
     throw new Error("Forbidden.");
   }
-  if (!proposal.client_id) {
-    throw new Error("Assign a client to this proposal before converting.");
-  }
   if (proposal.project_id) {
     throw new Error("This proposal is already linked to a project.");
+  }
+
+  let clientId = proposal.client_id;
+  if (!clientId && proposal.lead_id) {
+    const converted = await convertLeadToClient(db, {
+      leadId: proposal.lead_id,
+      organizationId: input.organizationId,
+      userId: input.userId,
+      status: "active",
+    });
+    clientId = converted.clientId;
+    await db
+      .from("proposals")
+      .update({ client_id: clientId })
+      .eq("id", proposal.id);
+  }
+  if (!clientId) {
+    throw new Error("Assign a client or lead to this proposal before converting.");
   }
 
   const billingType =
@@ -69,7 +85,7 @@ export async function convertProposalToProject(
     .from("projects")
     .insert({
       organization_id: input.organizationId,
-      client_id: proposal.client_id,
+      client_id: clientId,
       proposal_id: proposal.id,
       name: input.name.trim() || proposal.title,
       description: input.description?.trim() || null,
@@ -130,7 +146,7 @@ export async function convertProposalToProject(
     if (invoiceAmount > 0) {
       const invoice = await createProjectInvoice(db, {
         organizationId: input.organizationId,
-        clientId: proposal.client_id,
+        clientId: clientId,
         projectId: project.id,
         proposalId: proposal.id,
         userId: input.userId,
@@ -167,7 +183,7 @@ export async function convertProposalToProject(
       const { error: taskError } = await db.from("tasks").insert(
         tasks.map((task, index) => ({
           organization_id: input.organizationId,
-          client_id: proposal.client_id,
+          client_id: clientId,
           project_id: project.id,
           title: task.title,
           description: task.description || null,

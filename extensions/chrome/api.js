@@ -10,6 +10,10 @@ const LAST_TIMER_KEYS = {
   description: "rebban_last_description",
 };
 
+const BID_KEYS = {
+  platform: "rebban_bid_platform",
+};
+
 const MONEY_NOTIFICATION_TYPES = [
   "invoice_paid",
   "proposal_opened",
@@ -131,6 +135,154 @@ async function restJson(path, options) {
     throw new Error(authErrorMessage(json, "Request failed."));
   }
   return json;
+}
+
+async function appFetch(path, options = {}, allowRefresh = true) {
+  const session = await getStoredSession();
+  if (!session.accessToken) {
+    const err = new Error("Unauthorized");
+    err.status = 401;
+    throw err;
+  }
+
+  const res = await fetch(`${APP_URL}${path}`, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${session.accessToken}`,
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    },
+  });
+
+  if (res.status === 401 && allowRefresh && session.refreshToken) {
+    const refreshed = await refreshSession(session.refreshToken);
+    if (refreshed) return appFetch(path, options, false);
+  }
+
+  return res;
+}
+
+async function appJson(path, options) {
+  const res = await appFetch(path, options);
+  const text = await res.text().catch(() => "");
+  let json = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    json = null;
+  }
+  if (res.status === 401) {
+    const err = new Error("Unauthorized — sign in again.");
+    err.status = 401;
+    throw err;
+  }
+  if (!res.ok) {
+    const fallback =
+      res.status === 404 || res.status === 307 || res.status === 308
+        ? `API not available (${res.status}). Deploy the latest Rebban app, or try again.`
+        : `Request failed (${res.status}).`;
+    throw new Error(authErrorMessage(json, fallback));
+  }
+  return json;
+}
+
+async function getBidPrefs() {
+  const stored = await chrome.storage.local.get([BID_KEYS.platform]);
+  return {
+    platform: stored[BID_KEYS.platform] || "upwork",
+  };
+}
+
+async function saveBidPrefs(prefs) {
+  await chrome.storage.local.set({
+    [BID_KEYS.platform]: prefs.platform || "upwork",
+  });
+}
+
+function emptyMarketplaceProfile() {
+  return {
+    services: "",
+    experience: "",
+    skills: "",
+    rates: "",
+    portfolio: "",
+  };
+}
+
+function normalizeMarketplaceProfile(raw) {
+  const src = raw && typeof raw === "object" ? raw : {};
+  return {
+    services: String(src.services || ""),
+    experience: String(src.experience || ""),
+    skills: String(src.skills || ""),
+    rates: String(src.rates || ""),
+    portfolio: String(src.portfolio || ""),
+  };
+}
+
+function marketplaceProfileIncomplete(profile) {
+  return !(
+    profile.services ||
+    profile.experience ||
+    profile.skills ||
+    profile.rates ||
+    profile.portfolio
+  );
+}
+
+async function loadMarketplaceProfile() {
+  try {
+    const user = await currentUser();
+    const rows = await restJson(
+      `profiles?id=eq.${user.id}&select=marketplace_profile`
+    );
+    const profile = normalizeMarketplaceProfile(rows?.[0]?.marketplace_profile);
+    return {
+      profile,
+      profileIncomplete: marketplaceProfileIncomplete(profile),
+    };
+  } catch {
+    return {
+      profile: emptyMarketplaceProfile(),
+      profileIncomplete: true,
+    };
+  }
+}
+
+async function saveMarketplaceProfile(profile) {
+  const user = await currentUser();
+  const normalized = normalizeMarketplaceProfile(profile);
+  await restJson(`profiles?id=eq.${user.id}`, {
+    method: "PATCH",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({ marketplace_profile: normalized }),
+  });
+  return {
+    ok: true,
+    profile: normalized,
+    profileIncomplete: marketplaceProfileIncomplete(normalized),
+  };
+}
+
+async function draftMarketplaceBid(input) {
+  const jobText = String(input?.jobText || "").trim();
+  const platform = String(input?.platform || "upwork").trim() || "upwork";
+  const profile = {
+    ...emptyMarketplaceProfile(),
+    ...(input?.profile || {}),
+  };
+
+  await saveBidPrefs({ platform });
+
+  return appJson("/api/extension/bid-draft", {
+    method: "POST",
+    body: JSON.stringify({
+      jobText,
+      platform,
+      profile,
+      saveProfile: Boolean(input?.saveProfile),
+    }),
+  });
 }
 
 async function refreshSession(refreshToken) {
@@ -645,6 +797,415 @@ async function scrapeActiveTabLead() {
   } catch {
     return null;
   }
+}
+
+function platformFromHost(host) {
+  const h = String(host || "").replace(/^www\./i, "").toLowerCase();
+  if (h.includes("upwork.com")) return "upwork";
+  if (h.includes("freelancer.com")) return "freelancer";
+  if (h.includes("mail.google.com") || h.includes("gmail.com")) return "gmail";
+  if (
+    h.includes("outlook.") ||
+    h.includes("mail.yahoo.com") ||
+    h.includes("proton.me")
+  ) {
+    return "outlook";
+  }
+  return "other";
+}
+
+function contextFromHost(host) {
+  const platform = platformFromHost(host);
+  if (platform === "upwork" || platform === "freelancer") return "marketplace";
+  if (platform === "gmail" || platform === "outlook") return "email";
+  return "web";
+}
+
+async function ensurePageReadPermission(tabUrl) {
+  let origin;
+  try {
+    origin = new URL(tabUrl).origin + "/*";
+  } catch {
+    throw new Error("Open a normal webpage tab first.");
+  }
+
+  if (!chrome.permissions?.contains || !chrome.permissions?.request) {
+    return true;
+  }
+
+  const already = await chrome.permissions.contains({
+    origins: [origin],
+  });
+  if (already) return true;
+
+  const granted = await chrome.permissions.request({
+    origins: [origin],
+  });
+  if (!granted) {
+    throw new Error(
+      "Allow access to this site when Chrome asks, or switch to Paste."
+    );
+  }
+  return true;
+}
+
+function pickBestJobFrameResult(results) {
+  const candidates = (results || [])
+    .map((entry) => entry?.result)
+    .filter((result) => result && String(result.text || "").trim().length >= 40);
+
+  if (!candidates.length) return null;
+
+  candidates.sort(
+    (a, b) => String(b.text || "").length - String(a.text || "").length
+  );
+  return candidates[0];
+}
+
+async function scrapeActiveTabJob() {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tab = tabs[0];
+  if (!tab?.id || !tab.url || !/^https?:/i.test(tab.url)) {
+    throw new Error("Open a webpage tab first (job board, email, etc.).");
+  }
+
+  await ensurePageReadPermission(tab.url);
+
+  let results;
+  try {
+    results = await chrome.scripting.executeScript({
+      target: { tabId: tab.id, allFrames: true },
+      files: ["extract-job.js"],
+    });
+  } catch (err) {
+    const detail = err?.message || "";
+    if (/Cannot access|chrome:|edge:|about:/i.test(detail)) {
+      throw new Error("This browser page can’t be read. Switch to Paste.");
+    }
+    throw new Error(
+      detail
+        ? `Could not read this page (${detail}). Try Refresh, or Paste.`
+        : "Could not read this page. Try Refresh, or switch to Paste."
+    );
+  }
+
+  const result = pickBestJobFrameResult(results);
+  const text = String(result?.text || "").trim();
+  if (text.length < 40) {
+    throw new Error(
+      "Couldn’t find enough text on this page. Try Refresh, or switch to Paste."
+    );
+  }
+
+  const host = new URL(tab.url).hostname;
+  return {
+    title: result?.title || tab.title || null,
+    text,
+    platform: result?.platform || platformFromHost(host),
+    context: result?.context || contextFromHost(host),
+    contactEmail: result?.contactEmail || null,
+    contactName: result?.contactName || null,
+    contactCompany: result?.contactCompany || null,
+    url: tab.url,
+  };
+}
+
+function formatProfileBrief(profile) {
+  const p = normalizeMarketplaceProfile(profile);
+  const parts = [];
+  if (p.services) parts.push(`What I do / services:\n${p.services}`);
+  if (p.experience) parts.push(`Experience / CV summary:\n${p.experience}`);
+  if (p.skills) parts.push(`Skills & stack:\n${p.skills}`);
+  if (p.rates) parts.push(`Rates & pricing notes:\n${p.rates}`);
+  if (p.portfolio) {
+    parts.push(`Portfolio / proof (only use real links from here):\n${p.portfolio}`);
+  }
+  return parts.join("\n\n");
+}
+
+async function loadPartyOptions(preferredEmail) {
+  const state = await loadTimer();
+  if (state.unauthorized || !state.organizationId) {
+    return { options: [], selectedKey: "new", matched: false };
+  }
+
+  const organizationId = state.organizationId;
+  const email = String(preferredEmail || "")
+    .trim()
+    .toLowerCase();
+
+  const [clients, leads] = await Promise.all([
+    restJson(
+      `clients?organization_id=eq.${organizationId}&deleted_at=is.null&select=id,name,email,company&order=name.asc&limit=150`
+    ),
+    restJson(
+      `leads?organization_id=eq.${organizationId}&deleted_at=is.null&converted_client_id=is.null&select=id,name,email,company&order=name.asc&limit=150`
+    ),
+  ]);
+
+  const options = [
+    ...(clients || []).map((client) => ({
+      key: `client:${client.id}`,
+      kind: "client",
+      id: client.id,
+      clientId: client.id,
+      leadId: null,
+      name: client.name,
+      email: client.email || "",
+      company: client.company || "",
+    })),
+    ...(leads || []).map((lead) => ({
+      key: `lead:${lead.id}`,
+      kind: "lead",
+      id: lead.id,
+      clientId: null,
+      leadId: lead.id,
+      name: lead.name,
+      email: lead.email || "",
+      company: lead.company || "",
+    })),
+  ];
+
+  let selectedKey = "new";
+  let matched = false;
+  if (email) {
+    const match = options.find(
+      (option) => String(option.email || "").trim().toLowerCase() === email
+    );
+    if (match) {
+      selectedKey = match.key;
+      matched = true;
+    }
+  }
+
+  return { options, selectedKey, matched };
+}
+
+async function resolveClientForDraft(input) {
+  const state = await loadTimer();
+  if (state.unauthorized || !state.organizationId || !state.user?.id) {
+    throw new Error("Sign in again to create a proposal.");
+  }
+
+  const organizationId = state.organizationId;
+  const userId = state.user.id;
+  const email = String(input?.contactEmail || "")
+    .trim()
+    .toLowerCase();
+  const name =
+    String(input?.contactName || "").trim() ||
+    (email ? email.split("@")[0] : "") ||
+    String(input?.title || "").trim() ||
+    "New lead";
+  const company = String(input?.contactCompany || "").trim() || null;
+  const notes = [
+    input?.title ? `Subject: ${input.title}` : "",
+    input?.pageUrl ? `Source: ${input.pageUrl}` : "",
+    "Created from Rebban Chrome extension.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const source = input?.context === "email" ? "email" : "website";
+  const partyKey = String(input?.partyKey || "new");
+
+  // Existing client → proposal to client
+  if (partyKey.startsWith("client:")) {
+    const clientId = partyKey.slice("client:".length);
+    const rows = await restJson(
+      `clients?id=eq.${clientId}&organization_id=eq.${organizationId}&deleted_at=is.null&select=id,name&limit=1`
+    );
+    const client = rows?.[0];
+    if (!client) throw new Error("Selected client not found.");
+    return {
+      clientId: client.id,
+      clientName: client.name,
+      leadId: null,
+      createdClient: false,
+      createdLead: false,
+    };
+  }
+
+  // Existing lead → proposal stays on lead until accepted
+  if (partyKey.startsWith("lead:")) {
+    const leadId = partyKey.slice("lead:".length);
+    const rows = await restJson(
+      `leads?id=eq.${leadId}&organization_id=eq.${organizationId}&deleted_at=is.null&select=id,name,converted_client_id&limit=1`
+    );
+    const lead = rows?.[0];
+    if (!lead) throw new Error("Selected lead not found.");
+    return {
+      clientId: lead.converted_client_id || null,
+      clientName: lead.name,
+      leadId: lead.id,
+      createdClient: false,
+      createdLead: false,
+    };
+  }
+
+  // Create new lead only (client is created when proposal is accepted)
+  if (email) {
+    const clients = await restJson(
+      `clients?organization_id=eq.${organizationId}&deleted_at=is.null&email=ilike.${encodeURIComponent(email)}&select=id,name,email&limit=1`
+    );
+    if (clients?.[0]?.id) {
+      return {
+        clientId: clients[0].id,
+        clientName: clients[0].name,
+        leadId: null,
+        createdClient: false,
+        createdLead: false,
+      };
+    }
+
+    const leads = await restJson(
+      `leads?organization_id=eq.${organizationId}&deleted_at=is.null&email=ilike.${encodeURIComponent(email)}&select=id,name,converted_client_id&limit=1`
+    );
+    if (leads?.[0]?.id) {
+      return {
+        clientId: leads[0].converted_client_id || null,
+        clientName: leads[0].name,
+        leadId: leads[0].id,
+        createdClient: false,
+        createdLead: false,
+      };
+    }
+  }
+
+  const createdLead = await restJson("leads", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      organization_id: organizationId,
+      created_by: userId,
+      name: name.slice(0, 160),
+      email: email || null,
+      company,
+      notes: notes.slice(0, 4000),
+      source,
+      status: "new",
+    }),
+  });
+  const lead = createdLead[0] || createdLead;
+
+  return {
+    clientId: null,
+    clientName: lead.name,
+    leadId: lead.id,
+    createdClient: false,
+    createdLead: true,
+  };
+}
+
+async function draftFromPage(input) {
+  const text = String(input?.text || "").trim();
+  const platform = String(input?.platform || "other").trim() || "other";
+  const context = String(input?.context || "web").trim() || "web";
+  const profile = {
+    ...emptyMarketplaceProfile(),
+    ...(input?.profile || {}),
+  };
+
+  if (text.length < 40) {
+    throw new Error("Need more page text before drafting.");
+  }
+
+  await saveBidPrefs({
+    platform:
+      platform === "freelancer" || platform === "upwork" ? platform : "upwork",
+  });
+  await saveMarketplaceProfile(profile);
+
+  // Marketplace → cover letter (dedicated API when available)
+  if (context === "marketplace") {
+    try {
+      const result = await appJson("/api/extension/from-page", {
+        method: "POST",
+        body: JSON.stringify({
+          text,
+          platform,
+          context,
+          pageUrl: input?.pageUrl || null,
+          title: input?.title || null,
+          profile,
+        }),
+      });
+      return result;
+    } catch (err) {
+      // Fall back to older bid-draft route, then clear error
+      try {
+        const legacy = await draftMarketplaceBid({
+          jobText: text,
+          platform,
+          profile,
+          saveProfile: true,
+        });
+        return {
+          ok: true,
+          mode: "bid",
+          context,
+          platform,
+          draft: legacy.draft,
+          jobTitle: legacy.jobTitle || input?.title || null,
+        };
+      } catch {
+        throw err;
+      }
+    }
+  }
+
+  // Email / web → real proposal via existing production generate API
+  if (context === "email" && !input?.contactEmail && !input?.contactName) {
+    throw new Error(
+      "Add the client name or email, then create the proposal."
+    );
+  }
+
+  const resolved = await resolveClientForDraft({
+    ...input,
+    partyKey: input?.partyKey || "new",
+  });
+  const about = formatProfileBrief(profile);
+  const brief = [
+    input?.title ? `Email subject / title: ${input.title}` : "",
+    input?.contactName ? `Contact: ${input.contactName}` : "",
+    input?.contactEmail ? `Email: ${input.contactEmail}` : "",
+    about ? `--- Freelancer profile ---\n${about}` : "",
+    "--- Message / brief ---",
+    text.slice(0, 50000),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  if (!resolved.clientId && !resolved.leadId) {
+    throw new Error("Select or create a client/lead before drafting.");
+  }
+
+  const proposal = await appJson("/api/proposals/generate", {
+    method: "POST",
+    body: JSON.stringify({
+      notes: brief,
+      clientId: resolved.clientId || undefined,
+      leadId: resolved.leadId || undefined,
+      create: true,
+    }),
+  });
+
+  return {
+    ok: true,
+    mode: "proposal",
+    context,
+    platform,
+    proposalId: proposal.id,
+    title: proposal.title,
+    amount: proposal.amount,
+    currency: proposal.currency,
+    clientId: resolved.clientId,
+    leadId: resolved.leadId,
+    clientName: resolved.clientName,
+    createdClient: resolved.createdClient,
+    createdLead: resolved.createdLead,
+    url: `${APP_URL}/proposals/${proposal.id}`,
+  };
 }
 
 async function savePageAsLead(input = {}) {

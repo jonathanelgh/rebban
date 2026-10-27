@@ -57,6 +57,11 @@ import {
 } from "@/lib/onboarding";
 import { FancySelect } from "@/components/onboarding/FancySelect";
 import { LeadSourceIcon } from "@/components/leads/LeadSourceIcons";
+import {
+  asMarketplaceProfile,
+  EMPTY_MARKETPLACE_PROFILE,
+  type MarketplaceProfile,
+} from "@/lib/extension/marketplace-profile";
 type SectionId =
   | "profile"
   | "business"
@@ -284,6 +289,9 @@ function SettingsPageInner() {
     industry: "",
   });
 
+  const [marketplaceProfile, setMarketplaceProfile] =
+    useState<MarketplaceProfile>(EMPTY_MARKETPLACE_PROFILE);
+
   const [branding, setBranding] = useState({
     description: "",
     website: "",
@@ -346,7 +354,7 @@ function SettingsPageInner() {
       const supabase = createClient();
       const { data } = await supabase
         .from("profiles")
-        .select("title, industry, notification_prefs")
+        .select("title, industry, notification_prefs, marketplace_profile")
         .eq("id", userId!)
         .maybeSingle();
       if (cancelled || !data) return;
@@ -355,6 +363,7 @@ function SettingsPageInner() {
         title: data.title || "",
         industry: data.industry || "",
       }));
+      setMarketplaceProfile(asMarketplaceProfile(data.marketplace_profile));
       const prefs = (data.notification_prefs || {}) as Record<string, unknown>;
       setNotifications({
         invoiceOverdue: prefs.invoice_overdue !== false,
@@ -1131,6 +1140,7 @@ function SettingsPageInner() {
           full_name: profile.name.trim() || null,
           title: profile.title.trim() || null,
           industry: profile.industry || null,
+          marketplace_profile: asMarketplaceProfile(marketplaceProfile),
         })
         .eq("id", userId);
 
@@ -1426,6 +1436,84 @@ function SettingsPageInner() {
                         searchPlaceholder="Search industries…"
                       />
                     </Field>
+                  </div>
+                  <div className="pt-2 border-t border-line">
+                    <h3 className="text-[14px] font-semibold text-gray-900">
+                      Proposal profile
+                    </h3>
+                    <p className="mt-1 mb-4 text-[13px] text-gray-500 leading-relaxed">
+                      Used by the Chrome extension when drafting proposals
+                      (email → Rebban, or Upwork / Freelancer copy). The more
+                      you add, the more specific the AI can be — it only claims
+                      what you write here.
+                    </p>
+                    <div className="space-y-4">
+                      <Field label="What you do / services">
+                        <textarea
+                          value={marketplaceProfile.services}
+                          onChange={(e) =>
+                            setMarketplaceProfile({
+                              ...marketplaceProfile,
+                              services: e.target.value,
+                            })
+                          }
+                          className={`${inputClass} min-h-[88px]`}
+                          placeholder="e.g. Product design for SaaS, brand systems, UX audits…"
+                        />
+                      </Field>
+                      <Field label="Experience / CV summary">
+                        <textarea
+                          value={marketplaceProfile.experience}
+                          onChange={(e) =>
+                            setMarketplaceProfile({
+                              ...marketplaceProfile,
+                              experience: e.target.value,
+                            })
+                          }
+                          className={`${inputClass} min-h-[120px]`}
+                          placeholder="Years, notable roles, industries, outcomes…"
+                        />
+                      </Field>
+                      <Field label="Skills & stack">
+                        <textarea
+                          value={marketplaceProfile.skills}
+                          onChange={(e) =>
+                            setMarketplaceProfile({
+                              ...marketplaceProfile,
+                              skills: e.target.value,
+                            })
+                          }
+                          className={`${inputClass} min-h-[72px]`}
+                          placeholder="Tools, languages, frameworks you actually use"
+                        />
+                      </Field>
+                      <Field label="Rates & pricing notes">
+                        <textarea
+                          value={marketplaceProfile.rates}
+                          onChange={(e) =>
+                            setMarketplaceProfile({
+                              ...marketplaceProfile,
+                              rates: e.target.value,
+                            })
+                          }
+                          className={`${inputClass} min-h-[72px]`}
+                          placeholder="Hourly range, fixed-price preferences, currency…"
+                        />
+                      </Field>
+                      <Field label="Portfolio / proof links">
+                        <textarea
+                          value={marketplaceProfile.portfolio}
+                          onChange={(e) =>
+                            setMarketplaceProfile({
+                              ...marketplaceProfile,
+                              portfolio: e.target.value,
+                            })
+                          }
+                          className={`${inputClass} min-h-[72px]`}
+                          placeholder="Site, case studies, Behance, GitHub — only real links"
+                        />
+                      </Field>
+                    </div>
                   </div>
                 </div>
               </Section>

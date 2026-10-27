@@ -61,34 +61,63 @@ export async function convertLeadToClient(
   return { clientId: client.id, created: true as const };
 }
 
+/**
+ * On proposal accept/sign: ensure a client exists (convert lead if needed),
+ * mark the lead won, and activate the client.
+ */
 export async function markLeadWonFromProposal(
   supabase: Db,
-  proposalId: string
+  proposalId: string,
+  options?: { userId?: string | null }
 ) {
   const { data: proposal, error } = await supabase
     .from("proposals")
-    .select("id, lead_id, client_id")
+    .select("id, lead_id, client_id, organization_id, created_by")
     .eq("id", proposalId)
     .maybeSingle();
 
-  if (error || !proposal?.lead_id) return;
+  if (error || !proposal) return;
 
-  await supabase
-    .from("leads")
-    .update({
-      status: "won",
-      converted_client_id: proposal.client_id,
-      converted_at: new Date().toISOString(),
-      proposal_id: proposal.id,
-    })
-    .eq("id", proposal.lead_id)
-    .is("deleted_at", null);
+  let clientId = proposal.client_id;
 
-  if (proposal.client_id) {
+  if (!clientId && proposal.lead_id) {
+    const userId =
+      options?.userId || proposal.created_by || null;
+    if (!userId) return;
+
+    const converted = await convertLeadToClient(supabase, {
+      leadId: proposal.lead_id,
+      organizationId: proposal.organization_id,
+      userId,
+      status: "active",
+    });
+    clientId = converted.clientId;
+
+    await supabase
+      .from("proposals")
+      .update({ client_id: clientId })
+      .eq("id", proposal.id)
+      .is("client_id", null);
+  }
+
+  if (proposal.lead_id) {
+    await supabase
+      .from("leads")
+      .update({
+        status: "won",
+        converted_client_id: clientId,
+        converted_at: new Date().toISOString(),
+        proposal_id: proposal.id,
+      })
+      .eq("id", proposal.lead_id)
+      .is("deleted_at", null);
+  }
+
+  if (clientId) {
     await supabase
       .from("clients")
       .update({ status: "active" })
-      .eq("id", proposal.client_id)
+      .eq("id", clientId)
       .eq("status", "prospect");
   }
 }

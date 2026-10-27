@@ -69,7 +69,8 @@ An active timer may also appear elsewhere in the app chrome when running.
 ## Leads
 Path: Leads (/leads). Capture inquiries from your website or add them manually.
 - Lead forms (/leads/forms): build a form and embed it with an iframe snippet, or share the public link (/f/…).
-- Convert a lead to a client, or create a proposal from a lead (creates/links a client).
+- Convert a lead to a client manually, or create a proposal for a lead or an existing client.
+- A proposal needs a lead and/or a client. Lead-only proposals convert to a client when accepted/signed.
 - When a linked proposal is accepted/signed, the lead is marked won.
 Separate from Admin → Leads (internal founder outreach).
 

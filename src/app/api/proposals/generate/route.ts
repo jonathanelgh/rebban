@@ -17,6 +17,7 @@ async function readBriefFromRequest(request: Request) {
   const contentType = request.headers.get("content-type") || "";
   let notes = "";
   let clientId = "";
+  let leadId = "";
   let category: string | null = null;
   let currency: string | null = null;
   let pricingHint: string | null = null;
@@ -28,6 +29,7 @@ async function readBriefFromRequest(request: Request) {
     const form = await request.formData();
     notes = String(form.get("notes") || "");
     clientId = String(form.get("clientId") || "");
+    leadId = String(form.get("leadId") || "");
     category = String(form.get("category") || "") || null;
     currency = String(form.get("currency") || "") || null;
     pricingHint = String(form.get("pricingHint") || "") || null;
@@ -50,6 +52,7 @@ async function readBriefFromRequest(request: Request) {
     const body = (await request.json().catch(() => null)) as {
       notes?: string;
       clientId?: string;
+      leadId?: string;
       category?: string;
       currency?: string;
       pricingHint?: string;
@@ -59,6 +62,7 @@ async function readBriefFromRequest(request: Request) {
     } | null;
     notes = body?.notes || "";
     clientId = body?.clientId || "";
+    leadId = body?.leadId || "";
     category = body?.category || null;
     currency = body?.currency || null;
     pricingHint = body?.pricingHint || null;
@@ -72,7 +76,8 @@ async function readBriefFromRequest(request: Request) {
 
   return {
     notes: notes.trim(),
-    clientId,
+    clientId: clientId.trim() || null,
+    leadId: leadId.trim() || null,
     category,
     currency,
     pricingHint,
@@ -115,9 +120,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
 
-  if (!parsed.clientId) {
+  if (!parsed.clientId && !parsed.leadId) {
     return NextResponse.json(
-      { error: "Select a client to continue." },
+      { error: "Select a client or lead to continue." },
       { status: 400 }
     );
   }
@@ -129,15 +134,26 @@ export async function POST(request: Request) {
     );
   }
 
-  const [{ data: client }, { data: org }, { data: profile }] = await Promise.all(
-    [
-      supabase
-        .from("clients")
-        .select("id, name, company, email")
-        .eq("id", parsed.clientId)
-        .eq("organization_id", organizationId)
-        .is("deleted_at", null)
-        .maybeSingle(),
+  const [{ data: client }, { data: lead }, { data: org }, { data: profile }] =
+    await Promise.all([
+      parsed.clientId
+        ? supabase
+            .from("clients")
+            .select("id, name, company, email")
+            .eq("id", parsed.clientId)
+            .eq("organization_id", organizationId)
+            .is("deleted_at", null)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      parsed.leadId
+        ? supabase
+            .from("leads")
+            .select("id, name, company, email, converted_client_id")
+            .eq("id", parsed.leadId)
+            .eq("organization_id", organizationId)
+            .is("deleted_at", null)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
       supabase
         .from("organizations")
         .select("name, currency")
@@ -148,25 +164,35 @@ export async function POST(request: Request) {
         .select("full_name")
         .eq("id", user.id)
         .maybeSingle(),
-    ]
-  );
+    ]);
 
-  if (!client) {
+  if (parsed.clientId && !client) {
     return NextResponse.json({ error: "Client not found." }, { status: 404 });
   }
+  if (parsed.leadId && !lead) {
+    return NextResponse.json({ error: "Lead not found." }, { status: 404 });
+  }
+
+  // Prefer explicit client; else use lead's already-converted client if any.
+  const clientId =
+    client?.id || lead?.converted_client_id || null;
+  const leadId = lead?.id || parsed.leadId || null;
+  const recipientName = client?.name || lead?.name || "Client";
+  const recipientCompany = client?.company || lead?.company || null;
 
   try {
     console.info("[proposals] AI generate start", {
       userId: user.id,
-      clientId: client.id,
+      clientId,
+      leadId,
       briefLength: parsed.brief.length,
       fileName: parsed.fileName,
     });
 
     const result = await generateProposalFromBrief({
       brief: parsed.brief,
-      clientName: client.name,
-      clientCompany: client.company,
+      clientName: recipientName,
+      clientCompany: recipientCompany,
       organizationName: org?.name || profile?.full_name || null,
       category: parsed.category,
       currency: parsed.currency || org?.currency || "USD",
@@ -205,6 +231,8 @@ export async function POST(request: Request) {
         pricingType: result.pricingType,
         content: contentJson,
         fileName: parsed.fileName,
+        clientId,
+        leadId,
       });
     }
 
@@ -212,7 +240,8 @@ export async function POST(request: Request) {
       .from("proposals")
       .insert({
         organization_id: organizationId,
-        client_id: client.id,
+        client_id: clientId,
+        lead_id: leadId,
         title: result.title,
         amount: result.amount > 0 ? result.amount : 0,
         currency: result.currency,
@@ -230,6 +259,16 @@ export async function POST(request: Request) {
       throw new Error(insertError?.message || "Could not save proposal.");
     }
 
+    if (leadId) {
+      await supabase
+        .from("leads")
+        .update({
+          proposal_id: proposal.id,
+          status: "proposal_sent",
+        })
+        .eq("id", leadId);
+    }
+
     console.info("[proposals] AI generate saved", {
       proposalId: proposal.id,
       title: proposal.title,
@@ -243,6 +282,8 @@ export async function POST(request: Request) {
       pricingType: result.pricingType,
       content: contentJson,
       fileName: parsed.fileName,
+      clientId,
+      leadId,
     });
   } catch (err) {
     const message =

@@ -2434,6 +2434,7 @@ export type Database = {
           locale: string
           marketing_consent: boolean
           marketing_consent_at: string | null
+          marketplace_profile: Json
           notification_prefs: Json
           onboarding_completed_at: string | null
           timezone: string
@@ -2454,6 +2455,7 @@ export type Database = {
           locale?: string
           marketing_consent?: boolean
           marketing_consent_at?: string | null
+          marketplace_profile?: Json
           notification_prefs?: Json
           onboarding_completed_at?: string | null
           timezone?: string
@@ -2474,6 +2476,7 @@ export type Database = {
           locale?: string
           marketing_consent?: boolean
           marketing_consent_at?: string | null
+          marketplace_profile?: Json
           notification_prefs?: Json
           onboarding_completed_at?: string | null
           timezone?: string
