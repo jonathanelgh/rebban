@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Rebban Timer",
-  "version": "1.4.4",
+  "version": "1.4.5",
   "description": "Start and stop your Rebban timer, draft proposals, save leads, and see money alerts from Chrome.",
   "action": {
     "default_title": "Rebban",

@@ -112,17 +112,19 @@ function contextLabel() {
       ? "Freelancer.com → copy proposal"
       : "Upwork → copy proposal";
   }
-  if (bidContext === "email") return "Email → Rebban proposal";
-  return "Page → Rebban proposal";
+  if (bidContext === "email") {
+    return "Email → draft proposal in Rebban (edit & send when ready)";
+  }
+  return "Page → draft proposal in Rebban (edit & send when ready)";
 }
 
 function primaryDraftLabel() {
   if (bidBusy) {
-    return bidContext === "marketplace" ? "Drafting…" : "Creating proposal…";
+    return bidContext === "marketplace" ? "Drafting…" : "Creating draft…";
   }
   return bidContext === "marketplace"
     ? "Draft proposal"
-    : "Create proposal in Rebban";
+    : "Create draft in Rebban";
 }
 
 function bindTabs() {
@@ -413,11 +415,15 @@ function bidDoneHtml() {
   if (bidResultMode === "proposal" && bidProposalUrl) {
     return `
       <div class="card bid-result bid-done">
-        <p class="done-kicker">Proposal created</p>
+        <p class="done-kicker">Draft saved</p>
         <p class="page-title">${escapeHtml(bidJobTitle || "Draft proposal ready")}</p>
-        ${bidProposalMeta ? `<p class="toast ok">${escapeHtml(bidProposalMeta)}</p>` : ""}
-        <a class="btn btn-primary" style="display:block;text-align:center;text-decoration:none;margin-top:12px" href="${escapeHtml(bidProposalUrl)}" target="_blank" rel="noreferrer">Open in Rebban</a>
-        <button class="btn btn-secondary" id="bid-new-btn" type="button" style="margin-top:8px">Create another</button>
+        <p class="toast ok">${escapeHtml(
+          bidProposalMeta ||
+            "Saved as a draft in Rebban. Nothing was sent."
+        )}</p>
+        <p class="meta" style="text-align:left;margin-top:8px">Open it to edit, then send when you approve.</p>
+        <a class="btn btn-primary" style="display:block;text-align:center;text-decoration:none;margin-top:12px" href="${escapeHtml(bidProposalUrl)}" target="_blank" rel="noreferrer">Review &amp; edit draft</a>
+        <button class="btn btn-secondary" id="bid-new-btn" type="button" style="margin-top:8px">Create another draft</button>
       </div>
     `;
   }
@@ -887,8 +893,8 @@ async function onDraftBid() {
       else if (result.leadId && !result.clientId) bits.push("lead");
       else if (result.clientId) bits.push("client");
       bidProposalMeta = bits.length
-        ? `Saved draft for ${bits.join(" · ")}`
-        : "Draft proposal saved in Rebban.";
+        ? `Draft for ${bits.join(" · ")} — nothing sent yet`
+        : "Draft saved in Rebban — nothing sent yet";
     } else {
       bidResultMode = "bid";
       bidDraft = result.draft || "";
