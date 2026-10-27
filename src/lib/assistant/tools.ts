@@ -13,6 +13,7 @@ import { sendReceiptExportEmail } from "@/lib/receipts/email-export";
 import { parseReceiptMonthYear } from "@/lib/receipts/month-parse";
 import { downloadReceiptBytes } from "@/lib/receipts/storage";
 import { MONTH_NAMES } from "@/lib/receipts/constants";
+import { formatReceiptMoney } from "@/lib/receipts/money";
 import {
   addTimeEntriesToInvoice,
   appendTimeSpecification,
@@ -680,6 +681,36 @@ export const ASSISTANT_TOOL_DEFINITIONS = [
         type: "object",
         properties: {
           limit: { type: "number", description: "Max items (default 12)" },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "list_receipts",
+      description:
+        "Count and summarize receipts in the workspace. Use for 'do I have any receipts', 'how many receipts', or a quick inbox overview. Prefer this over export when they are only asking what exists. Optionally filter by month.",
+      parameters: {
+        type: "object",
+        properties: {
+          month: {
+            type: "string",
+            description: 'Optional month number 1-12 or name like "october"',
+          },
+          year: {
+            type: "number",
+            description: "Optional four-digit year when filtering by month",
+          },
+          month_query: {
+            type: "string",
+            description: 'Optional free text like "October 2026"',
+          },
+          limit: {
+            type: "number",
+            description: "Max sample rows to include (default 8)",
+          },
         },
         additionalProperties: false,
       },
@@ -3637,17 +3668,91 @@ export async function executeAssistantTool(
         };
       }
 
+      case "list_receipts": {
+        const wantsMonth =
+          args.month != null ||
+          args.year != null ||
+          String(args.month_query || "").trim().length > 0;
+        const parsed = wantsMonth ? parseReceiptMonthYear(args) : null;
+        if (parsed && !parsed.ok) return { error: parsed.error };
+
+        const limit =
+          typeof args.limit === "number" && Number.isFinite(args.limit)
+            ? Math.min(Math.max(Math.round(args.limit), 1), 20)
+            : 8;
+
+        let query = db
+          .from("receipts")
+          .select(
+            "id, merchant, receipt_date, amount_minor, currency, review_status, created_at",
+            { count: "exact" }
+          )
+          .eq("organization_id", organizationId)
+          .is("deleted_at", null)
+          .order("receipt_date", { ascending: false, nullsFirst: false })
+          .limit(limit);
+
+        if (parsed?.ok) {
+          const start = `${parsed.year}-${String(parsed.month).padStart(2, "0")}-01`;
+          const endDate = new Date(Date.UTC(parsed.year, parsed.month, 0));
+          const end = `${parsed.year}-${String(parsed.month).padStart(2, "0")}-${String(endDate.getUTCDate()).padStart(2, "0")}`;
+          query = query.gte("receipt_date", start).lte("receipt_date", end);
+        }
+
+        const { data, error, count } = await query;
+        if (error) return { error: error.message };
+
+        const { count: undatedCount } = await db
+          .from("receipts")
+          .select("id", { count: "exact", head: true })
+          .eq("organization_id", organizationId)
+          .is("deleted_at", null)
+          .is("receipt_date", null);
+
+        const receipts = (data || []).map((row) => ({
+          id: row.id,
+          merchant: row.merchant || "Unknown",
+          receipt_date: row.receipt_date,
+          amount: formatReceiptMoney(row.amount_minor, row.currency),
+          currency: row.currency,
+          review_status: row.review_status,
+        }));
+
+        const total = count ?? receipts.length;
+        const label = parsed?.ok ? parsed.label : "your workspace";
+        return {
+          ok: true,
+          total,
+          undated_count: undatedCount || 0,
+          month_label: parsed?.ok ? parsed.label : null,
+          receipts,
+          message:
+            total === 0
+              ? parsed?.ok
+                ? `No dated receipts for ${label}. Mention undated (${undatedCount || 0}) if any.`
+                : `No receipts yet. Mention undated (${undatedCount || 0}) if any.`
+              : `Summarize ${total} receipt${total === 1 ? "" : "s"} for ${label} briefly from the sample. Offer a month ZIP only if they want to download/export.`,
+        };
+      }
+
       case "export_receipts_month": {
         const parsed = parseReceiptMonthYear(args);
         if (!parsed.ok) return { error: parsed.error };
 
         const admin = createAdminClient();
-        const zip = await buildMonthExportZip({
-          db: admin,
-          organizationId,
-          year: parsed.year,
-          month: parsed.month,
-        });
+        let zip: Awaited<ReturnType<typeof buildMonthExportZip>>;
+        try {
+          zip = await buildMonthExportZip({
+            db: admin,
+            organizationId,
+            year: parsed.year,
+            month: parsed.month,
+          });
+        } catch (err) {
+          const detail =
+            err instanceof Error ? err.message : "Could not build receipt ZIP.";
+          return { error: `Receipt export failed: ${detail}` };
+        }
 
         const { data: exportRow, error: exportError } = await db
           .from("receipt_exports")
