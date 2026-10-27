@@ -4072,7 +4072,7 @@ function ProposalEditorContent() {
     <div className="h-full min-h-0 bg-[#F7F8FA] flex flex-col font-sans">
       
       {/* Top Navbar */}
-      <header className="h-14 md:h-16 bg-white border-b border-line px-3 md:px-4 flex items-center justify-between gap-2 shrink-0 z-20">
+      <header className="h-14 md:h-16 bg-white border-b border-line px-3 md:px-4 flex items-center justify-between gap-2 shrink-0 relative z-40">
         <div className="flex items-center gap-3 md:gap-6 min-w-0">
           <Link href="/proposals" className="flex items-center gap-1.5 text-sm font-semibold text-gray-600 hover:text-gray-900 transition-colors shrink-0">
             <ChevronLeft className="w-4 h-4" />

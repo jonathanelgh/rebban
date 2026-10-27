@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useId, useRef, useState } from "react";
+import React, { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Activity,
   Ban,
@@ -75,27 +76,62 @@ export function ProposalSendMenu({
   const isActiveSent = Boolean(status && ACTIVE_SENT_STATUSES.has(status));
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(
+    null
+  );
   const rootRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
+
+  useLayoutEffect(() => {
+    if (!open || !buttonRef.current) {
+      setMenuPos(null);
+      return;
+    }
+    const rect = buttonRef.current.getBoundingClientRect();
+    setMenuPos({
+      top: rect.bottom + 8,
+      right: Math.max(8, window.innerWidth - rect.right),
+    });
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
 
     function onPointerDown(event: MouseEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
+      const target = event.target as Node;
+      if (
+        rootRef.current?.contains(target) ||
+        menuRef.current?.contains(target)
+      ) {
+        return;
       }
+      setOpen(false);
     }
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") setOpen(false);
     }
 
+    function onReposition() {
+      if (!buttonRef.current) return;
+      const rect = buttonRef.current.getBoundingClientRect();
+      setMenuPos({
+        top: rect.bottom + 8,
+        right: Math.max(8, window.innerWidth - rect.right),
+      });
+    }
+
     document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("resize", onReposition);
+    window.addEventListener("scroll", onReposition, true);
     return () => {
       document.removeEventListener("mousedown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("resize", onReposition);
+      window.removeEventListener("scroll", onReposition, true);
     };
   }, [open]);
 
@@ -141,6 +177,7 @@ export function ProposalSendMenu({
       ) : alreadySent ? (
         <div ref={rootRef} className="relative">
           <button
+            ref={buttonRef}
             type="button"
             disabled={busy}
             aria-haspopup="menu"
@@ -157,107 +194,113 @@ export function ProposalSendMenu({
             <MoreHorizontal className="w-4 h-4" />
           </button>
 
-          {open && (
-            <div
-              id={menuId}
-              role="menu"
-              className="absolute right-0 z-50 mt-2 w-[252px] rounded-2xl border border-gray-200 bg-white py-1.5 shadow-[0_12px_40px_rgba(16,24,40,0.14)]"
-            >
-              {status === "accepted" && proposalId ? (
-                <>
-                  <MenuItem
-                    icon={<Download className="w-4 h-4" />}
-                    label="Download signed PDF"
-                    description="Certificate + audit log copy"
-                    onClick={() => {
-                      setOpen(false);
-                      window.open(
-                        `/api/proposals/${proposalId}/signed-pdf`,
-                        "_blank",
-                        "noopener,noreferrer"
-                      );
-                    }}
-                  />
-                  {onResendSigned ? (
+          {open &&
+            menuPos &&
+            typeof document !== "undefined" &&
+            createPortal(
+              <div
+                ref={menuRef}
+                id={menuId}
+                role="menu"
+                style={{ top: menuPos.top, right: menuPos.right }}
+                className="fixed z-[80] w-[252px] rounded-2xl border border-gray-200 bg-white py-1.5 shadow-[0_12px_40px_rgba(16,24,40,0.14)]"
+              >
+                {status === "accepted" && proposalId ? (
+                  <>
                     <MenuItem
-                      icon={<Send className="w-4 h-4" />}
-                      label={busy ? "Sending…" : "Email signed PDF"}
-                      description="Resend confirmation to the signer"
-                      disabled={busy}
+                      icon={<Download className="w-4 h-4" />}
+                      label="Download signed PDF"
+                      description="Certificate + audit log copy"
                       onClick={() => {
                         setOpen(false);
-                        void onResendSigned();
+                        window.open(
+                          `/api/proposals/${proposalId}/signed-pdf`,
+                          "_blank",
+                          "noopener,noreferrer"
+                        );
                       }}
                     />
-                  ) : null}
-                </>
-              ) : null}
-              {onViewActivity ? (
+                    {onResendSigned ? (
+                      <MenuItem
+                        icon={<Send className="w-4 h-4" />}
+                        label={busy ? "Sending…" : "Email signed PDF"}
+                        description="Resend confirmation to the signer"
+                        disabled={busy}
+                        onClick={() => {
+                          setOpen(false);
+                          void onResendSigned();
+                        }}
+                      />
+                    ) : null}
+                  </>
+                ) : null}
+                {onViewActivity ? (
+                  <MenuItem
+                    icon={<Activity className="w-4 h-4" />}
+                    label="Activity"
+                    description="Opens, sends, and client decisions"
+                    className="md:hidden"
+                    onClick={() => {
+                      setOpen(false);
+                      onViewActivity();
+                    }}
+                  />
+                ) : null}
                 <MenuItem
-                  icon={<Activity className="w-4 h-4" />}
-                  label="Activity"
-                  description="Opens, sends, and client decisions"
-                  className="md:hidden"
-                  onClick={() => {
-                    setOpen(false);
-                    onViewActivity();
-                  }}
-                />
-              ) : null}
-              <MenuItem
-                icon={<Send className="w-4 h-4" />}
-                label={busy ? "Sending…" : "Send again"}
-                description="Resend to the same recipient"
-                disabled={busy}
-                onClick={() => {
-                  setOpen(false);
-                  void onSendAgain();
-                }}
-              />
-              <MenuItem
-                icon={<PenLine className="w-4 h-4" />}
-                label="Make changes"
-                description="Edit this proposal"
-                disabled={busy}
-                onClick={() => {
-                  setOpen(false);
-                  void onMakeChanges();
-                }}
-              />
-              {isActiveSent && onCancelAutomation ? (
-                <MenuItem
-                  icon={<Ban className="w-4 h-4" />}
-                  label={busy ? "Cancelling…" : "Cancel automation"}
-                  description="Stop remaining follow-up emails"
+                  icon={<Send className="w-4 h-4" />}
+                  label={busy ? "Sending…" : "Send again"}
+                  description="Resend to the same recipient"
                   disabled={busy}
                   onClick={() => {
                     setOpen(false);
-                    void onCancelAutomation();
+                    void onSendAgain();
                   }}
                 />
-              ) : null}
-              {clientUrl && (
-                <>
-                  <div className="my-1.5 mx-3 border-t border-gray-100" />
+                <MenuItem
+                  icon={<PenLine className="w-4 h-4" />}
+                  label="Make changes"
+                  description="Edit this proposal"
+                  disabled={busy}
+                  onClick={() => {
+                    setOpen(false);
+                    void onMakeChanges();
+                  }}
+                />
+                {isActiveSent && onCancelAutomation ? (
                   <MenuItem
-                    icon={<Copy className="w-4 h-4" />}
-                    label={copied ? "Link copied" : "Copy client link"}
-                    onClick={() => {
-                      void copyLink();
-                    }}
-                  />
-                  <MenuItem
-                    icon={<ExternalLink className="w-4 h-4" />}
-                    label="Open client link"
+                    icon={<Ban className="w-4 h-4" />}
+                    label={busy ? "Cancelling…" : "Cancel automation"}
+                    description="Stop remaining follow-up emails"
+                    disabled={busy}
                     onClick={() => {
                       setOpen(false);
-                      window.open(clientUrl, "_blank", "noopener,noreferrer");
+                      void onCancelAutomation();
                     }}
                   />
-                </>
-              )}
-            </div>
-          )}
+                ) : null}
+                {clientUrl && (
+                  <>
+                    <div className="my-1.5 mx-3 border-t border-gray-100" />
+                    <MenuItem
+                      icon={<Copy className="w-4 h-4" />}
+                      label={copied ? "Link copied" : "Copy client link"}
+                      onClick={() => {
+                        void copyLink();
+                      }}
+                    />
+                    <MenuItem
+                      icon={<ExternalLink className="w-4 h-4" />}
+                      label="Open client link"
+                      onClick={() => {
+                        setOpen(false);
+                        window.open(clientUrl, "_blank", "noopener,noreferrer");
+                      }}
+                    />
+                  </>
+                )}
+              </div>,
+              document.body
+            )}
         </div>
       ) : null}
     </div>
