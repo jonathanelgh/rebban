@@ -427,16 +427,24 @@ export function deriveComponentsFromToolResults(
   toolResults: ToolResultRecord[]
 ): AssistantChatComponent[] {
   const byKey = new Map<string, AssistantChatComponent>();
+  // Status updates are confirmed in text — don't also dump cards / unpaid lists.
+  const hasInvoiceStatusUpdate = toolResults.some(
+    (row) =>
+      row.name === "update_invoice_status" && row.result && !row.result.error
+  );
 
   for (const { name, result } of toolResults) {
     if (!result || result.error) continue;
+
+    if (name === "update_invoice_status") {
+      continue;
+    }
 
     if (
       name === "create_invoice_draft" ||
       name === "create_invoice_from_unbilled" ||
       name === "get_invoice" ||
-      name === "update_invoice_draft" ||
-      name === "update_invoice_status"
+      name === "update_invoice_draft"
     ) {
       const inv = asRecord(result.invoice);
       if (!inv) continue;
@@ -500,6 +508,9 @@ export function deriveComponentsFromToolResults(
     }
 
     if (name === "list_unpaid_invoices" && Array.isArray(result.invoices)) {
+      // If this turn also marked invoices paid/void, keep the reply text-only.
+      if (hasInvoiceStatusUpdate) continue;
+
       const invoices: PaymentSummaryInvoice[] = [];
       for (const row of result.invoices.slice(0, 25)) {
         const inv = asRecord(row);

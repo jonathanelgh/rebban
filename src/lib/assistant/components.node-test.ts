@@ -129,6 +129,64 @@ describe("deriveComponentsFromToolResults", () => {
     }
   });
 
+  it("keeps mark-paid confirmations text-only", () => {
+    const components = deriveComponentsFromToolResults([
+      {
+        name: "list_unpaid_invoices",
+        result: {
+          ok: true,
+          count: 2,
+          total_outstanding_hint: 3000,
+          invoices: [
+            {
+              id: "inv-1",
+              client: "A",
+              amount: "$1,000.00",
+              due_date: "2026-11-01",
+              status: "sent",
+              number: "1001",
+            },
+            {
+              id: "inv-2",
+              client: "B",
+              amount: "$2,000.00",
+              due_date: "2026-11-02",
+              status: "sent",
+              number: "1002",
+            },
+          ],
+        },
+      },
+      {
+        name: "update_invoice_status",
+        result: {
+          ok: true,
+          invoice: {
+            id: "inv-1",
+            client: "A",
+            amount: "$1,000.00",
+            status: "paid",
+            number: "1001",
+          },
+        },
+      },
+      {
+        name: "update_invoice_status",
+        result: {
+          ok: true,
+          invoice: {
+            id: "inv-2",
+            client: "B",
+            amount: "$2,000.00",
+            status: "paid",
+            number: "1002",
+          },
+        },
+      },
+    ]);
+    assert.equal(components.length, 0);
+  });
+
   it("does not re-attach an invoice card after send_invoice", () => {
     const components = deriveComponentsFromToolResults([
       {
