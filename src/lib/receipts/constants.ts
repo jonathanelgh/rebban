@@ -17,7 +17,7 @@ export const RECEIPT_ALLOWED_MIME = new Set([
 export function getReceiptInboundDomain() {
   return (
     process.env.RECEIPT_INBOUND_DOMAIN?.trim() ||
-    "inbound.rebban.com"
+    "receipts.rebban.com"
   );
 }
 

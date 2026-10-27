@@ -34,13 +34,49 @@ export async function getActiveReceiptInbox(
   return data;
 }
 
+function addressUsesCurrentDomain(displayAddress: string) {
+  const domain = getReceiptInboundDomain().toLowerCase();
+  return displayAddress.trim().toLowerCase().endsWith(`@${domain}`);
+}
+
+/** Keep token; rewrite display address when inbound domain changes. */
+async function syncInboxDisplayDomain(
+  db: Db,
+  inbox: {
+    id: string;
+    organization_id: string;
+    display_address: string;
+    active: boolean;
+    created_at: string;
+    rotated_at: string | null;
+  }
+) {
+  if (addressUsesCurrentDomain(inbox.display_address)) return inbox;
+
+  const token = extractInboxTokenFromAddress(inbox.display_address);
+  if (!token) return inbox;
+
+  const displayAddress = buildReceiptDisplayAddress(token);
+  const { data, error } = await db
+    .from("receipt_inboxes")
+    .update({ display_address: displayAddress })
+    .eq("id", inbox.id)
+    .select("id, organization_id, display_address, active, created_at, rotated_at")
+    .single();
+
+  if (error) throw new Error(error.message);
+  return data;
+}
+
 export async function ensureReceiptInbox(
   db: Db,
   organizationId: string,
   userId: string | null
 ) {
   const existing = await getActiveReceiptInbox(db, organizationId);
-  if (existing) return existing;
+  if (existing) {
+    return syncInboxDisplayDomain(db, existing);
+  }
 
   const token = generateInboxToken();
   const displayAddress = buildReceiptDisplayAddress(token);
