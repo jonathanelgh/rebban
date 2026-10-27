@@ -7,6 +7,7 @@ import {
 import {
   isPendingSendAffirmation,
   isPendingSendDecline,
+  wantsInvoiceWithConvert,
 } from "@/lib/assistant/pending-confirm";
 import {
   ASSISTANT_TOOL_DEFINITIONS,
@@ -95,6 +96,12 @@ Do not re-list drafts or ask again if intent is clear.`;
 - "invoice Acme and Beta, skip Northwind" → create_invoices_from_unbilled_batch with include_client_queries=["Acme","Beta"] (or exclude_client_queries=["Northwind"] if they only named skips)
 - wait / later / no → clear_pending_action
 After drafts are created, ask once whether to send. Do not invent clients outside this pending list unless they clearly ask for someone else.`;
+  } else if (pending?.type === "propose_convert_proposal") {
+    pendingHint = `\nPending proposal→project: ${JSON.stringify(pending)}. A client just accepted a proposal.
+- yes / go ahead → convert_proposal_to_project with generate_tasks=true and invoice_kind=none (unless they also ask to draft)
+- "yes and draft the deposit/invoice" → convert_proposal_to_project with generate_tasks=true and invoice_kind=${pending.suggest_invoice_kind || "deposit"} (include deposit_amount if set)
+- wait / later / no → clear_pending_action
+Do not re-ask if intent is clear.`;
   }
 
   const channel = options.toolContext.channel || "whatsapp";
@@ -183,6 +190,23 @@ ${lengthHint}`;
           "create_invoices_from_unbilled_batch",
           { all_pending: true },
           "pending_create_confirm"
+        );
+      } else if (pending.type === "propose_convert_proposal") {
+        const withInvoice = wantsInvoiceWithConvert(lastUser.content);
+        const invoiceKind =
+          withInvoice && pending.suggest_invoice_kind !== "none"
+            ? pending.suggest_invoice_kind
+            : "none";
+        await pushTool(
+          "convert_proposal_to_project",
+          {
+            proposal_id: pending.proposal_id,
+            generate_tasks: true,
+            invoice_kind: invoiceKind,
+            deposit_amount:
+              invoiceKind === "deposit" ? pending.deposit_amount : undefined,
+          },
+          "pending_convert_confirm"
         );
       }
     }

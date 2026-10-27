@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   isPendingSendAffirmation,
   isPendingSendDecline,
+  wantsInvoiceWithConvert,
 } from "./pending-confirm.ts";
 
 describe("isPendingSendAffirmation", () => {
@@ -32,6 +33,14 @@ describe("isPendingSendAffirmation", () => {
     ]) {
       assert.equal(isPendingSendAffirmation(text), false, text);
     }
+  });
+});
+
+describe("wantsInvoiceWithConvert", () => {
+  it("detects draft/deposit intent", () => {
+    assert.equal(wantsInvoiceWithConvert("yes and draft the deposit"), true);
+    assert.equal(wantsInvoiceWithConvert("yes"), false);
+    assert.equal(wantsInvoiceWithConvert("go ahead"), false);
   });
 });
 

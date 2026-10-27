@@ -62,6 +62,14 @@ export type AssistantPendingAction =
   | {
       type: "send_invoices";
       invoices: PendingSendInvoice[];
+    }
+  | {
+      type: "propose_convert_proposal";
+      proposal_id: string;
+      title: string;
+      client_label: string;
+      suggest_invoice_kind: "none" | "deposit" | "retainer" | "full";
+      deposit_amount?: number | null;
     };
 
 export type AssistantToolContext = {
@@ -3821,6 +3829,31 @@ export function parsePendingAction(
     }
     if (!invoices.length) return null;
     return { type: "send_invoices", invoices };
+  }
+  if (
+    obj.type === "propose_convert_proposal" &&
+    typeof obj.proposal_id === "string"
+  ) {
+    const kindRaw = String(obj.suggest_invoice_kind || "none");
+    const suggest_invoice_kind =
+      kindRaw === "deposit" ||
+      kindRaw === "retainer" ||
+      kindRaw === "full" ||
+      kindRaw === "none"
+        ? kindRaw
+        : "none";
+    return {
+      type: "propose_convert_proposal",
+      proposal_id: obj.proposal_id,
+      title: typeof obj.title === "string" ? obj.title : "",
+      client_label:
+        typeof obj.client_label === "string" ? obj.client_label : "",
+      suggest_invoice_kind,
+      deposit_amount:
+        obj.deposit_amount === null || obj.deposit_amount === undefined
+          ? null
+          : Number(obj.deposit_amount),
+    };
   }
   return null;
 }

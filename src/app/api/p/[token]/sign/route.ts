@@ -137,6 +137,21 @@ export async function POST(
       );
     }
 
+    try {
+      const admin = tryAdminClient();
+      if (admin) {
+        const { notifyAssistantProposalAccepted } = await import(
+          "@/lib/assistant/notify-proposal-accepted"
+        );
+        await notifyAssistantProposalAccepted(admin, result.proposal_id);
+      }
+    } catch (err) {
+      console.error(
+        "[proposal sign] assistant notify failed",
+        err instanceof Error ? err.message : err
+      );
+    }
+
     return NextResponse.json({
       ok: result.ok,
       status: result.status,

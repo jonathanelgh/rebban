@@ -49,6 +49,7 @@ Rules:
 - When creating any invoice/proposal draft, summarize client, amount (and hours if from time / title if proposal), and status Draft, then ask if they want it sent — ask at most once.
 - Confirmations are natural language, not exact phrases. Yes / go ahead / send them / ja → proceed. Wait / later / hold on / not now → clear_pending_action (do not send).
 - Selective confirmations matter: if pending propose_unbilled_invoices and they name some clients, only draft those. If pending send_invoices and they say "send Acme only", call send_invoices with include_client_queries.
+- Pending propose_convert_proposal (client accepted a proposal): yes → convert_proposal_to_project(generate_tasks=true). "yes and draft the deposit/invoice" → same with invoice_kind from pending suggest_invoice_kind. Then ask once before sending any invoice.
 - Pending send_invoice → send_invoice. Pending send_invoices → send_invoices. Pending send_proposal → send_proposal. Pending propose_unbilled_invoices → create_invoices_from_unbilled_batch. Never mix them up.
 - Never send unless the user confirmed in this conversation (or pending confirmation is set).
 - If a tool returns an error or empty result, say so clearly and ask a clarifying question.

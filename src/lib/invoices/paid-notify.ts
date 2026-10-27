@@ -239,6 +239,27 @@ export async function notifyInvoicePaid(options: {
         notifyError.message
       );
     }
+
+    try {
+      const { notifyAssistantInvoicePaid } = await import(
+        "@/lib/assistant/notify-invoice-paid"
+      );
+      await notifyAssistantInvoicePaid(admin, {
+        invoiceId: invoice.id,
+        organizationId: invoice.organization_id,
+        userId: notifyUserId,
+        clientLabel: clientName || clientEmail || "A client",
+        invoiceLabel,
+        amount: Number(invoice.total) || 0,
+        currency,
+        userName: profile?.full_name,
+      });
+    } catch (err) {
+      console.error(
+        "[invoice paid notify] assistant WA failed",
+        err instanceof Error ? err.message : err
+      );
+    }
   } else {
     console.error("[invoice paid notify] no freelancer user to alert");
   }
