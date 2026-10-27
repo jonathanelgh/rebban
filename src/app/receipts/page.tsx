@@ -8,22 +8,21 @@ import React, {
   useRef,
   useState,
 } from "react";
+import Link from "next/link";
 import {
   Upload,
-  Copy,
-  Check,
   Search,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   X,
   Download,
-  Mail,
   AlertCircle,
   FileText,
   Trash2,
   RefreshCw,
   CheckCircle2,
+  Settings,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "@/components/ProfileContext";
@@ -49,21 +48,6 @@ type ReceiptRow = {
   category: string | null;
   is_possible_duplicate: boolean;
   created_at: string;
-};
-
-type InboxInfo = {
-  id: string;
-  display_address: string;
-  active: boolean;
-};
-
-type InboundRow = {
-  id: string;
-  sender: string | null;
-  subject: string | null;
-  received_at: string;
-  status: string;
-  error: string | null;
 };
 
 const STATUS_STYLES: Record<ReviewStatus, string> = {
@@ -119,14 +103,11 @@ function ReceiptsPageInner() {
   const [monthCounts, setMonthCounts] = useState<
     Record<string, { total: number; review: number }>
   >({});
+  const [unfiledCount, setUnfiledCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [inbox, setInbox] = useState<InboxInfo | null>(null);
-  const [recentInbound, setRecentInbound] = useState<InboundRow[]>([]);
-  const [copied, setCopied] = useState(false);
-  const [howOpen, setHowOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -134,23 +115,23 @@ function ReceiptsPageInner() {
     [now.getFullYear()]: true,
   });
 
-  const loadInbox = useCallback(async () => {
-    const res = await fetch("/api/receipts/inbox");
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.error || "Failed to load inbox");
-    setInbox(json.inbox);
-    setRecentInbound(json.recentInbound || []);
-  }, []);
-
   const loadMonthCounts = useCallback(async () => {
     if (!organizationId) return;
     const supabase = createClient();
-    const { data, error: qError } = await supabase
-      .from("receipts")
-      .select("receipt_date, review_status")
-      .eq("organization_id", organizationId)
-      .is("deleted_at", null)
-      .not("receipt_date", "is", null);
+    const [{ data, error: qError }, { count: unfiled }] = await Promise.all([
+      supabase
+        .from("receipts")
+        .select("receipt_date, review_status")
+        .eq("organization_id", organizationId)
+        .is("deleted_at", null)
+        .not("receipt_date", "is", null),
+      supabase
+        .from("receipts")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", organizationId)
+        .is("deleted_at", null)
+        .is("receipt_date", null),
+    ]);
 
     if (qError) throw new Error(qError.message);
     const counts: Record<string, { total: number; review: number }> = {};
@@ -168,6 +149,7 @@ function ReceiptsPageInner() {
       }
     }
     setMonthCounts(counts);
+    setUnfiledCount(unfiled || 0);
   }, [organizationId]);
 
   const loadReceipts = useCallback(async () => {
@@ -208,11 +190,8 @@ function ReceiptsPageInner() {
 
   useEffect(() => {
     if (!organizationId) return;
-    void loadInbox().catch((err) =>
-      setError(err instanceof Error ? err.message : "Inbox error")
-    );
     void loadMonthCounts().catch(() => undefined);
-  }, [organizationId, loadInbox, loadMonthCounts]);
+  }, [organizationId, loadMonthCounts]);
 
   useEffect(() => {
     void loadReceipts();
@@ -259,13 +238,6 @@ function ReceiptsPageInner() {
       totals: totalMinorByCurrency,
     };
   }, [filtered]);
-
-  async function copyInbox() {
-    if (!inbox?.display_address) return;
-    await navigator.clipboard.writeText(inbox.display_address);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1600);
-  }
 
   async function onUpload(files: FileList | null) {
     if (!files?.length) return;
@@ -315,27 +287,6 @@ function ReceiptsPageInner() {
     }
   }
 
-  async function rotateInbox() {
-    if (
-      !window.confirm(
-        "Generate a new receipt email? The current address will stop working."
-      )
-    ) {
-      return;
-    }
-    const res = await fetch("/api/receipts/inbox", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "rotate", confirm: true }),
-    });
-    const json = await res.json();
-    if (!res.ok) {
-      setError(json.error || "Failed to rotate inbox");
-      return;
-    }
-    setInbox(json.inbox);
-  }
-
   function shiftMonth(delta: number) {
     const d = new Date(year, month - 1 + delta, 1);
     setYear(d.getFullYear());
@@ -364,14 +315,13 @@ function ReceiptsPageInner() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => void copyInbox()}
+          <Link
+            href="/receipts/settings"
             className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
           >
-            {copied ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
-            {copied ? "Copied" : "Copy receipt email"}
-          </button>
+            <Settings className="h-4 w-4" />
+            Receipt settings
+          </Link>
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
@@ -402,72 +352,6 @@ function ReceiptsPageInner() {
         </div>
       ) : null}
 
-      <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <div className="text-xs font-medium uppercase tracking-wide text-gray-400">
-              Your receipt email
-            </div>
-            <div className="mt-1 font-mono text-sm text-gray-900 break-all">
-              {inbox?.display_address || "Loading…"}
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setHowOpen((v) => !v)}
-              className="text-sm text-gray-600 underline-offset-2 hover:underline"
-            >
-              How it works
-            </button>
-            <button
-              type="button"
-              onClick={() => void rotateInbox()}
-              className="text-sm text-gray-500 hover:text-gray-800"
-            >
-              Regenerate address
-            </button>
-          </div>
-        </div>
-        {howOpen ? (
-          <div className="mt-3 text-sm text-gray-600 space-y-1 border-t border-gray-100 pt-3">
-            <p>1. Copy your personal address and forward receipt emails to it.</p>
-            <p>2. PDF and image attachments become separate receipts with originals saved.</p>
-            <p>3. We extract merchant, date, and amount for review — you stay in control.</p>
-            <p className="text-gray-500">
-              Tip: send a real receipt from your mail app to test (we don’t simulate one).
-            </p>
-          </div>
-        ) : null}
-        {recentInbound.length > 0 ? (
-          <div className="mt-3 border-t border-gray-100 pt-3">
-            <div className="text-xs font-medium text-gray-400 mb-2">
-              Recent inbound
-            </div>
-            <ul className="space-y-1.5">
-              {recentInbound.slice(0, 5).map((row) => (
-                <li
-                  key={row.id}
-                  className="flex flex-wrap items-center gap-2 text-xs text-gray-600"
-                >
-                  <Mail className="h-3.5 w-3.5 text-gray-400" />
-                  <span className="font-medium text-gray-800">
-                    {row.subject || "(no subject)"}
-                  </span>
-                  <span>· {row.sender || "unknown"}</span>
-                  <span className="rounded bg-gray-100 px-1.5 py-0.5">
-                    {row.status}
-                  </span>
-                  {row.error ? (
-                    <span className="text-red-600">{row.error}</span>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-      </div>
-
       <div className="grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)] gap-6">
         <aside className="rounded-xl border border-gray-200 bg-white p-3 h-fit">
           <div className="text-xs font-medium uppercase tracking-wide text-gray-400 px-2 mb-2">
@@ -476,13 +360,20 @@ function ReceiptsPageInner() {
           <button
             type="button"
             onClick={() => setViewMode("unfiled")}
-            className={`w-full text-left rounded-lg px-2 py-1.5 text-sm mb-2 ${
+            className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm mb-2 ${
               viewMode === "unfiled"
                 ? "bg-gray-900 text-white"
                 : "text-gray-700 hover:bg-gray-50"
             }`}
           >
-            Unfiled / Needs date
+            <span>Unfiled / Needs date</span>
+            <span
+              className={`text-xs ${
+                viewMode === "unfiled" ? "text-gray-300" : "text-gray-400"
+              }`}
+            >
+              {unfiledCount}
+            </span>
           </button>
           {browserYears.map((y) => (
             <div key={y} className="mb-2">
@@ -634,8 +525,14 @@ function ReceiptsPageInner() {
               <div className="px-4 py-12 text-center">
                 <FileText className="h-8 w-8 text-gray-300 mx-auto mb-3" />
                 <p className="text-sm text-gray-700 font-medium">
-                  Forward a receipt to your personal address or upload a file to
-                  get started.
+                  Upload a file, or copy your personal address in{" "}
+                  <Link
+                    href="/receipts/settings"
+                    className="text-[#2563EB] hover:underline"
+                  >
+                    Receipt settings
+                  </Link>{" "}
+                  to forward by email.
                 </p>
               </div>
             ) : (

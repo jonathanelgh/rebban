@@ -215,7 +215,17 @@ export async function extractReceiptFromPlainText(text: string) {
   return normalizeResult(raw, model);
 }
 
+async function ensureDomMatrixPolyfill() {
+  const g = globalThis as typeof globalThis & { DOMMatrix?: unknown };
+  if (typeof g.DOMMatrix === "function") return;
+  const mod = (await import("dommatrix")) as Record<string, unknown>;
+  // CJS package: module itself is the constructor (CSSMatrix)
+  const ctor = mod.DOMMatrix || mod.default || mod;
+  g.DOMMatrix = ctor as typeof DOMMatrix;
+}
+
 export async function extractPdfText(bytes: Buffer): Promise<string> {
+  await ensureDomMatrixPolyfill();
   const { PDFParse } = await import("pdf-parse");
   const parser = new PDFParse({ data: bytes });
   try {
@@ -224,4 +234,54 @@ export async function extractPdfText(bytes: Buffer): Promise<string> {
   } finally {
     await parser.destroy().catch(() => undefined);
   }
+}
+
+/** Prefer PDF text; fall back to multimodal PDF upload when text is thin or unavailable. */
+export async function extractReceiptFromPdf(bytes: Buffer) {
+  let text = "";
+  try {
+    text = await extractPdfText(bytes);
+  } catch (err) {
+    console.warn(
+      "[receipts] PDF text extract failed, falling back to multimodal:",
+      err instanceof Error ? err.message : err
+    );
+  }
+
+  if (text.length >= 20) {
+    return extractReceiptFromPdfText(text);
+  }
+
+  const model = getReceiptExtractionModel();
+  const b64 = bytes.toString("base64");
+  const raw = await callOpenAi(
+    [
+      { role: "system", content: SYSTEM },
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: "Extract receipt fields from this PDF document.",
+          },
+          {
+            type: "file",
+            file: {
+              filename: "receipt.pdf",
+              file_data: `data:application/pdf;base64,${b64}`,
+            },
+          },
+        ],
+      },
+    ],
+    model
+  );
+  const result = normalizeResult(raw, model);
+  if (!text) {
+    result.warnings = [
+      ...result.warnings,
+      "Extracted via multimodal PDF (little or no text layer).",
+    ];
+  }
+  return result;
 }

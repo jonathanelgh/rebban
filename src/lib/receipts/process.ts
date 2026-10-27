@@ -2,9 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Enums, Json } from "@/types/database";
 import { findDuplicateByChecksum, findSoftDuplicate } from "./duplicates";
 import {
-  extractPdfText,
   extractReceiptFromImage,
-  extractReceiptFromPdfText,
+  extractReceiptFromPdf,
   extractReceiptFromPlainText,
   type ReceiptExtractionResult,
 } from "./extract";
@@ -78,27 +77,7 @@ export async function processReceiptExtraction(
     let extraction: ReceiptExtractionResult;
 
     if (original.mime_type === "application/pdf") {
-      const text = await extractPdfText(bytes);
-      if (text.length < 20) {
-        // Scanned PDF — fall back to vision via image isn't possible without rasterize;
-        // mark needs_review with warning.
-        extraction = {
-          document_type: "unknown",
-          merchant_name: null,
-          receipt_date: null,
-          total_amount_minor: null,
-          currency: null,
-          tax_amount_minor: null,
-          confidence_by_field: {},
-          warnings: [
-            "PDF had little extractable text (likely scanned). Please enter details manually.",
-          ],
-          raw: { pdf_text_length: text.length },
-          model: "pdf-text",
-        };
-      } else {
-        extraction = await extractReceiptFromPdfText(text);
-      }
+      extraction = await extractReceiptFromPdf(bytes);
     } else if (original.mime_type.startsWith("image/")) {
       if (
         original.mime_type === "image/heic" ||
@@ -211,9 +190,13 @@ export async function processReceiptExtraction(
     return { ok: true, status };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Extraction failed.";
+    // Keep the original available for manual review instead of hiding as a hard fail
     await db
       .from("receipts")
-      .update({ review_status: "failed" })
+      .update({
+        review_status: "needs_review",
+        note: `Auto-extract failed: ${message.slice(0, 240)}`,
+      })
       .eq("id", receiptId);
     await db.from("receipt_events").insert({
       receipt_id: receiptId,
