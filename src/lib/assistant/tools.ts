@@ -457,7 +457,7 @@ export const ASSISTANT_TOOL_DEFINITIONS = [
     function: {
       name: "list_unbilled_hours",
       description:
-        "List unbilled billable time (hours not yet on an invoice), grouped by client. Use before creating invoices from worked hours. Stores a pending proposal so the user can reply with all / some clients (e.g. invoice Acme and Beta, skip Northwind).",
+        "Count/list unbilled billable time (hours not yet on an invoice), grouped by client. ALWAYS use for 'do I have unbilled hours', 'any unbilled time', or before creating invoices from worked hours. Never guess zero. Stores a pending proposal so the user can reply with all / some clients (e.g. invoice Acme and Beta, skip Northwind).",
       parameters: {
         type: "object",
         properties: {

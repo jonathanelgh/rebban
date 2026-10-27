@@ -218,17 +218,6 @@ function asNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function daysOverdue(dueDate: string | null | undefined, status?: string | null) {
-  if (!dueDate) return null;
-  if (status === "paid" || status === "void" || status === "draft") return null;
-  const due = new Date(`${dueDate}T12:00:00`);
-  if (Number.isNaN(due.getTime())) return null;
-  const today = new Date();
-  today.setHours(12, 0, 0, 0);
-  const diff = Math.floor((today.getTime() - due.getTime()) / 86400000);
-  return diff > 0 ? diff : null;
-}
-
 export function actionsForInvoiceStatus(
   status: string | null | undefined
 ): ChatComponentAction[] {
@@ -427,11 +416,6 @@ export function deriveComponentsFromToolResults(
   toolResults: ToolResultRecord[]
 ): AssistantChatComponent[] {
   const byKey = new Map<string, AssistantChatComponent>();
-  // Status updates are confirmed in text — don't also dump cards / unpaid lists.
-  const hasInvoiceStatusUpdate = toolResults.some(
-    (row) =>
-      row.name === "update_invoice_status" && row.result && !row.result.error
-  );
 
   for (const { name, result } of toolResults) {
     if (!result || result.error) continue;
@@ -507,41 +491,8 @@ export function deriveComponentsFromToolResults(
       continue;
     }
 
-    if (name === "list_unpaid_invoices" && Array.isArray(result.invoices)) {
-      // If this turn also marked invoices paid/void, keep the reply text-only.
-      if (hasInvoiceStatusUpdate) continue;
-
-      const invoices: PaymentSummaryInvoice[] = [];
-      for (const row of result.invoices.slice(0, 25)) {
-        const inv = asRecord(row);
-        if (!inv) continue;
-        const id = asString(inv.id);
-        if (!id) continue;
-        const due = asString(inv.due_date);
-        const status = asString(inv.status);
-        invoices.push({
-          entityId: id,
-          client: asString(inv.client) || "Unknown",
-          amount: asString(inv.amount) || "—",
-          dueDate: due,
-          status,
-          number: asString(inv.number),
-          daysOverdue: daysOverdue(due, status),
-        });
-      }
-      if (invoices.length) {
-        byKey.set("payment_summary:unpaid", {
-          type: "payment_summary",
-          entityId: "unpaid",
-          actions: ["view"],
-          invoices,
-          totalOutstanding:
-            typeof result.total_outstanding_hint === "number"
-              ? String(result.total_outstanding_hint)
-              : null,
-          currency: null,
-        });
-      }
+    if (name === "list_unpaid_invoices") {
+      // Count/roster stays text-only (same idea as list_clients).
       continue;
     }
 
@@ -745,6 +696,8 @@ export function deriveComponentsFromToolResults(
           });
         }
       }
+      // Only show when there is something to invoice — empty answers stay text-only.
+      if (clients.length === 0) continue;
       byKey.set("time_summary:unbilled", {
         type: "time_summary",
         entityId: "unbilled",

@@ -45,7 +45,7 @@ export function isAssistantAiConfigured() {
 const MAX_TOOL_ROUNDS = 8;
 
 const IN_APP_UI_HINT = `
-For in-app / native chat: interactive cards appear only when useful (a created/updated/opened item, a single find match, draft invoices/proposals to approve, payment or unbilled summaries). Roster tools like list_clients / list_leads / list_projects do NOT render cards — answer those with a clear short text list. Do not ask the user to look at cards that are not shown.`;
+For in-app / native chat: interactive cards appear only when useful (a created/updated/opened item, a single find match, draft invoices/proposals to approve, or unbilled hours that can be invoiced). Roster/count tools like list_clients, list_leads, list_projects, and list_unpaid_invoices do NOT render cards — answer those with a clear short text list. Always call list_unbilled_hours / list_unpaid_invoices / list_receipts for those questions; never invent counts. Do not ask the user to look at cards that are not shown.`;
 
 export async function generateAssistantReply(options: {
   messages: AssistantChatMessage[];

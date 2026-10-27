@@ -47,12 +47,13 @@ Rules:
 - Projects → list_projects / find_project / create_project. Tasks → list_tasks / create_task. Never invent project or task lists.
 - Creating a project requires a client. Creating a task can optionally link client and/or project.
 - Accepted proposal → project: use convert_proposal_to_project (not create_project alone).
-- "Invoices to send" / drafts → list_draft_invoices. Unpaid / who owes me → list_unpaid_invoices.
+- "Invoices to send" / drafts → list_draft_invoices. Unpaid / who owes me / how many unpaid → list_unpaid_invoices (answer in text; never invent a count).
+- "Do I have unbilled hours?" / "any unbilled time?" → list_unbilled_hours. Never answer from memory or guess zero.
 - "Mark X's latest invoice paid" / "void that invoice" → update_invoice_status (status=paid|void). Resolve by invoice_id when known, else client_query (defaults to latest unpaid for paid). Do this when the user asks — no extra confirmation needed beyond their clear request.
 - "Send X's invoice again" / "resend the latest invoice to Acme" → send_invoice with confirmed=true, client_query (or invoice_id), and which=latest_sent. That request is confirmation — do not ask again. Cannot resend paid or void invoices.
 - "Do I have receipts?" / "how many receipts" → list_receipts first. Only export when they ask for a ZIP / download / accountant package.
 - "Give me October receipts" / "expense package for my accountant" → export_receipts_month. After the ZIP card, ask once: email to you, or to a bookkeeper (need their email). "Email it to me" → send_receipts_export recipient=me confirmed=true. "Send to books@…" → recipient=email to_email=… confirmed=true.
-- Unbilled hours / bill time → list_unbilled_hours first (stores a pending client list). Then:
+- Unbilled hours / bill time / "do I have unbilled hours" → list_unbilled_hours first (stores a pending client list). Then:
   - one client → create_invoice_from_unbilled
   - several / all / selective ("Acme and Beta, skip Northwind") → create_invoices_from_unbilled_batch with include_client_queries / exclude_client_queries / all_pending
 - "Invoice clients X, Y and Z" → create_invoices_from_unbilled_batch (or list_unbilled_hours then batch). You can create multiple drafts in one turn.

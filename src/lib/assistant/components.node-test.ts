@@ -100,7 +100,7 @@ describe("deriveComponentsFromToolResults", () => {
     }
   });
 
-  it("builds payment_summary from unpaid list", () => {
+  it("keeps unpaid invoice lists text-only", () => {
     const components = deriveComponentsFromToolResults([
       {
         name: "list_unpaid_invoices",
@@ -121,12 +121,7 @@ describe("deriveComponentsFromToolResults", () => {
         },
       },
     ]);
-    assert.equal(components.length, 1);
-    assert.equal(components[0].type, "payment_summary");
-    if (components[0].type === "payment_summary") {
-      assert.equal(components[0].invoices.length, 1);
-      assert.ok((components[0].invoices[0].daysOverdue || 0) > 0);
-    }
+    assert.equal(components.length, 0);
   });
 
   it("keeps mark-paid confirmations text-only", () => {
@@ -376,6 +371,22 @@ describe("deriveComponentsFromToolResults", () => {
     ]);
     assert.equal(components.length, 1);
     assert.equal(components[0].type, "time_summary");
+  });
+
+  it("skips empty unbilled time_summary cards", () => {
+    const components = deriveComponentsFromToolResults([
+      {
+        name: "list_unbilled_hours",
+        result: {
+          ok: true,
+          currency: "EUR",
+          total_hours: "0h",
+          total_amount: "€0.00",
+          clients: [],
+        },
+      },
+    ]);
+    assert.equal(components.length, 0);
   });
 });
 
