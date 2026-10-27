@@ -59,7 +59,23 @@ function detectInvoiceAsk(
     }
   }
 
-  return { ask: null, kind: "none", depositAmount: null };
+  // No explicit deposit/retainer in the proposal — still offer a first invoice.
+  if (amount > 0) {
+    return {
+      ask: {
+        kind: "full",
+        amountLabel: formatInvoiceMoney(amount, currency),
+      },
+      kind: "full",
+      depositAmount: null,
+    };
+  }
+
+  return {
+    ask: { kind: "full" },
+    kind: "full",
+    depositAmount: null,
+  };
 }
 
 export async function notifyAssistantProposalAccepted(

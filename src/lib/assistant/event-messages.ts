@@ -36,6 +36,12 @@ export function formatProposalAcceptedAssistantMessage(options: {
       parts.push(
         `Want me to draft the deposit invoice (${ask.amountLabel})? Reply yes to draft, or wait if not now.`
       );
+    } else if (ask?.kind === "full") {
+      parts.push(
+        ask.amountLabel
+          ? `Want me to draft a first invoice (${ask.amountLabel})? Reply yes to draft, or wait if not now.`
+          : "Want me to draft a first invoice? Reply yes to draft, or wait if not now."
+      );
     } else {
       parts.push("Reply if you want help kicking anything off.");
     }
@@ -61,7 +67,15 @@ export function formatProposalAcceptedAssistantMessage(options: {
       'Reply "yes", "yes and draft the deposit", or wait if not now.'
     );
   } else {
-    parts.push("Reply yes to create the project, or wait if not now.");
+    // No deposit/retainer details in the proposal — still offer a first invoice.
+    parts.push(
+      ask?.kind === "full" && ask.amountLabel
+        ? `I can also draft a first invoice (${ask.amountLabel}) if you want.`
+        : "I can also draft a first invoice if you want."
+    );
+    parts.push(
+      'Reply "yes", "yes and draft the invoice", or wait if not now.'
+    );
   }
 
   return parts.join("\n\n");

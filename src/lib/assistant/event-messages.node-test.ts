@@ -6,16 +6,19 @@ import {
 } from "./event-messages.ts";
 
 describe("formatProposalAcceptedAssistantMessage", () => {
-  it("congratulates and offers project", () => {
+  it("congratulates and offers project plus first invoice", () => {
     const message = formatProposalAcceptedAssistantMessage({
       userName: "Jonathan",
       clientLabel: "Sara",
       proposalTitle: "Brand refresh",
+      invoiceAsk: { kind: "full", amountLabel: "€2,000.00" },
     });
     assert.match(message, /Hey Jonathan/);
     assert.match(message, /Sara just accepted/);
     assert.match(message, /Congratulations/);
     assert.match(message, /create a project/);
+    assert.match(message, /first invoice/i);
+    assert.match(message, /yes and draft the invoice/i);
   });
 
   it("mentions deposit when present", () => {

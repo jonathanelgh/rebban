@@ -97,9 +97,10 @@ Do not re-list drafts or ask again if intent is clear.`;
 - wait / later / no → clear_pending_action
 After drafts are created, ask once whether to send. Do not invent clients outside this pending list unless they clearly ask for someone else.`;
   } else if (pending?.type === "propose_convert_proposal") {
+    const suggested = pending.suggest_invoice_kind || "full";
     pendingHint = `\nPending proposal→project: ${JSON.stringify(pending)}. A client just accepted a proposal.
-- yes / go ahead → convert_proposal_to_project with generate_tasks=true and invoice_kind=none (unless they also ask to draft)
-- "yes and draft the deposit/invoice" → convert_proposal_to_project with generate_tasks=true and invoice_kind=${pending.suggest_invoice_kind || "deposit"} (include deposit_amount if set)
+- yes / go ahead (project only) → convert_proposal_to_project with generate_tasks=true and invoice_kind=none
+- "yes and draft the invoice/deposit" → convert_proposal_to_project with generate_tasks=true and invoice_kind=${suggested} (include deposit_amount when kind is deposit)
 - wait / later / no → clear_pending_action
 Do not re-ask if intent is clear.`;
   }
@@ -193,10 +194,12 @@ ${lengthHint}`;
         );
       } else if (pending.type === "propose_convert_proposal") {
         const withInvoice = wantsInvoiceWithConvert(lastUser.content);
-        const invoiceKind =
-          withInvoice && pending.suggest_invoice_kind !== "none"
+        const suggested =
+          pending.suggest_invoice_kind &&
+          pending.suggest_invoice_kind !== "none"
             ? pending.suggest_invoice_kind
-            : "none";
+            : "full";
+        const invoiceKind = withInvoice ? suggested : "none";
         await pushTool(
           "convert_proposal_to_project",
           {
