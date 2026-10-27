@@ -228,7 +228,7 @@ export async function POST(request: Request) {
       clientName: resolved.clientName,
       createdClient: resolved.createdClient,
       createdLead: resolved.createdLead,
-      url: `${appBaseUrl()}/proposals/${proposal.id}`,
+      url: `${appBaseUrl()}/proposals/${proposal.id}/edit`,
     });
   } catch (err) {
     const message =

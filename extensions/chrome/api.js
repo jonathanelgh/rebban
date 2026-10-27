@@ -1204,7 +1204,7 @@ async function draftFromPage(input) {
     clientName: resolved.clientName,
     createdClient: resolved.createdClient,
     createdLead: resolved.createdLead,
-    url: `${APP_URL}/proposals/${proposal.id}`,
+    url: `${APP_URL}/proposals/${proposal.id}/edit`,
   };
 }
 
