@@ -4484,7 +4484,7 @@ export async function executeAssistantTool(
           url: result.url,
           status: result.status,
           message:
-            "Invoice emailed. Confirm warmly in one short line, e.g. I've sent the invoice again :) — optionally mention the invoice number and recipient email.",
+            "Invoice emailed. Confirm warmly in one short line with a real Unicode emoji, e.g. I've sent the invoice again 🙂 — optionally mention the invoice number and recipient email. Never use the text emoticon :).",
         };
       }
 

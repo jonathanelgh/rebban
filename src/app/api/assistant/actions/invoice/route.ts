@@ -166,8 +166,8 @@ export async function POST(request: Request) {
     };
 
     const confirmation = result.number
-      ? `I've now sent invoice ${result.number} to ${result.recipientEmail || clientLabel} :)`
-      : `I've now sent the invoice :)`;
+      ? `I've now sent invoice ${result.number} to ${result.recipientEmail || clientLabel} 🙂`
+      : `I've now sent the invoice 🙂`;
 
     let confirmationMessage: {
       id: string;
