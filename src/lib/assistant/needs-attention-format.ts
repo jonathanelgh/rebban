@@ -37,22 +37,56 @@ export function formatLastReminderNote(sentAt: string | null | undefined) {
   return `reminder sent ${days} days ago`;
 }
 
+function firstName(full?: string | null) {
+  const value = (full || "").trim();
+  if (!value || value.includes("@")) return null;
+  return value.split(/\s+/)[0] || null;
+}
+
 export function formatAttentionDigest(
   items: AttentionItem[],
-  options?: { maxItems?: number; appUrl?: string }
+  options?: { maxItems?: number; appUrl?: string; userName?: string | null }
 ): string {
+  const name = firstName(options?.userName);
+  const hi = name ? `Hey ${name}` : "Hey";
+
   if (!items.length) {
-    return "You're clear — nothing urgent needs attention right now.";
+    return `${hi} — you're clear. Nothing urgent needs attention right now.`;
   }
+
   const max = options?.maxItems ?? 6;
-  const lines = items.slice(0, max).map((item, i) => {
+  const shown = items.slice(0, max);
+  const lines = shown.map((item) => {
     const who = item.client ? ` (${item.client})` : "";
-    return `${i + 1}. ${item.title}${who} — ${item.detail}`;
+    return `• ${item.title}${who} — ${item.detail}`;
   });
   const more =
     items.length > max ? `\n…and ${items.length - max} more.` : "";
-  const footer = options?.appUrl
-    ? `\n\nOpen Rebban: ${options.appUrl}`
-    : "\n\nReply here if you want me to act on any of these.";
-  return `Here's what needs attention:\n\n${lines.join("\n")}${more}${footer}`;
+
+  const hasRecentReminder = shown.some((i) =>
+    (i.detail || "").includes("reminder sent")
+  );
+
+  const parts = [
+    `${hi} — here's what needs a look:`,
+    "",
+    ...lines,
+  ];
+
+  if (more) parts.push(more.trim());
+
+  if (hasRecentReminder) {
+    parts.push(
+      "",
+      "Where we already sent a payment reminder recently, you're covered — no need to chase again unless you want to."
+    );
+  }
+
+  if (options?.appUrl) {
+    parts.push("", `Dashboard: ${options.appUrl}`);
+  } else {
+    parts.push("", "Reply here if you want me to help with any of these.");
+  }
+
+  return parts.join("\n");
 }

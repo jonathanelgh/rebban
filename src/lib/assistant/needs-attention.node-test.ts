@@ -38,8 +38,12 @@ describe("formatAttentionDigest", () => {
   });
 
   it("lists items with client and detail", () => {
-    const text = formatAttentionDigest(sample, { maxItems: 6 });
-    assert.match(text, /needs attention/i);
+    const text = formatAttentionDigest(sample, {
+      maxItems: 6,
+      userName: "Sam",
+    });
+    assert.match(text, /Hey Sam/);
+    assert.match(text, /needs a look/i);
     assert.match(text, /INV-001 \(Acme\)/);
     assert.match(text, /reminder sent yesterday/);
     assert.match(text, /Northwind/);
@@ -50,7 +54,7 @@ describe("formatAttentionDigest", () => {
     const text = formatAttentionDigest(sample, {
       appUrl: "https://app.rebban.test",
     });
-    assert.match(text, /https:\/\/app\.rebban\.test/);
+    assert.match(text, /Dashboard: https:\/\/app\.rebban\.test/);
   });
 });
 

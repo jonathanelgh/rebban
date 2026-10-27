@@ -3,8 +3,9 @@ import { describe, it } from "node:test";
 import { formatBillingDigest } from "./billing-digest.ts";
 
 describe("formatBillingDigest", () => {
-  it("lists unbilled and reply hint", () => {
+  it("sounds like a short human check-in", () => {
     const text = formatBillingDigest({
+      userName: "Jonathan Elgh",
       unbilled: [
         {
           client_id: "1",
@@ -19,13 +20,31 @@ describe("formatBillingDigest", () => {
           amount: "€200",
         },
       ],
+      attention: [
+        {
+          id: "overdue_invoice:1",
+          kind: "overdue_invoice",
+          priority: 90,
+          title: "INV-12",
+          detail: "Overdue · €500 · reminder sent yesterday",
+          suggested_action: "Already reminded",
+          entity_type: "invoice",
+          entity_id: "1",
+          client: "Acme",
+        },
+      ],
     });
-    assert.match(text, /Ready to invoice/);
+    assert.match(text, /Hey Jonathan/);
+    assert.match(text, /quick invoicing check-in/);
     assert.match(text, /Acme/);
-    assert.match(text, /skip Northwind|Reply with who/i);
+    assert.match(text, /Northwind/);
+    assert.match(text, /On payments/);
+    assert.match(text, /reminder sent yesterday/);
+    assert.match(text, /Want me to draft/);
+    assert.doesNotMatch(text, /Invoicing check-in\n\nReady to invoice:/);
   });
 
-  it("includes attention extras", () => {
+  it("handles empty unbilled warmly", () => {
     const text = formatBillingDigest({
       unbilled: [],
       attention: [
@@ -34,16 +53,15 @@ describe("formatBillingDigest", () => {
           kind: "overdue_invoice",
           priority: 90,
           title: "INV-1",
-          detail: "Overdue",
-          suggested_action: "Remind",
+          detail: "Overdue · reminder sent today",
+          suggested_action: "Already reminded",
           entity_type: "invoice",
           entity_id: "1",
           client: "Acme",
         },
       ],
     });
-    assert.match(text, /No unbilled/);
-    assert.match(text, /Also worth a look/);
-    assert.match(text, /INV-1/);
+    assert.match(text, /No unbilled hours/);
+    assert.match(text, /On payments/);
   });
 });

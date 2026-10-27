@@ -57,17 +57,22 @@ async function processDigests(options?: { force?: boolean }) {
 
   const profileByUser = new Map<
     string,
-    { timezone: string; schedule: ReturnType<typeof billingScheduleFromPrefs> }
+    {
+      timezone: string;
+      fullName: string | null;
+      schedule: ReturnType<typeof billingScheduleFromPrefs>;
+    }
   >();
 
   if (userIds.length) {
     const { data: profiles } = await supabase
       .from("profiles")
-      .select("id, timezone, notification_prefs")
+      .select("id, timezone, full_name, notification_prefs")
       .in("id", userIds);
     for (const profile of profiles || []) {
       profileByUser.set(profile.id, {
         timezone: resolveDigestTimezone(profile.timezone),
+        fullName: profile.full_name,
         schedule: billingScheduleFromPrefs(profile.notification_prefs),
       });
     }
@@ -93,6 +98,7 @@ async function processDigests(options?: { force?: boolean }) {
 
     const profile = profileByUser.get(link.user_id) || {
       timezone: resolveDigestTimezone(null),
+      fullName: null as string | null,
       schedule: billingScheduleFromPrefs(null),
     };
 
@@ -144,6 +150,7 @@ async function processDigests(options?: { force?: boolean }) {
       unbilled,
       attention: attentionExtras,
       appUrl,
+      userName: profile.fullName,
     });
 
     let waOk = false;
