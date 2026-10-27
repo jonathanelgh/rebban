@@ -89,7 +89,9 @@ export async function POST(request: Request) {
   }
 
   const aboutParts = [
-    formatMarketplaceProfileForPrompt(marketplace),
+    formatMarketplaceProfileForPrompt(marketplace, {
+      includePortfolioLinks: platform !== "upwork",
+    }),
     String(body?.aboutMe || "").trim(),
     profileRow?.title ? `Title: ${profileRow.title}` : "",
     org?.description ? `Studio bio: ${org.description}` : "",

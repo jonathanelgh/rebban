@@ -48,8 +48,10 @@ export function marketplaceProfileHasContent(profile: MarketplaceProfile) {
 
 /** Flatten for the bid-draft AI prompt. */
 export function formatMarketplaceProfileForPrompt(
-  profile: MarketplaceProfile
+  profile: MarketplaceProfile,
+  options?: { includePortfolioLinks?: boolean }
 ): string {
+  const includePortfolioLinks = options?.includePortfolioLinks !== false;
   const parts: string[] = [];
   if (profile.services) {
     parts.push(`What I do / services:\n${profile.services}`);
@@ -63,8 +65,10 @@ export function formatMarketplaceProfileForPrompt(
   if (profile.rates) {
     parts.push(`Rates & pricing notes:\n${profile.rates}`);
   }
-  if (profile.portfolio) {
-    parts.push(`Portfolio / proof (only use real links from here):\n${profile.portfolio}`);
+  if (includePortfolioLinks && profile.portfolio) {
+    parts.push(
+      `Portfolio / proof (only use real links from here):\n${profile.portfolio}`
+    );
   }
   return parts.join("\n\n");
 }

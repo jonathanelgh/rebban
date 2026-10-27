@@ -94,8 +94,12 @@ export async function POST(request: Request) {
       .eq("id", user.id);
   }
 
+  const marketplacePlatform =
+    platform === "freelancer" ? "freelancer" : "upwork";
   const aboutMe = [
-    formatMarketplaceProfileForPrompt(marketplace),
+    formatMarketplaceProfileForPrompt(marketplace, {
+      includePortfolioLinks: marketplacePlatform !== "upwork",
+    }),
     profileRow?.title ? `Title: ${profileRow.title}` : "",
     org?.description ? `Studio bio: ${org.description}` : "",
   ]
@@ -107,7 +111,7 @@ export async function POST(request: Request) {
     try {
       const result = await generateMarketplaceBidDraft({
         jobText: text,
-        platform: platform === "freelancer" ? "freelancer" : "upwork",
+        platform: marketplacePlatform,
         aboutMe: aboutMe || null,
         freelancerName: profileRow?.full_name || user.email || null,
         organizationName: org?.name || null,
