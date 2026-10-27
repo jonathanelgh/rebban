@@ -591,21 +591,22 @@ export function deriveComponentsFromToolResults(
       continue;
     }
 
+    // Roster dumps (list_*) stay text-only. Cards only for create/update/get
+    // or a single find match — otherwise native chat duplicates the list.
+    if (name === "list_clients") {
+      continue;
+    }
+
     if (
       name === "add_client" ||
       name === "update_client" ||
       name === "get_client" ||
-      name === "find_client" ||
-      name === "list_clients"
+      name === "find_client"
     ) {
-      if (
-        (name === "find_client" || name === "list_clients") &&
-        Array.isArray(result.clients)
-      ) {
-        for (const row of result.clients.slice(0, 5)) {
-          const rec = asRecord(row);
-          if (!rec) continue;
-          const card = clientCardFromTool(rec);
+      if (name === "find_client" && Array.isArray(result.clients)) {
+        if (result.clients.length === 1) {
+          const rec = asRecord(result.clients[0]);
+          const card = rec ? clientCardFromTool(rec) : null;
           if (card) byKey.set(`client:${card.entityId}`, card);
         }
       } else {
@@ -618,21 +619,20 @@ export function deriveComponentsFromToolResults(
       continue;
     }
 
+    if (name === "list_leads") {
+      continue;
+    }
+
     if (
       name === "add_lead" ||
       name === "get_lead" ||
       name === "find_lead" ||
-      name === "list_leads" ||
       name === "convert_lead_to_client"
     ) {
-      if (
-        (name === "find_lead" || name === "list_leads") &&
-        Array.isArray(result.leads)
-      ) {
-        for (const row of result.leads.slice(0, 5)) {
-          const rec = asRecord(row);
-          if (!rec) continue;
-          const card = leadCardFromTool(rec);
+      if (name === "find_lead" && Array.isArray(result.leads)) {
+        if (result.leads.length === 1) {
+          const rec = asRecord(result.leads[0]);
+          const card = rec ? leadCardFromTool(rec) : null;
           if (card) byKey.set(`lead:${card.entityId}`, card);
         }
       } else {
@@ -650,20 +650,19 @@ export function deriveComponentsFromToolResults(
       continue;
     }
 
+    if (name === "list_projects") {
+      continue;
+    }
+
     if (
       name === "create_project" ||
       name === "get_project" ||
-      name === "find_project" ||
-      name === "list_projects"
+      name === "find_project"
     ) {
-      if (
-        (name === "find_project" || name === "list_projects") &&
-        Array.isArray(result.projects)
-      ) {
-        for (const row of result.projects.slice(0, 5)) {
-          const rec = asRecord(row);
-          if (!rec) continue;
-          const card = projectCardFromTool(rec);
+      if (name === "find_project" && Array.isArray(result.projects)) {
+        if (result.projects.length === 1) {
+          const rec = asRecord(result.projects[0]);
+          const card = rec ? projectCardFromTool(rec) : null;
           if (card) byKey.set(`project:${card.entityId}`, card);
         }
       } else {
@@ -704,35 +703,24 @@ export function deriveComponentsFromToolResults(
       continue;
     }
 
-    if (name === "list_proposals" && Array.isArray(result.proposals)) {
-      for (const row of result.proposals.slice(0, 5)) {
-        const rec = asRecord(row);
-        if (!rec) continue;
-        const card = proposalCardFromTool(rec);
-        if (card) byKey.set(`proposal:${card.entityId}`, card);
-      }
+    if (name === "list_proposals") {
+      // Roster only — draft proposals that need actions use list_draft_proposals.
+      continue;
+    }
+
+    if (name === "list_tasks") {
       continue;
     }
 
     if (
       name === "create_task" ||
       name === "get_task" ||
-      name === "update_task" ||
-      name === "list_tasks"
+      name === "update_task"
     ) {
-      if (name === "list_tasks" && Array.isArray(result.tasks)) {
-        for (const row of result.tasks.slice(0, 5)) {
-          const rec = asRecord(row);
-          if (!rec) continue;
-          const card = taskCardFromTool(rec);
-          if (card) byKey.set(`task:${card.entityId}`, card);
-        }
-      } else {
-        const task = asRecord(result.task);
-        if (task) {
-          const card = taskCardFromTool(task);
-          if (card) byKey.set(`task:${card.entityId}`, card);
-        }
+      const task = asRecord(result.task);
+      if (task) {
+        const card = taskCardFromTool(task);
+        if (card) byKey.set(`task:${card.entityId}`, card);
       }
       continue;
     }

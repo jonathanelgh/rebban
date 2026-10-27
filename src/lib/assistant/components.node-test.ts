@@ -221,6 +221,64 @@ describe("deriveComponentsFromToolResults", () => {
     ]);
   });
 
+  it("skips roster cards for list_clients / list_leads / list_projects", () => {
+    const components = deriveComponentsFromToolResults([
+      {
+        name: "list_clients",
+        result: {
+          ok: true,
+          clients: [
+            { id: "c1", name: "A", status: "active" },
+            { id: "c2", name: "B", status: "active" },
+          ],
+        },
+      },
+      {
+        name: "list_leads",
+        result: {
+          ok: true,
+          leads: [{ id: "l1", name: "Lead", status: "new" }],
+        },
+      },
+      {
+        name: "list_projects",
+        result: {
+          ok: true,
+          projects: [{ id: "p1", name: "Site", status: "active" }],
+        },
+      },
+    ]);
+    assert.equal(components.length, 0);
+  });
+
+  it("shows a client card only for a single find_client match", () => {
+    const one = deriveComponentsFromToolResults([
+      {
+        name: "find_client",
+        result: {
+          ok: true,
+          clients: [{ id: "c1", name: "Sarah", status: "active" }],
+        },
+      },
+    ]);
+    assert.equal(one.length, 1);
+    assert.equal(one[0]?.type, "client_card");
+
+    const many = deriveComponentsFromToolResults([
+      {
+        name: "find_client",
+        result: {
+          ok: true,
+          clients: [
+            { id: "c1", name: "Sarah", status: "active" },
+            { id: "c2", name: "Sam", status: "active" },
+          ],
+        },
+      },
+    ]);
+    assert.equal(many.length, 0);
+  });
+
   it("offers convert_to_project for accepted proposals", () => {
     const components = deriveComponentsFromToolResults([
       {
@@ -328,7 +386,7 @@ describe("convert_proposal_to_project cards", () => {
 });
 
 describe("list_proposals cards", () => {
-  it("builds proposal cards from list results", () => {
+  it("skips roster list_proposals cards", () => {
     const components = deriveComponentsFromToolResults([
       {
         name: "list_proposals",
@@ -339,6 +397,27 @@ describe("list_proposals cards", () => {
               id: "prop-1",
               title: "Brand work",
               status: "accepted",
+              client: "Sarah",
+              amount: "€2,000.00",
+            },
+          ],
+        },
+      },
+    ]);
+    assert.equal(components.length, 0);
+  });
+
+  it("still builds cards from list_draft_proposals", () => {
+    const components = deriveComponentsFromToolResults([
+      {
+        name: "list_draft_proposals",
+        result: {
+          ok: true,
+          proposals: [
+            {
+              id: "prop-1",
+              title: "Brand work",
+              status: "draft",
               client: "Sarah",
               amount: "€2,000.00",
             },
