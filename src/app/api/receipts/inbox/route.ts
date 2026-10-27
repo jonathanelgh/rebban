@@ -36,9 +36,49 @@ export async function GET() {
       .order("received_at", { ascending: false })
       .limit(15);
 
+    const messageIds = (recent || []).map((row) => row.id);
+    const receiptsByMessage: Record<
+      string,
+      Array<{
+        id: string;
+        original_filename: string | null;
+        receipt_date: string | null;
+        review_status: string;
+        merchant: string | null;
+      }>
+    > = {};
+
+    if (messageIds.length) {
+      const { data: linked } = await supabase
+        .from("receipts")
+        .select(
+          "id, inbound_message_id, original_filename, receipt_date, review_status, merchant"
+        )
+        .eq("organization_id", entitlement.organizationId)
+        .in("inbound_message_id", messageIds)
+        .is("deleted_at", null);
+
+      for (const row of linked || []) {
+        if (!row.inbound_message_id) continue;
+        if (!receiptsByMessage[row.inbound_message_id]) {
+          receiptsByMessage[row.inbound_message_id] = [];
+        }
+        receiptsByMessage[row.inbound_message_id].push({
+          id: row.id,
+          original_filename: row.original_filename,
+          receipt_date: row.receipt_date,
+          review_status: row.review_status,
+          merchant: row.merchant,
+        });
+      }
+    }
+
     return NextResponse.json({
       inbox,
-      recentInbound: recent || [],
+      recentInbound: (recent || []).map((row) => ({
+        ...row,
+        receipts: receiptsByMessage[row.id] || [],
+      })),
     });
   } catch (error) {
     const message =

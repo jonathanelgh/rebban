@@ -17,6 +17,14 @@ type InboxInfo = {
   active: boolean;
 };
 
+type LinkedReceipt = {
+  id: string;
+  original_filename: string | null;
+  receipt_date: string | null;
+  review_status: string;
+  merchant: string | null;
+};
+
 type InboundRow = {
   id: string;
   sender: string | null;
@@ -24,6 +32,7 @@ type InboundRow = {
   received_at: string;
   status: string;
   error: string | null;
+  receipts?: LinkedReceipt[];
 };
 
 export default function ReceiptSettingsPage() {
@@ -220,6 +229,32 @@ export default function ReceiptSettingsPage() {
                   </div>
                   {row.error ? (
                     <div className="text-xs text-red-600 mt-1">{row.error}</div>
+                  ) : null}
+                  {(row.receipts || []).length > 0 ? (
+                    <div className="mt-2 space-y-1">
+                      {row.receipts!.map((receipt) => (
+                        <Link
+                          key={receipt.id}
+                          href={
+                            receipt.receipt_date
+                              ? `/receipts?receipt=${receipt.id}`
+                              : `/receipts?view=unfiled&receipt=${receipt.id}`
+                          }
+                          className="block text-xs text-[#2563EB] hover:underline"
+                        >
+                          {receipt.merchant ||
+                            receipt.original_filename ||
+                            "Open receipt"}
+                          {!receipt.receipt_date
+                            ? " · Unfiled (needs date)"
+                            : ` · ${receipt.receipt_date}`}
+                        </Link>
+                      ))}
+                    </div>
+                  ) : row.status === "processed" ? (
+                    <div className="mt-1 text-xs text-gray-500">
+                      No receipt files were created from this email.
+                    </div>
                   ) : null}
                 </div>
                 <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600">

@@ -9,6 +9,7 @@ import React, {
   useState,
 } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   Upload,
   Search,
@@ -94,11 +95,14 @@ export default function ReceiptsPage() {
 
 function ReceiptsPageInner() {
   const { organizationId } = useProfile();
+  const searchParams = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
-  const [viewMode, setViewMode] = useState<"month" | "unfiled">("month");
+  const [viewMode, setViewMode] = useState<"month" | "unfiled">(
+    searchParams.get("view") === "unfiled" ? "unfiled" : "month"
+  );
   const [receipts, setReceipts] = useState<ReceiptRow[]>([]);
   const [monthCounts, setMonthCounts] = useState<
     Record<string, { total: number; review: number }>
@@ -108,7 +112,9 @@ function ReceiptsPageInner() {
   const [uploading, setUploading] = useState(false);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(
+    searchParams.get("receipt")
+  );
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [yearsOpen, setYearsOpen] = useState<Record<number, boolean>>({
@@ -352,6 +358,25 @@ function ReceiptsPageInner() {
         </div>
       ) : null}
 
+      {viewMode === "month" && unfiledCount > 0 ? (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900 flex flex-wrap items-center gap-2">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span>
+            {unfiledCount} receipt{unfiledCount === 1 ? "" : "s"} need
+            {unfiledCount === 1 ? "s" : ""} a document date before{" "}
+            {MONTH_NAMES[month - 1]} can list{" "}
+            {unfiledCount === 1 ? "it" : "them"}.
+          </span>
+          <button
+            type="button"
+            onClick={() => setViewMode("unfiled")}
+            className="ml-auto font-medium underline-offset-2 hover:underline"
+          >
+            Open Unfiled
+          </button>
+        </div>
+      ) : null}
+
       <div className="grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)] gap-6">
         <aside className="rounded-xl border border-gray-200 bg-white p-3 h-fit">
           <div className="text-xs font-medium uppercase tracking-wide text-gray-400 px-2 mb-2">
@@ -363,13 +388,19 @@ function ReceiptsPageInner() {
             className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm mb-2 ${
               viewMode === "unfiled"
                 ? "bg-gray-900 text-white"
-                : "text-gray-700 hover:bg-gray-50"
+                : unfiledCount > 0
+                  ? "bg-amber-50 text-amber-900 hover:bg-amber-100"
+                  : "text-gray-700 hover:bg-gray-50"
             }`}
           >
             <span>Unfiled / Needs date</span>
             <span
-              className={`text-xs ${
-                viewMode === "unfiled" ? "text-gray-300" : "text-gray-400"
+              className={`min-w-5 rounded-full px-1.5 text-center text-xs font-medium ${
+                viewMode === "unfiled"
+                  ? "bg-white/15 text-gray-200"
+                  : unfiledCount > 0
+                    ? "bg-amber-200 text-amber-950"
+                    : "text-gray-400"
               }`}
             >
               {unfiledCount}
