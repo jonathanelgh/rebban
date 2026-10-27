@@ -459,24 +459,11 @@ export function deriveComponentsFromToolResults(
     }
 
     if (name === "send_invoice" && result.ok === true) {
-      const id =
-        asString(result.invoice_id) ||
-        asString(asRecord(result.invoice)?.id);
-      if (!id) continue;
-      const status = asString(result.status) || "sent";
-      const existing = byKey.get(`invoice:${id}`);
-      const prev =
-        existing?.type === "invoice_card" ? existing.snapshot : undefined;
-      byKey.set(`invoice:${id}`, {
-        type: "invoice_card",
-        entityId: id,
-        actions: actionsForInvoiceStatus(status),
-        snapshot: {
-          ...prev,
-          number: asString(result.number) || prev?.number,
-          status,
-        },
-      });
+      // Confirmation is text-only — don't re-attach the invoice card after send.
+      continue;
+    }
+
+    if (name === "send_invoices" && result.ok === true) {
       continue;
     }
 

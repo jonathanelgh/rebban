@@ -129,7 +129,7 @@ describe("deriveComponentsFromToolResults", () => {
     }
   });
 
-  it("updates card after send_invoice", () => {
+  it("does not re-attach an invoice card after send_invoice", () => {
     const components = deriveComponentsFromToolResults([
       {
         name: "send_invoice",
@@ -142,12 +142,7 @@ describe("deriveComponentsFromToolResults", () => {
         },
       },
     ]);
-    assert.equal(components.length, 1);
-    if (components[0].type === "invoice_card") {
-      assert.equal(components[0].snapshot?.status, "sent");
-      assert.equal(components[0].snapshot?.number, "1042");
-      assert.ok(!components[0].actions.includes("approve_and_send"));
-    }
+    assert.equal(components.length, 0);
   });
 
   it("builds proposal, client, lead, project, and task cards", () => {

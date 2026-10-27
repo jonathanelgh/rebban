@@ -2,9 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveOrganizationId } from "@/lib/stripe/org";
 import { sendInvoiceForOrganization } from "@/lib/invoices/send-invoice";
-import { formatInvoiceMoney } from "@/lib/invoices/totals";
 import {
-  actionsForInvoiceStatus,
   messageMetadataToJson,
   type InvoiceChatComponent,
 } from "@/lib/assistant/components";
@@ -149,22 +147,6 @@ export async function POST(request: Request) {
       clientLabel = client?.company || client?.name || clientLabel;
     }
 
-    const currency = invoice.currency || "EUR";
-    const component: InvoiceChatComponent = {
-      type: "invoice_card",
-      entityId: invoice.id,
-      actions: actionsForInvoiceStatus(result.status),
-      snapshot: {
-        client: clientLabel,
-        number: result.number,
-        amount: formatInvoiceMoney(Number(invoice.total) || 0, currency),
-        amountRaw: Number(invoice.total) || 0,
-        currency,
-        dueDate: invoice.due_date,
-        status: result.status,
-      },
-    };
-
     const confirmation = result.number
       ? `I've now sent invoice ${result.number} to ${result.recipientEmail || clientLabel} 🙂`
       : `I've now sent the invoice 🙂`;
@@ -183,12 +165,13 @@ export async function POST(request: Request) {
           conversationId,
           role: "assistant",
           content: confirmation,
-          metadata: messageMetadataToJson([component]) as unknown as Json,
+          // Text-only — the draft card was already shown; don't repeat it after send.
+          metadata: messageMetadataToJson([]) as unknown as Json,
         });
         confirmationMessage = {
           id: saved.id,
           content: confirmation,
-          components: [component],
+          components: [],
         };
       } catch (err) {
         console.error("[assistant] failed to save send confirmation", err);
@@ -202,7 +185,6 @@ export async function POST(request: Request) {
       recipientEmail: result.recipientEmail,
       url: result.url,
       status: result.status,
-      component,
       confirmation,
       confirmationMessage,
     });
