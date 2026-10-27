@@ -383,18 +383,78 @@ function partyStatusHtml() {
   }.</div>`;
 }
 
+function resetBidComposer({ refreshPage = true } = {}) {
+  bidDraft = "";
+  bidJobTitle = "";
+  bidResultMode = "";
+  bidProposalUrl = "";
+  bidProposalMeta = "";
+  bidBusy = false;
+  bidError = "";
+  bidToast = "";
+  bidJobText = "";
+  bidPageStatus = "";
+  bidPageTitle = "";
+  bidPageUrl = "";
+  bidContactEmail = "";
+  bidContactName = "";
+  bidPartyOptions = [];
+  bidPartyKey = "new";
+  bidPartyMatched = false;
+  bidPartyLoading = false;
+  bidShowProfile = false;
+  renderBid();
+  if (refreshPage && bidSourceMode === "page") {
+    void refreshJobFromPage();
+  }
+}
+
+function bidDoneHtml() {
+  if (bidResultMode === "proposal" && bidProposalUrl) {
+    return `
+      <div class="card bid-result bid-done">
+        <p class="done-kicker">Proposal created</p>
+        <p class="page-title">${escapeHtml(bidJobTitle || "Draft proposal ready")}</p>
+        ${bidProposalMeta ? `<p class="toast ok">${escapeHtml(bidProposalMeta)}</p>` : ""}
+        <a class="btn btn-primary" style="display:block;text-align:center;text-decoration:none;margin-top:12px" href="${escapeHtml(bidProposalUrl)}" target="_blank" rel="noreferrer">Open in Rebban</a>
+        <button class="btn btn-secondary" id="bid-new-btn" type="button" style="margin-top:8px">Create another</button>
+      </div>
+    `;
+  }
+  if (bidResultMode === "bid" && bidDraft) {
+    return `
+      <div class="card bid-result bid-done">
+        <p class="done-kicker">Proposal text ready</p>
+        ${bidJobTitle ? `<p class="page-title">${escapeHtml(bidJobTitle)}</p>` : ""}
+        <label for="bid-output">Copy into the application</label>
+        <textarea id="bid-output" rows="12" readonly>${escapeHtml(bidDraft)}</textarea>
+        <button class="btn btn-secondary" id="bid-copy-btn" type="button">Copy to clipboard</button>
+        <p class="toast ${bidToast ? "ok" : ""}" id="bid-toast">${escapeHtml(bidToast)}</p>
+        <button class="btn btn-primary" id="bid-new-btn" type="button" style="margin-top:8px">Create another</button>
+      </div>
+    `;
+  }
+  return "";
+}
+
 function renderBid() {
   stopTick();
   const name = state?.user?.fullName || state?.user?.email || "You";
   const showProfile = bidShowProfile;
   const fromPage = bidSourceMode === "page";
   const isMarketplace = bidContext === "marketplace";
+  const doneHtml = bidDoneHtml();
+  const isDone = Boolean(doneHtml);
   setApp(`
     <div class="brand">
       <div class="logo">R.</div>
       <div class="user">${escapeHtml(name)}</div>
     </div>
     ${tabsHtml()}
+    ${
+      isDone
+        ? doneHtml
+        : `
     <div class="card">
       ${bidSourceTabsHtml()}
       <div class="banner">${escapeHtml(contextLabel())}</div>
@@ -490,113 +550,105 @@ function renderBid() {
       <p class="error" id="bid-error">${bidError ? escapeHtml(bidError) : ""}</p>
       <p class="toast" id="bid-profile-toast"></p>
     </div>
-    ${
-      bidResultMode === "bid" && bidDraft
-        ? `
-      <div class="card bid-result">
-        ${bidJobTitle ? `<div class="meta" style="text-align:left;margin-bottom:8px">${escapeHtml(bidJobTitle)}</div>` : ""}
-        <label for="bid-output">Proposal text</label>
-        <textarea id="bid-output" rows="12" readonly>${escapeHtml(bidDraft)}</textarea>
-        <button class="btn btn-secondary" id="bid-copy-btn" type="button">Copy to clipboard</button>
-        <p class="toast ${bidToast ? "ok" : ""}" id="bid-toast">${escapeHtml(bidToast)}</p>
-      </div>
     `
-        : ""
-    }
-    ${
-      bidResultMode === "proposal" && bidProposalUrl
-        ? `
-      <div class="card bid-result">
-        <p class="page-title">${escapeHtml(bidJobTitle || "Draft proposal ready")}</p>
-        ${bidProposalMeta ? `<p class="toast ok">${escapeHtml(bidProposalMeta)}</p>` : ""}
-        <a class="btn btn-primary" style="display:block;text-align:center;text-decoration:none;margin-top:10px" href="${escapeHtml(bidProposalUrl)}" target="_blank" rel="noreferrer">Open in Rebban</a>
-      </div>
-    `
-        : ""
     }
     <button class="btn btn-ghost" id="signout-btn" type="button">Sign out</button>
   `);
 
-  for (const button of document.querySelectorAll(".source-tabs .tab[data-source]")) {
-    button.addEventListener("click", () => {
-      const next = button.getAttribute("data-source") || "page";
-      if (next === bidSourceMode) return;
-      bidSourceMode = next;
-      bidError = "";
-      bidPageStatus = "";
-      renderBid();
-      if (bidSourceMode === "page") void refreshJobFromPage();
-    });
+  const newBtn = document.getElementById("bid-new-btn");
+  if (newBtn) {
+    newBtn.addEventListener("click", () => resetBidComposer());
   }
-
-  const platformEl = document.getElementById("bid-platform");
-  if (platformEl) {
-    platformEl.addEventListener("change", (event) => {
-      bidPlatform = event.target.value;
-      bidContext = "marketplace";
-      renderBid();
-    });
-  }
-  const contactNameEl = document.getElementById("bid-contact-name");
-  if (contactNameEl) {
-    contactNameEl.addEventListener("input", (event) => {
-      bidContactName = event.target.value;
-    });
-    contactNameEl.addEventListener("change", () => {
-      if (bidPartyKey === "new") renderBid();
-    });
-  }
-  const contactEmailEl = document.getElementById("bid-contact-email");
-  if (contactEmailEl) {
-    contactEmailEl.addEventListener("change", () => {
-      bidContactEmail = contactEmailEl.value;
-      void refreshPartyOptions();
-    });
-    contactEmailEl.addEventListener("input", (event) => {
-      bidContactEmail = event.target.value;
-    });
-  }
-  const partyEl = document.getElementById("bid-party");
-  if (partyEl) {
-    partyEl.addEventListener("change", (event) => {
-      bidPartyKey = event.target.value || "new";
-      bidPartyMatched = false;
-      const selected = bidPartyOptions.find((o) => o.key === bidPartyKey);
-      if (selected) {
-        if (selected.name) bidContactName = selected.name;
-        if (selected.email) bidContactEmail = selected.email;
-      }
-      renderBid();
-    });
-  }
-  document.getElementById("bid-job").addEventListener("input", (event) => {
-    bidJobText = event.target.value;
-  });
-  const refreshBtn = document.getElementById("bid-refresh-page");
-  if (refreshBtn) {
-    refreshBtn.addEventListener("click", () => void refreshJobFromPage());
-  }
-  document.getElementById("bid-toggle-profile").addEventListener("click", () => {
-    bidShowProfile = !showProfile;
-    renderBid();
-  });
-  const bindProfileField = (id, key) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.addEventListener("input", (event) => {
-      bidProfile = { ...bidProfile, [key]: event.target.value };
-    });
-  };
-  bindProfileField("bid-services", "services");
-  bindProfileField("bid-experience", "experience");
-  bindProfileField("bid-skills", "skills");
-  bindProfileField("bid-rates", "rates");
-  bindProfileField("bid-portfolio", "portfolio");
-  const saveProfileBtn = document.getElementById("bid-save-profile");
-  if (saveProfileBtn) saveProfileBtn.addEventListener("click", onSaveBidProfile);
-  document.getElementById("bid-draft-btn").addEventListener("click", onDraftBid);
   const copyBtn = document.getElementById("bid-copy-btn");
   if (copyBtn) copyBtn.addEventListener("click", onCopyBid);
+
+  if (!isDone) {
+    for (const button of document.querySelectorAll(".source-tabs .tab[data-source]")) {
+      button.addEventListener("click", () => {
+        const next = button.getAttribute("data-source") || "page";
+        if (next === bidSourceMode) return;
+        bidSourceMode = next;
+        bidError = "";
+        bidPageStatus = "";
+        renderBid();
+        if (bidSourceMode === "page") void refreshJobFromPage();
+      });
+    }
+
+    const platformEl = document.getElementById("bid-platform");
+    if (platformEl) {
+      platformEl.addEventListener("change", (event) => {
+        bidPlatform = event.target.value;
+        bidContext = "marketplace";
+        renderBid();
+      });
+    }
+    const contactNameEl = document.getElementById("bid-contact-name");
+    if (contactNameEl) {
+      contactNameEl.addEventListener("input", (event) => {
+        bidContactName = event.target.value;
+      });
+      contactNameEl.addEventListener("change", () => {
+        if (bidPartyKey === "new") renderBid();
+      });
+    }
+    const contactEmailEl = document.getElementById("bid-contact-email");
+    if (contactEmailEl) {
+      contactEmailEl.addEventListener("change", () => {
+        bidContactEmail = contactEmailEl.value;
+        void refreshPartyOptions();
+      });
+      contactEmailEl.addEventListener("input", (event) => {
+        bidContactEmail = event.target.value;
+      });
+    }
+    const partyEl = document.getElementById("bid-party");
+    if (partyEl) {
+      partyEl.addEventListener("change", (event) => {
+        bidPartyKey = event.target.value || "new";
+        bidPartyMatched = false;
+        const selected = bidPartyOptions.find((o) => o.key === bidPartyKey);
+        if (selected) {
+          if (selected.name) bidContactName = selected.name;
+          if (selected.email) bidContactEmail = selected.email;
+        }
+        renderBid();
+      });
+    }
+    const jobEl = document.getElementById("bid-job");
+    if (jobEl) {
+      jobEl.addEventListener("input", (event) => {
+        bidJobText = event.target.value;
+      });
+    }
+    const refreshBtn = document.getElementById("bid-refresh-page");
+    if (refreshBtn) {
+      refreshBtn.addEventListener("click", () => void refreshJobFromPage());
+    }
+    const toggleProfileBtn = document.getElementById("bid-toggle-profile");
+    if (toggleProfileBtn) {
+      toggleProfileBtn.addEventListener("click", () => {
+        bidShowProfile = !showProfile;
+        renderBid();
+      });
+    }
+    const bindProfileField = (id, key) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener("input", (event) => {
+        bidProfile = { ...bidProfile, [key]: event.target.value };
+      });
+    };
+    bindProfileField("bid-services", "services");
+    bindProfileField("bid-experience", "experience");
+    bindProfileField("bid-skills", "skills");
+    bindProfileField("bid-rates", "rates");
+    bindProfileField("bid-portfolio", "portfolio");
+    const saveProfileBtn = document.getElementById("bid-save-profile");
+    if (saveProfileBtn) saveProfileBtn.addEventListener("click", onSaveBidProfile);
+    const draftBtn = document.getElementById("bid-draft-btn");
+    if (draftBtn) draftBtn.addEventListener("click", onDraftBid);
+  }
   bindTabs();
   bindCommon();
 }

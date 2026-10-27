@@ -193,6 +193,19 @@ h1 {
   margin-top: 12px;
 }
 
+.bid-done {
+  margin-top: 0;
+}
+
+.done-kicker {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #059669;
+}
+
 label {
   display: block;
   font-size: 12px;
