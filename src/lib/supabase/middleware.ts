@@ -68,6 +68,8 @@ export async function updateSession(request: NextRequest) {
   const isResendInboundWebhook = path === "/api/webhooks/resend/inbound";
   const isCronRoute = path.startsWith("/api/cron/");
   const isAnalyticsCollect = path === "/api/analytics/collect";
+  const isPublicFreeProposal = path.startsWith("/api/public/free-proposal");
+  const isPublicFreeInvoice = path.startsWith("/api/public/free-invoice");
   const isExtensionAuth =
     path === "/api/extension/auth" ||
     path === "/api/extension/auth/refresh";
@@ -115,6 +117,8 @@ export async function updateSession(request: NextRequest) {
     isResendInboundWebhook ||
     isCronRoute ||
     isAnalyticsCollect ||
+    isPublicFreeProposal ||
+    isPublicFreeInvoice ||
     isExtensionAuth
   ) {
     return supabaseResponse;

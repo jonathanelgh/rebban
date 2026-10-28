@@ -783,3 +783,180 @@ export function signedProposalPdfFilename(title: string) {
     .slice(0, 80);
   return `${base || "proposal"}_signed.pdf`;
 }
+
+export type FreeProposalPdfInput = {
+  title: string;
+  amount: number;
+  currency: string;
+  content: unknown;
+  organizationName: string;
+  clientName?: string | null;
+  clientCompany?: string | null;
+};
+
+export async function buildFreeProposalPdf(
+  input: FreeProposalPdfInput
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({
+      size: "A4",
+      margin: 48,
+      info: {
+        Title: input.title || "Proposal",
+        Author: input.organizationName || "Rebban",
+        Creator: "Rebban",
+        Subject: "Proposal created with Rebban",
+        Keywords: "rebban,proposal",
+      },
+    });
+    const chunks: Buffer[] = [];
+    doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    const accent = "#2563EB";
+    const ink = "#1A1D23";
+    const muted = "#6B7280";
+    const rule = "#E2E5EA";
+    const pageWidth =
+      doc.page.width - doc.page.margins.left - doc.page.margins.right;
+    const left = doc.page.margins.left;
+
+    const snapshot = asProposalContent(input.content as never);
+    const styles = elementStyleMap(snapshot);
+    const currency = snapshot.currency || input.currency || "USD";
+    const amountLabel = formatMoneyLabel(Number(input.amount || 0), currency);
+    const preparedFor =
+      input.clientCompany &&
+      input.clientName &&
+      input.clientCompany !== input.clientName
+        ? `${input.clientName} · ${input.clientCompany}`
+        : input.clientCompany || input.clientName || "Client";
+
+    doc.rect(0, 0, doc.page.width, 6).fill(accent);
+
+    let y = doc.page.margins.top;
+    doc
+      .fillColor(muted)
+      .font("Helvetica")
+      .fontSize(9)
+      .text("PROPOSAL", left, y);
+    y = doc.y + 10;
+
+    doc
+      .fillColor(ink)
+      .font("Helvetica-Bold")
+      .fontSize(22)
+      .text(input.title || "Proposal", left, y, { width: pageWidth });
+    y = doc.y + 10;
+
+    doc
+      .fillColor(muted)
+      .font("Helvetica")
+      .fontSize(10)
+      .text(`From ${input.organizationName || "Freelance studio"}`, left, y, {
+        width: pageWidth * 0.6,
+      });
+    doc.text(amountLabel, left + pageWidth * 0.55, y, {
+      width: pageWidth * 0.45,
+      align: "right",
+    });
+    y = Math.max(doc.y, y + 14) + 4;
+
+    doc
+      .fillColor(muted)
+      .font("Helvetica")
+      .fontSize(10)
+      .text(`Prepared for ${preparedFor}`, left, y, { width: pageWidth });
+    y = doc.y + 4;
+    doc.text(`Created ${formatDate(new Date().toISOString())}`, left, y, {
+      width: pageWidth,
+    });
+    y = doc.y + 14;
+
+    doc
+      .moveTo(left, y)
+      .lineTo(left + pageWidth, y)
+      .strokeColor(rule)
+      .lineWidth(1)
+      .stroke();
+    y += 18;
+
+    const sections = collectSections(snapshot, styles, currency).filter(
+      (section) =>
+        !/signature/i.test(section.heading) &&
+        section.heading.toLowerCase() !== "sign here"
+    );
+
+    for (const section of sections) {
+      y = ensureSpace(doc, y, 80);
+      doc
+        .fillColor(ink)
+        .font("Helvetica-Bold")
+        .fontSize(13)
+        .text(section.heading, left, y, { width: pageWidth });
+      y = doc.y + 6;
+
+      if (section.body?.trim()) {
+        y = ensureSpace(doc, y, 40);
+        doc
+          .fillColor(ink)
+          .font("Helvetica")
+          .fontSize(10)
+          .text(section.body.trim(), left, y, {
+            width: pageWidth,
+            lineGap: 2,
+          });
+        y = doc.y + 8;
+      }
+
+      if (section.bullets?.length) {
+        for (const bullet of section.bullets) {
+          y = ensureSpace(doc, y, 28);
+          doc
+            .fillColor(ink)
+            .font("Helvetica")
+            .fontSize(10)
+            .text(`•  ${bullet}`, left + 4, y, {
+              width: pageWidth - 4,
+              lineGap: 1.5,
+            });
+          y = doc.y + 4;
+        }
+        y += 6;
+      } else {
+        y += 6;
+      }
+    }
+
+    y = ensureSpace(doc, y, 48);
+    doc
+      .moveTo(left, y)
+      .lineTo(left + pageWidth, y)
+      .strokeColor(rule)
+      .lineWidth(1)
+      .stroke();
+    y += 14;
+    doc
+      .fillColor(muted)
+      .font("Helvetica")
+      .fontSize(9)
+      .text(
+        "Created with Rebban — send, track, and get proposals signed at rebban.com",
+        left,
+        y,
+        { width: pageWidth }
+      );
+
+    doc.end();
+  });
+}
+
+export function freeProposalPdfFilename(title: string) {
+  const base = (title || "proposal")
+    .trim()
+    .replace(/[^\w.-]+/g, "_")
+    .replace(/_+/g, "_")
+    .slice(0, 80);
+  return `${base || "proposal"}.pdf`;
+}

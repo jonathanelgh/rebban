@@ -863,6 +863,117 @@ export type Database = {
           },
         ]
       }
+      free_invoice_drafts: {
+        Row: {
+          bill_to_name: string | null
+          created_at: string
+          currency: string
+          download_token_expires_at: string | null
+          download_token_hash: string | null
+          email: string | null
+          expires_at: string
+          from_name: string | null
+          id: string
+          invoice_number: string
+          ip_hash: string | null
+          payload: Json
+          pdf_sent_at: string | null
+          total: number
+          user_agent: string | null
+        }
+        Insert: {
+          bill_to_name?: string | null
+          created_at?: string
+          currency?: string
+          download_token_expires_at?: string | null
+          download_token_hash?: string | null
+          email?: string | null
+          expires_at?: string
+          from_name?: string | null
+          id?: string
+          invoice_number: string
+          ip_hash?: string | null
+          payload?: Json
+          pdf_sent_at?: string | null
+          total?: number
+          user_agent?: string | null
+        }
+        Update: {
+          bill_to_name?: string | null
+          created_at?: string
+          currency?: string
+          download_token_expires_at?: string | null
+          download_token_hash?: string | null
+          email?: string | null
+          expires_at?: string
+          from_name?: string | null
+          id?: string
+          invoice_number?: string
+          ip_hash?: string | null
+          payload?: Json
+          pdf_sent_at?: string | null
+          total?: number
+          user_agent?: string | null
+        }
+        Relationships: []
+      }
+      free_proposal_drafts: {
+        Row: {
+          amount: number
+          client_company: string | null
+          client_name: string | null
+          content: Json
+          created_at: string
+          currency: string
+          download_token_expires_at: string | null
+          download_token_hash: string | null
+          email: string | null
+          expires_at: string
+          freelancer_name: string | null
+          id: string
+          ip_hash: string | null
+          pdf_sent_at: string | null
+          title: string
+          user_agent: string | null
+        }
+        Insert: {
+          amount?: number
+          client_company?: string | null
+          client_name?: string | null
+          content?: Json
+          created_at?: string
+          currency?: string
+          download_token_expires_at?: string | null
+          download_token_hash?: string | null
+          email?: string | null
+          expires_at?: string
+          freelancer_name?: string | null
+          id?: string
+          ip_hash?: string | null
+          pdf_sent_at?: string | null
+          title: string
+          user_agent?: string | null
+        }
+        Update: {
+          amount?: number
+          client_company?: string | null
+          client_name?: string | null
+          content?: Json
+          created_at?: string
+          currency?: string
+          download_token_expires_at?: string | null
+          download_token_hash?: string | null
+          email?: string | null
+          expires_at?: string
+          freelancer_name?: string | null
+          id?: string
+          ip_hash?: string | null
+          pdf_sent_at?: string | null
+          title?: string
+          user_agent?: string | null
+        }
+        Relationships: []
+      }
       gmail_connections: {
         Row: {
           access_token: string
