@@ -126,14 +126,21 @@ export function BlogAutomationPanel() {
     setNotice("Settings saved.");
   }
 
-  async function runAction(action: "refill_topics" | "publish_now", topicId?: string) {
+  async function runAction(
+    action: "refill_topics" | "publish_now" | "backfill_covers",
+    topicId?: string
+  ) {
     setBusy(action + (topicId || ""));
     setNotice(null);
     setError(null);
     const res = await fetch("/api/admin/blog-automation", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, topicId }),
+      body: JSON.stringify({
+        action,
+        topicId,
+        count: action === "backfill_covers" ? 20 : undefined,
+      }),
     });
     const json = await res.json().catch(() => ({}));
     setBusy(null);
@@ -143,6 +150,10 @@ export function BlogAutomationPanel() {
     }
     if (action === "refill_topics") {
       setNotice(`Generated ${json.generated || 0} topics.`);
+    } else if (action === "backfill_covers") {
+      setNotice(
+        `Cover backfill: ${json.filled || 0} filled, ${json.failed || 0} failed.`
+      );
     } else {
       setNotice("Publish run finished.");
     }
@@ -346,6 +357,19 @@ export function BlogAutomationPanel() {
               <Play className="w-4 h-4" />
             )}
             Publish one now
+          </button>
+          <button
+            type="button"
+            disabled={Boolean(busy)}
+            onClick={() => void runAction("backfill_covers")}
+            className="inline-flex items-center gap-2 rounded-xl border border-line px-4 py-2.5 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+          >
+            {busy === "backfill_covers" ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Newspaper className="w-4 h-4" />
+            )}
+            Backfill missing covers
           </button>
         </div>
 

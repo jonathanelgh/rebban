@@ -89,10 +89,20 @@ export async function publishTopicArticle(options: {
       coverImage = cover.url;
       coverImageAlt = cover.alt;
     } catch (coverErr) {
+      const coverMessage =
+        coverErr instanceof Error ? coverErr.message : "unknown";
       console.error("[blog-automation] cover failed", {
         topicId: topic.id,
-        error: coverErr instanceof Error ? coverErr.message : "unknown",
+        error: coverMessage,
       });
+      // Surface on settings so missing covers are visible in admin.
+      await db
+        .from("blog_automation_settings")
+        .update({
+          last_error: `Cover failed for ${slug}: ${coverMessage}`,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", 1);
     }
 
     const now = new Date().toISOString();

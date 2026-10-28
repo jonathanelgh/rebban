@@ -7,6 +7,7 @@ import {
   publishTopicArticle,
   refillTopicsNow,
 } from "@/lib/blog/automation/run";
+import { backfillMissingBlogCovers } from "@/lib/blog/automation/cover";
 import { normalizePublishTimes } from "@/lib/blog/automation/schedule";
 
 export const runtime = "nodejs";
@@ -177,6 +178,14 @@ export async function POST(request: Request) {
       const result = await processBlogAutomationTick({
         db: gate.db,
         force: true,
+      });
+      return NextResponse.json(result);
+    }
+
+    if (body.action === "backfill_covers") {
+      const result = await backfillMissingBlogCovers({
+        db: gate.db,
+        limit: body.count,
       });
       return NextResponse.json(result);
     }

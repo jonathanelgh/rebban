@@ -13,7 +13,8 @@ export function getBlogWriteModel() {
 }
 
 export function getBlogImageModel() {
-  return process.env.OPENAI_BLOG_IMAGE_MODEL || "gpt-image-1";
+  // gpt-image-1 was shut down 2026-10-23.
+  return process.env.OPENAI_BLOG_IMAGE_MODEL || "gpt-image-2";
 }
 
 /** gpt-5+ / o-series only allow the default temperature (1). */
